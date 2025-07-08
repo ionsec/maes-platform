@@ -226,18 +226,69 @@ router.get('/extractions',
 
 // Get uploaded data for analysis (internal endpoint for analyzer service)
 router.get('/data/:extractionId',
+  // This endpoint allows service token authentication
   async (req, res) => {
+    // Check for service token
+    const serviceToken = req.headers['x-service-token'];
+    const SERVICE_AUTH_TOKEN = process.env.SERVICE_AUTH_TOKEN || 'service_internal_token_change_in_production';
+    
+    if (serviceToken !== SERVICE_AUTH_TOKEN) {
+      return res.status(401).json({
+        error: 'Service authentication required'
+      });
+    }
     try {
       const { extractionId } = req.params;
       
-      // Get the uploaded extraction from memory
+      // First check memory cache
       const uploadedExtractions = req.app.locals.uploadedExtractions || {};
-      const extraction = uploadedExtractions[extractionId];
+      let extraction = uploadedExtractions[extractionId];
       
       if (!extraction) {
-        return res.status(404).json({
-          error: 'Uploaded extraction not found'
-        });
+        // Check database for the extraction
+        const { Extraction } = require('../models');
+        const dbExtraction = await Extraction.findByPk(extractionId);
+        
+        if (!dbExtraction || !dbExtraction.parameters?.isUpload) {
+          return res.status(404).json({
+            error: 'Uploaded extraction not found'
+          });
+        }
+        
+        // Try to read the file from disk
+        const filePath = dbExtraction.parameters.uploadedFile?.path;
+        if (!filePath) {
+          return res.status(404).json({
+            error: 'Uploaded file path not found'
+          });
+        }
+        
+        try {
+          const fileContent = await fs.readFile(filePath, 'utf8');
+          let parsedData;
+          
+          if (dbExtraction.parameters.uploadedFile.mimeType === 'application/json' || 
+              dbExtraction.parameters.uploadedFile.originalName.endsWith('.json')) {
+            parsedData = JSON.parse(fileContent);
+          } else {
+            parsedData = { raw: fileContent, format: 'text' };
+          }
+          
+          // Cache it back in memory
+          uploadedExtractions[extractionId] = {
+            extractionId: extractionId,
+            data: parsedData,
+            uploadedFile: dbExtraction.parameters.uploadedFile
+          };
+          
+          extraction = uploadedExtractions[extractionId];
+          
+        } catch (fileError) {
+          logger.error('Failed to read uploaded file:', fileError);
+          return res.status(404).json({
+            error: 'Uploaded file not accessible'
+          });
+        }
       }
       
       // Return the parsed data

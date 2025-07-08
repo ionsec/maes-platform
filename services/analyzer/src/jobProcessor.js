@@ -301,7 +301,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
   const { workerId } = workerData;
   
   // Import required modules in worker context
-  let sequelize, Extraction, AnalysisJob, Alert, Organization;
+  let sequelize, Extraction, AnalysisJob, Alert, Organization, EnhancedAnalyzer;
   
   // Initialize database connection in worker context
   try {
@@ -312,9 +312,15 @@ if (!isMainThread && workerData.type === 'job_processor') {
     Alert = models.Alert;
     Organization = models.Organization;
     
-    // Test database connection
-    sequelize.authenticate().then(() => {
+    // Initialize enhanced analyzer
+    const EnhancedAnalyzerClass = require('./enhancedAnalyzer');
+    EnhancedAnalyzer = new EnhancedAnalyzerClass();
+    
+    // Test database connection and initialize enhanced analyzer
+    sequelize.authenticate().then(async () => {
       console.log(`Worker ${workerId}: Database connection established`);
+      await EnhancedAnalyzer.initialize();
+      console.log(`Worker ${workerId}: Enhanced analyzer initialized`);
     }).catch(err => {
       console.error(`Worker ${workerId}: Database connection failed:`, err);
     });
@@ -811,8 +817,8 @@ if (!isMainThread && workerData.type === 'job_processor') {
         data: { progress: 40, message: 'Analyzing audit logs' }
       });
 
-      // Analyze the audit data using the main thread analysis function
-      const analysisResult = await analyzeAzureAuditLogs(auditData, {
+      // Analyze the audit data using the enhanced analyzer
+      const analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
         analysisId,
         extractionId,
         organizationId: organizationId || '00000000-0000-0000-0000-000000000001'

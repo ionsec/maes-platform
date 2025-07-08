@@ -8,14 +8,15 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "bull": "^4.11.4",
-    "redis": "^4.6.10",
     "@elastic/elasticsearch": "^8.10.0",
-    "winston": "^3.11.0",
+    "axios": "^1.5.1",
+    "bull": "^4.11.4",
+    "csv-parser": "^3.2.0",
     "dotenv": "^16.3.1",
     "pg": "^8.11.3",
+    "redis": "^4.6.10",
     "sequelize": "^6.35.0",
-    "axios": "^1.5.1"
+    "winston": "^3.11.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
