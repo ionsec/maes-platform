@@ -28,7 +28,6 @@ const menuItems = [
   { text: 'Extractions', icon: <CloudDownload />, path: '/extractions' },
   { text: 'Analysis', icon: <Analytics />, path: '/analysis' },
   { text: 'Alerts', icon: <Warning />, path: '/alerts' },
-  { text: 'Incidents', icon: <Security />, path: '/incidents' },
   { text: 'Reports', icon: <Assessment />, path: '/reports' },
   { text: 'Settings', icon: <Settings />, path: '/settings' }
 ]

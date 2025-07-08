@@ -13,7 +13,6 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import Incidents from './pages/Incidents'
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -88,7 +87,6 @@ function App() {
           <Route path="/extractions" element={<Extractions />} />
           <Route path="/analysis" element={<Analysis />} />
           <Route path="/alerts" element={<Alerts />} />
-          <Route path="/incidents" element={<Incidents />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>

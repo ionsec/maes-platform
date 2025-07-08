@@ -2,14 +2,16 @@ const Queue = require('bull');
 const { logger } = require('./logger');
 const { sequelize, Extraction, AnalysisJob, Alert, Organization, User } = require('./models');
 const JobProcessor = require('./jobProcessor');
+const EnhancedAnalyzer = require('./enhancedAnalyzer');
 
 // Initialize Redis connection
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 const analysisQueue = new Queue('analysis-jobs', redisUrl);
 const extractionQueue = new Queue('extraction', redisUrl);
 
-// Initialize job processor
+// Initialize job processor and enhanced analyzer
 const jobProcessor = new JobProcessor();
+const enhancedAnalyzer = new EnhancedAnalyzer();
 
 // Initialize the analyzer service
 async function initialize() {
@@ -20,9 +22,10 @@ async function initialize() {
     await sequelize.authenticate();
     logger.info('Database connection established');
 
-    // Initialize job processor
+    // Initialize job processor and enhanced analyzer
     await jobProcessor.initialize();
-    logger.info('Job processor initialized');
+    await enhancedAnalyzer.initialize();
+    logger.info('Job processor and enhanced analyzer initialized');
 
     // Set up queue processors
     setupQueueProcessors();
@@ -393,8 +396,8 @@ async function processUploadedExtraction(extractionId, analysisType, job) {
       await analysisJob.save();
     }
     
-    // Analyze the audit data
-    const analysisResult = await analyzeAzureAuditLogs(auditData, {
+    // Analyze the audit data using enhanced analyzer
+    const analysisResult = await enhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
       analysisId,
       extractionId,
       organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
