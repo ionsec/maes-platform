@@ -19,7 +19,6 @@ const alertRoutes = require('./routes/alerts');
 const reportRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const registrationRoutes = require('./routes/registration');
-const incidentRoutes = require('./routes/incidents');
 
 const app = express();
 
@@ -53,7 +52,6 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/registration', registrationRoutes);
-app.use('/api/incidents', incidentRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
