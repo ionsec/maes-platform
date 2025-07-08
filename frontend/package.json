@@ -1,0 +1,51 @@
+{
+  "name": "maes-frontend",
+  "version": "1.0.0",
+  "description": "MAES: The M365 Analyzer & Extractor Suite - Frontend Application",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.18.0",
+    "axios": "^1.5.1",
+    "socket.io-client": "^4.6.2",
+    "@mui/material": "^5.14.16",
+    "@mui/icons-material": "^5.14.16",
+    "@mui/x-date-pickers": "^6.18.0",
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "recharts": "^2.9.0",
+    "dayjs": "^1.11.10",
+    "react-query": "^3.39.3",
+    "zustand": "^4.4.6",
+    "react-hook-form": "^7.47.0",
+    "notistack": "^3.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react": "^4.1.1",
+    "vite": "^5.0.0",
+    "eslint": "^8.51.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src/"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}

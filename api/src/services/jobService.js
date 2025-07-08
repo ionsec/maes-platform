@@ -1,0 +1,177 @@
+const Queue = require('bull');
+const { logger } = require('../utils/logger');
+const { Organization } = require('./models');
+
+// Initialize job queues
+const extractionQueue = new Queue('extraction-jobs', process.env.REDIS_URL);
+const analysisQueue = new Queue('analysis-jobs', process.env.REDIS_URL);
+
+// Create extraction job
+const createExtractionJob = async (extraction) => {
+  try {
+    // Get organization credentials
+    const organization = await Organization.findById(extraction.organization_id);
+    
+    const jobData = {
+      extractionId: extraction.id,
+      organizationId: extraction.organization_id,
+      type: extraction.type,
+      parameters: {
+        startDate: extraction.start_date,
+        endDate: extraction.end_date,
+        tenantId: organization.tenant_id,
+        ...extraction.parameters
+      },
+      credentials: organization.credentials
+    };
+
+    const jobOptions = {
+      priority: getPriority(extraction.priority),
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 60000 // 1 minute
+      },
+      removeOnComplete: 10,
+      removeOnFail: 5
+    };
+
+    const job = await extractionQueue.add('extract-data', jobData, jobOptions);
+    
+    logger.info(`Extraction job ${extraction.id} queued with job ID ${job.id}`);
+    
+    return job;
+  } catch (error) {
+    logger.error('Failed to create extraction job:', error);
+    throw error;
+  }
+};
+
+// Create analysis job
+const createAnalysisJob = async (analysisJob) => {
+  try {
+    const jobData = {
+      analysisId: analysisJob.id,
+      extractionId: analysisJob.extractionId,
+      organizationId: analysisJob.organizationId,
+      type: analysisJob.type,
+      parameters: analysisJob.parameters
+    };
+
+    const jobOptions = {
+      priority: getPriority(analysisJob.priority),
+      attempts: 3,
+      backoff: {
+        type: 'exponential',
+        delay: 60000 // 1 minute
+      },
+      removeOnComplete: 10,
+      removeOnFail: 5
+    };
+
+    const job = await analysisQueue.add('analyze-data', jobData, jobOptions);
+    
+    logger.info(`Analysis job ${analysisJob.id} queued with job ID ${job.id}`);
+    
+    return job;
+  } catch (error) {
+    logger.error('Failed to create analysis job:', error);
+    throw error;
+  }
+};
+
+// Convert priority to Bull queue priority
+const getPriority = (priority) => {
+  const priorities = {
+    'low': 1,
+    'medium': 5,
+    'high': 10,
+    'critical': 15
+  };
+  return priorities[priority] || 5;
+};
+
+// Get queue statistics
+const getQueueStats = async () => {
+  try {
+    const [extractionStats, analysisStats] = await Promise.all([
+      getQueueStatistics(extractionQueue),
+      getQueueStatistics(analysisQueue)
+    ]);
+
+    return {
+      extraction: extractionStats,
+      analysis: analysisStats
+    };
+  } catch (error) {
+    logger.error('Failed to get queue stats:', error);
+    throw error;
+  }
+};
+
+// Get statistics for a specific queue
+const getQueueStatistics = async (queue) => {
+  const [waiting, active, completed, failed, delayed] = await Promise.all([
+    queue.getWaiting(),
+    queue.getActive(),
+    queue.getCompleted(),
+    queue.getFailed(),
+    queue.getDelayed()
+  ]);
+
+  return {
+    waiting: waiting.length,
+    active: active.length,
+    completed: completed.length,
+    failed: failed.length,
+    delayed: delayed.length
+  };
+};
+
+// Cancel job
+const cancelJob = async (jobId, queueType = 'extraction') => {
+  try {
+    const queue = queueType === 'extraction' ? extractionQueue : analysisQueue;
+    const job = await queue.getJob(jobId);
+    
+    if (job) {
+      await job.remove();
+      logger.info(`Job ${jobId} cancelled successfully`);
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    logger.error('Failed to cancel job:', error);
+    throw error;
+  }
+};
+
+// Clean up completed jobs
+const cleanupJobs = async () => {
+  try {
+    await Promise.all([
+      extractionQueue.clean(24 * 60 * 60 * 1000, 'completed'), // 24 hours
+      extractionQueue.clean(24 * 60 * 60 * 1000, 'failed'),
+      analysisQueue.clean(24 * 60 * 60 * 1000, 'completed'),
+      analysisQueue.clean(24 * 60 * 60 * 1000, 'failed')
+    ]);
+    
+    logger.info('Job cleanup completed');
+  } catch (error) {
+    logger.error('Job cleanup failed:', error);
+  }
+};
+
+// Schedule periodic cleanup
+setInterval(cleanupJobs, 6 * 60 * 60 * 1000); // Every 6 hours
+
+module.exports = {
+  createExtractionJob,
+  createAnalysisJob,
+  getQueueStats,
+  cancelJob,
+  cleanupJobs,
+  extractionQueue,
+  analysisQueue
+};
