@@ -1,0 +1,23 @@
+{
+  "development": {
+    "username": "cira_user",
+    "password": "cira_secure_password",
+    "database": "cira_db",
+    "host": "postgres",
+    "dialect": "postgres"
+  },
+  "test": {
+    "username": "cira_user",
+    "password": "cira_secure_password",
+    "database": "cira_db",
+    "host": "postgres",
+    "dialect": "postgres"
+  },
+  "production": {
+    "username": "cira_user",
+    "password": "cira_secure_password",
+    "database": "cira_db",
+    "host": "postgres",
+    "dialect": "postgres"
+  }
+}

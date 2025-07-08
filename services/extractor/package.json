@@ -1,0 +1,22 @@
+{
+  "name": "maes-extractor-service",
+  "version": "1.0.0",
+  "description": "MAES: The M365 Analyzer & Extractor Suite - Extraction Service",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js"
+  },
+  "dependencies": {
+    "bull": "^4.11.4",
+    "redis": "^4.6.10",
+    "winston": "^3.11.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "axios": "^1.5.1",
+    "node-schedule": "^2.1.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  }
+}
