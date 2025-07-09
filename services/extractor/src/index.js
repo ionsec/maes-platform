@@ -3,6 +3,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
 const { logger } = require('./logger');
+const { updateExtractionProgress } = require('./progressMonitor');
 require('dotenv').config();
 
 // Initialize Redis queue
@@ -22,11 +23,19 @@ extractionQueue.process('extract-data', async (job) => {
     // Update job progress
     await job.progress(10);
     
+    // Start monitoring LogFile.txt for progress updates
+    const progressMonitor = updateExtractionProgress(extractionId, job);
+    
     // Prepare PowerShell command based on extraction type
     const psCommand = buildPowerShellCommand(type, parameters, credentials);
     
     // Execute PowerShell script
     const result = await executePowerShell(psCommand, job);
+    
+    // Stop progress monitoring
+    if (progressMonitor && progressMonitor.stop) {
+      progressMonitor.stop();
+    }
     
     // Parse and store results
     const outputFiles = await processOutput(extractionId, type);
@@ -64,11 +73,22 @@ extractionQueue.process('test-connection', async (job) => {
     
     logger.info(`Connection test ${testId} completed successfully`);
     
+    // Extract UAL status from output
+    let ualStatus = 'unknown';
+    if (result.stdout.includes('UAL_STATUS:TRUE')) {
+      ualStatus = 'enabled';
+    } else if (result.stdout.includes('UAL_STATUS:FALSE')) {
+      ualStatus = 'disabled';
+    } else if (result.stdout.includes('UAL_STATUS:ERROR')) {
+      ualStatus = 'error';
+    }
+    
     return {
       success: true,
       testId,
       result: result.stdout,
-      connectionStatus: result.stdout.includes('CONNECTION_SUCCESS') ? 'success' : 'failed'
+      connectionStatus: result.stdout.includes('CONNECTION_SUCCESS') ? 'success' : 'failed',
+      ualStatus
     };
     
   } catch (error) {
@@ -79,7 +99,12 @@ extractionQueue.process('test-connection', async (job) => {
 
 // Build PowerShell command based on extraction type
 function buildPowerShellCommand(type, parameters, credentials) {
-  const baseCommand = `Import-Module Microsoft-Extractor-Suite -Force;`;
+  const baseCommand = `
+    Import-Module Microsoft-Extractor-Suite -Force;
+    Import-Module Az -Force;
+    Import-Module AzureADPreview -Force;
+    Import-Module Microsoft.Graph -Force;
+  `;
   
   let command = baseCommand;
   
@@ -105,6 +130,28 @@ function buildPowerShellCommand(type, parameters, credentials) {
     throw new Error('Missing authentication credentials. Either certificateFilePath, certificateThumbprint or clientSecret is required for unattended extraction.');
   }
   
+  // Add UAL validation after authentication for relevant extraction types
+  const ualDependentTypes = ['unified_audit_log', 'full_extraction'];
+  if (ualDependentTypes.includes(type)) {
+    command += `
+      Write-Host 'Checking Unified Audit Log availability...';
+      try {
+        $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop;
+        $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled;
+        if ($UalEnabled -eq $true) {
+          Write-Host 'UAL_STATUS:ENABLED - Unified Audit Log is available';
+        } else {
+          Write-Host 'UAL_STATUS:DISABLED - Unified Audit Log is not enabled for this organization';
+          Write-Error 'Unified Audit Log is not enabled. Please enable auditing in the Microsoft 365 compliance center.';
+          exit 1;
+        }
+      } catch {
+        Write-Host 'UAL_STATUS:ERROR - Unable to check Unified Audit Log status';
+        Write-Warning "Could not verify UAL status: $_";
+      }
+    `;
+  }
+  
   // Add extraction command based on type
   const extractionCommands = {
     'unified_audit_log': `Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
@@ -127,18 +174,23 @@ function buildPowerShellCommand(type, parameters, credentials) {
 
 // Build PowerShell command for connection testing
 function buildTestConnectionCommand(parameters) {
-  const baseCommand = `Import-Module Microsoft-Extractor-Suite -Force;`;
+  const baseCommand = `
+    Import-Module Microsoft-Extractor-Suite -Force;
+    Import-Module Az -Force;
+    Import-Module AzureADPreview -Force;
+    Import-Module Microsoft.Graph -Force;
+  `;
   
   let command = baseCommand;
   
   if (parameters.certificateThumbprint) {
     // Test with certificate thumbprint
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateThumbprint '${parameters.certificateThumbprint}' -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateThumbprint '${parameters.certificateThumbprint}' -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   } else if (parameters.clientSecret) {
     // Test with client secret
     const secureSecret = `ConvertTo-SecureString -String '${parameters.clientSecret}' -AsPlainText -Force`;
     command += `$SecureSecret = ${secureSecret}; `;
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   } else {
     // Test with default PFX certificate - first try mounted certs, then fallback to generated
     const certPath = '/certs/app.pfx';
@@ -146,7 +198,7 @@ function buildTestConnectionCommand(parameters) {
     const securePwd = `ConvertTo-SecureString -String 'Password123' -AsPlainText -Force`;
     command += `$CertPwd = ${securePwd}; `;
     command += `if (Test-Path '${certPath}') { $CertToUse = '${certPath}' } else { $CertToUse = '${fallbackCertPath}' }; `;
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   }
   
   return command;

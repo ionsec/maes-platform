@@ -34,29 +34,75 @@ router.get('/',
       const limit = parseInt(req.query.limit) || 20;
       const offset = (page - 1) * limit;
 
-      const where = {};
-      if (req.query.status) where.status = req.query.status;
-      if (req.query.type) where.type = req.query.type;
-
-      const { count, rows } = await AnalysisJob.findAndCountAll({
-        where,
-        include: [{
-          model: Extraction,
-          where: { organizationId: req.organizationId },
-          attributes: ['id', 'type', 'start_date', 'end_date']
-        }],
-        limit,
-        offset,
-        order: [['created_at', 'DESC']]
-      });
+      // Get analysis jobs for the current organization
+      const filters = {};
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.type) filters.type = req.query.type;
+      
+      // Get analysis jobs from database
+      const { getRows, count } = require('../services/database');
+      
+      // Debug logging
+      logger.info(`Analysis jobs request for organization: ${req.organizationId}`);
+      
+      let whereClause = 'WHERE aj.organization_id = $1';
+      const values = [req.organizationId];
+      let paramCount = 2;
+      
+      if (filters.status) {
+        whereClause += ` AND aj.status = $${paramCount}`;
+        values.push(filters.status);
+        paramCount++;
+      }
+      
+      if (filters.type) {
+        whereClause += ` AND aj.type = $${paramCount}`;
+        values.push(filters.type);
+        paramCount++;
+      }
+      
+      const analysisJobsQuery = `
+        SELECT 
+          aj.*,
+          e.type as extraction_type,
+          e.start_date as extraction_start_date,
+          e.end_date as extraction_end_date,
+          e.items_extracted,
+          e.created_at as extraction_created_at
+        FROM maes.analysis_jobs aj
+        LEFT JOIN maes.extractions e ON aj.extraction_id = e.id
+        ${whereClause}
+        ORDER BY aj.created_at DESC
+        LIMIT $${paramCount} OFFSET $${paramCount + 1}
+      `;
+      
+      const countQuery = `
+        SELECT COUNT(*) as count
+        FROM maes.analysis_jobs aj
+        LEFT JOIN maes.extractions e ON aj.extraction_id = e.id
+        ${whereClause}
+      `;
+      
+      values.push(limit, offset);
+      
+      // Debug logging
+      logger.info('Analysis jobs query:', { query: analysisJobsQuery, values });
+      
+      const [analysisJobs, totalCountResult] = await Promise.all([
+        getRows(analysisJobsQuery, values),
+        count(countQuery, values.slice(0, -2))
+      ]);
+      
+      logger.info(`Analysis jobs found: ${analysisJobs.length}`);
+      const totalCount = totalCountResult || 0;
 
       res.json({
         success: true,
-        analysisJobs: rows,
+        analysisJobs,
         pagination: {
-          total: count,
+          total: totalCount,
           page,
-          pages: Math.ceil(count / limit),
+          pages: Math.ceil(totalCount / limit),
           limit
         }
       });
@@ -73,16 +119,17 @@ router.get('/',
 // Get single analysis job
 router.get('/:id', async (req, res) => {
   try {
-    const analysisJob = await AnalysisJob.findOne({
-      where: { id: req.params.id },
-      include: [{
-        model: Extraction,
-        where: { organizationId: req.organizationId },
-        attributes: ['id', 'type', 'start_date', 'end_date', 'organization_id']
-      }]
-    });
+    const analysisJob = await AnalysisJob.findById(req.params.id);
 
     if (!analysisJob) {
+      return res.status(404).json({
+        error: 'Analysis job not found'
+      });
+    }
+
+    // Get the associated extraction to verify organization access
+    const extraction = await Extraction.findById(analysisJob.extraction_id, req.organizationId);
+    if (!extraction) {
       return res.status(404).json({
         error: 'Analysis job not found'
       });
@@ -134,12 +181,7 @@ router.post('/',
       const { extractionId, type, priority = 'medium', parameters = {} } = req.body;
 
       // Verify extraction exists in database and belongs to organization
-      const extraction = await Extraction.findOne({
-        where: {
-          id: extractionId,
-          organizationId: req.organizationId
-        }
-      });
+      const extraction = await Extraction.findById(extractionId, req.organizationId);
 
       if (!extraction) {
         return res.status(404).json({
@@ -197,16 +239,17 @@ router.post('/',
 // Get analysis results
 router.get('/:id/results', async (req, res) => {
   try {
-    const analysisJob = await AnalysisJob.findOne({
-      where: { id: req.params.id },
-      include: [{
-        model: Extraction,
-        where: { organizationId: req.organizationId },
-        attributes: ['id', 'organizationId']
-      }]
-    });
+    const analysisJob = await AnalysisJob.findById(req.params.id);
 
     if (!analysisJob) {
+      return res.status(404).json({
+        error: 'Analysis job not found'
+      });
+    }
+
+    // Get the associated extraction to verify organization access
+    const extraction = await Extraction.findById(analysisJob.extraction_id, req.organizationId);
+    if (!extraction) {
       return res.status(404).json({
         error: 'Analysis job not found'
       });
@@ -222,7 +265,7 @@ router.get('/:id/results', async (req, res) => {
       success: true,
       results: analysisJob.results,
       alerts: analysisJob.alerts,
-      outputFiles: analysisJob.outputFiles
+      outputFiles: analysisJob.output_files
     });
 
   } catch (error) {
@@ -238,16 +281,17 @@ router.post('/:id/cancel',
   requirePermission('canRunAnalysis'),
   async (req, res) => {
     try {
-      const analysisJob = await AnalysisJob.findOne({
-        where: { id: req.params.id },
-        include: [{
-          model: Extraction,
-          where: { organizationId: req.organizationId },
-          attributes: ['id', 'organizationId']
-        }]
-      });
+      const analysisJob = await AnalysisJob.findById(req.params.id);
 
       if (!analysisJob) {
+        return res.status(404).json({
+          error: 'Analysis job not found'
+        });
+      }
+
+      // Get the associated extraction to verify organization access
+      const extraction = await Extraction.findById(analysisJob.extraction_id, req.organizationId);
+      if (!extraction) {
         return res.status(404).json({
           error: 'Analysis job not found'
         });
@@ -260,8 +304,7 @@ router.post('/:id/cancel',
       }
 
       // Update status
-      analysisJob.status = 'cancelled';
-      await analysisJob.save();
+      const updatedJob = await AnalysisJob.update(analysisJob.id, { status: 'cancelled' });
 
       // TODO: Cancel the actual job in the queue
 
@@ -270,13 +313,13 @@ router.post('/:id/cancel',
       if (io) {
         io.to(`org-${req.organizationId}`).emit('analysis.cancelled', {
           id: analysisJob.id,
-          status: analysisJob.status
+          status: 'cancelled'
         });
       }
 
       res.json({
         success: true,
-        analysisJob
+        analysisJob: updatedJob
       });
 
     } catch (error) {

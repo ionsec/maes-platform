@@ -40,6 +40,7 @@ import {
   VisibilityOff as VisibilityOffIcon,
   CheckCircle as CheckCircleIcon,
   Error as ErrorIcon,
+  Warning as WarningIcon,
   CloudSync as CloudSyncIcon
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
@@ -177,7 +178,8 @@ const Settings = () => {
       setConnectionTestResult({
         success: true,
         message: response.data.message,
-        details: response.data.details
+        details: response.data.details,
+        ualStatus: response.data.ualStatus
       });
       
       enqueueSnackbar('Connection test successful!', { variant: 'success' });
@@ -634,6 +636,41 @@ const Settings = () => {
                 onClose={() => setConnectionTestResult(null)}
               >
                 <Typography variant="subtitle2" gutterBottom>{connectionTestResult.message}</Typography>
+                
+                {connectionTestResult.ualStatus && (
+                  <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
+                    <Typography variant="caption" display="block" gutterBottom>
+                      <strong>Unified Audit Log Status:</strong>
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {connectionTestResult.ualStatus === 'enabled' && (
+                        <>
+                          <CheckCircleIcon sx={{ color: 'success.main', fontSize: 16 }} />
+                          <Typography variant="caption" color="success.main">
+                            Enabled - You can extract unified audit logs
+                          </Typography>
+                        </>
+                      )}
+                      {connectionTestResult.ualStatus === 'disabled' && (
+                        <>
+                          <WarningIcon sx={{ color: 'warning.main', fontSize: 16 }} />
+                          <Typography variant="caption" color="warning.main">
+                            Disabled - Enable auditing in Microsoft 365 compliance center to access audit logs
+                          </Typography>
+                        </>
+                      )}
+                      {connectionTestResult.ualStatus === 'error' && (
+                        <>
+                          <ErrorIcon sx={{ color: 'error.main', fontSize: 16 }} />
+                          <Typography variant="caption" color="error.main">
+                            Unable to verify - Check application permissions
+                          </Typography>
+                        </>
+                      )}
+                    </Box>
+                  </Box>
+                )}
+                
                 {connectionTestResult.details?.recommendations && (
                   <Box sx={{ mt: 1 }}>
                     <Typography variant="caption" display="block" gutterBottom>Recommendations:</Typography>

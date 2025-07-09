@@ -31,7 +31,8 @@ import {
   Switch,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  Tooltip
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -40,7 +41,10 @@ import {
   Stop as StopIcon,
   Download as DownloadIcon,
   Visibility as ViewIcon,
-  ExpandMore as ExpandMoreIcon
+  ExpandMore as ExpandMoreIcon,
+  Warning as WarningIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon
 } from '@mui/icons-material';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -77,6 +81,7 @@ const Extractions = () => {
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedExtraction, setSelectedExtraction] = useState(null);
+  const [progressData, setProgressData] = useState({});
   const { control, handleSubmit, reset, watch } = useForm({
     defaultValues: {
       type: 'unified_audit_log',
@@ -98,10 +103,39 @@ const Extractions = () => {
     try {
       const response = await axios.get('/api/extractions');
       setExtractions(response.data.extractions);
+      
+      // Fetch progress for running extractions
+      const runningExtractions = response.data.extractions.filter(e => e.status === 'running');
+      await fetchProgressForExtractions(runningExtractions);
     } catch (error) {
       enqueueSnackbar('Failed to fetch extractions', { variant: 'error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProgressForExtractions = async (runningExtractions) => {
+    try {
+      const progressPromises = runningExtractions.map(async (extraction) => {
+        try {
+          const response = await axios.get(`/api/extractions/${extraction.id}/progress`);
+          return { id: extraction.id, progress: response.data.progress };
+        } catch (error) {
+          return { id: extraction.id, progress: null };
+        }
+      });
+      
+      const progressResults = await Promise.all(progressPromises);
+      const newProgressData = {};
+      progressResults.forEach(result => {
+        if (result.progress) {
+          newProgressData[result.id] = result.progress;
+        }
+      });
+      
+      setProgressData(prev => ({ ...prev, ...newProgressData }));
+    } catch (error) {
+      console.error('Failed to fetch progress data:', error);
     }
   };
 
@@ -163,6 +197,37 @@ const Extractions = () => {
     return `${hours}h ${minutes}m ${secs}s`;
   };
 
+  const renderUalStatus = (ualStatus) => {
+    if (!ualStatus) return null;
+    
+    const statusConfig = {
+      enabled: { 
+        icon: <CheckCircleIcon sx={{ color: 'success.main', fontSize: 16 }} />,
+        tooltip: 'Unified Audit Log is enabled',
+        color: 'success'
+      },
+      disabled: { 
+        icon: <WarningIcon sx={{ color: 'warning.main', fontSize: 16 }} />,
+        tooltip: 'Unified Audit Log is disabled - extraction may fail',
+        color: 'warning'
+      },
+      error: { 
+        icon: <ErrorIcon sx={{ color: 'error.main', fontSize: 16 }} />,
+        tooltip: 'Unable to verify Unified Audit Log status',
+        color: 'error'
+      }
+    };
+    
+    const config = statusConfig[ualStatus];
+    if (!config) return null;
+    
+    return (
+      <Tooltip title={config.tooltip}>
+        {config.icon}
+      </Tooltip>
+    );
+  };
+
   return (
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 3 }}>
@@ -183,6 +248,25 @@ const Extractions = () => {
         </Box>
 
         {loading && <LinearProgress sx={{ mb: 2 }} />}
+
+        {/* UAL Status Alerts */}
+        {extractions.some(e => progressData[e.id]?.ualStatus === 'disabled' && ['unified_audit_log', 'full_extraction'].includes(e.type)) && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              <strong>Unified Audit Log Disabled:</strong> Some extractions require Unified Audit Log to be enabled in your Microsoft 365 organization. 
+              Please enable auditing in the Microsoft 365 compliance center to access audit logs.
+            </Typography>
+          </Alert>
+        )}
+        
+        {extractions.some(e => progressData[e.id]?.ualStatus === 'error' && ['unified_audit_log', 'full_extraction'].includes(e.type)) && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            <Typography variant="body2">
+              <strong>Unable to Verify Audit Status:</strong> Could not check if Unified Audit Log is enabled. 
+              Please ensure your application has the necessary permissions to access audit configuration.
+            </Typography>
+          </Alert>
+        )}
 
         {/* Statistics Cards */}
         <Grid container spacing={3} sx={{ mb: 3 }}>
@@ -278,14 +362,34 @@ const Extractions = () => {
                   </TableCell>
                   <TableCell>
                     <Box sx={{ width: 100 }}>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={extraction.progress || 0}
-                        sx={{ mb: 0.5 }}
-                      />
-                      <Typography variant="caption">
-                        {extraction.progress || 0}%
-                      </Typography>
+                      {(() => {
+                        const progress = progressData[extraction.id] ? progressData[extraction.id].progress : (extraction.progress || 0);
+                        const currentMessage = progressData[extraction.id] ? progressData[extraction.id].currentMessage : '';
+                        const ualStatus = progressData[extraction.id] ? progressData[extraction.id].ualStatus : null;
+                        
+                        return (
+                          <Box>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                              <LinearProgress 
+                                variant="determinate" 
+                                value={progress}
+                                sx={{ flex: 1 }}
+                              />
+                              {ualStatus && ['unified_audit_log', 'full_extraction'].includes(extraction.type) && (
+                                renderUalStatus(ualStatus)
+                              )}
+                            </Box>
+                            <Typography variant="caption">
+                              {progress}%
+                            </Typography>
+                            {currentMessage && extraction.status === 'running' && (
+                              <Typography variant="caption" display="block" color="text.secondary" sx={{ fontSize: '0.7rem', mt: 0.5 }}>
+                                {currentMessage.length > 30 ? currentMessage.substring(0, 30) + '...' : currentMessage}
+                              </Typography>
+                            )}
+                          </Box>
+                        );
+                      })()}
                     </Box>
                   </TableCell>
                   <TableCell>
@@ -357,6 +461,11 @@ const Extractions = () => {
                                 <Typography variant="caption" color="text.secondary">
                                   {type.description}
                                 </Typography>
+                                {['unified_audit_log', 'full_extraction'].includes(type.value) && (
+                                  <Typography variant="caption" color="warning.main" display="block">
+                                    ⚠️ Requires Unified Audit Log to be enabled
+                                  </Typography>
+                                )}
                               </Box>
                             </MenuItem>
                           ))}

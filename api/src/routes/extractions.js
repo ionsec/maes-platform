@@ -3,7 +3,7 @@ const { body, query, validationResult } = require('express-validator');
 const { Extraction } = require('../services/models');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
-const { createExtractionJob } = require('../services/jobService');
+const { createExtractionJob, extractionQueue } = require('../services/jobService');
 const { logger } = require('../utils/logger');
 
 const router = express.Router();
@@ -218,6 +218,66 @@ router.post('/:id/cancel',
     }
   }
 );
+
+// Get real-time extraction progress
+router.get('/:id/progress', async (req, res) => {
+  try {
+    const extraction = await Extraction.findById(req.params.id, req.organizationId);
+
+    if (!extraction) {
+      return res.status(404).json({
+        error: 'Extraction not found'
+      });
+    }
+
+    let progressData = {
+      extractionId: extraction.id,
+      status: extraction.status,
+      progress: extraction.progress || 0,
+      currentMessage: '',
+      lastUpdated: extraction.updated_at,
+      ualStatus: null
+    };
+
+    // If extraction is running, try to get real-time progress from job queue
+    if (extraction.status === 'running') {
+      try {
+        const activeJobs = await extractionQueue.getActive();
+        const extractionJob = activeJobs.find(job => job.data.extractionId === extraction.id);
+        
+        if (extractionJob) {
+          progressData.progress = extractionJob.progress();
+          
+          // Get progress update from job data if available
+          if (extractionJob.data.progressUpdate) {
+            const update = extractionJob.data.progressUpdate;
+            progressData.progress = update.progress;
+            progressData.currentMessage = update.lastMessage || '';
+            progressData.lastUpdated = update.updatedAt;
+          }
+          
+          // Get UAL status if available
+          if (extractionJob.data.ualStatus) {
+            progressData.ualStatus = extractionJob.data.ualStatus;
+          }
+        }
+      } catch (jobError) {
+        logger.warn(`Could not get job progress for extraction ${extraction.id}:`, jobError);
+      }
+    }
+
+    res.json({
+      success: true,
+      progress: progressData
+    });
+
+  } catch (error) {
+    logger.error('Get extraction progress error:', error);
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
 
 // Get extraction logs
 router.get('/:id/logs', async (req, res) => {

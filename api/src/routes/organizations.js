@@ -205,17 +205,36 @@ router.post('/test-connection',
       // 2. Or poll a status endpoint
       // 3. Or store the result in the database and return it
       
-      res.json({
-        success: true,
-        message: 'Connection test queued successfully',
-        jobId: job.id,
-        details: {
-          applicationId,
-          fqdn,
-          authMethod: certificateThumbprint ? 'certificate' : 'clientSecret',
-          note: 'Connection test has been queued for processing by the extractor service'
-        }
-      });
+      // For demo purposes, we'll wait for the job to complete and return results
+      // In production, this should be handled via WebSocket or polling
+      try {
+        const jobResult = await job.finished();
+        res.json({
+          success: true,
+          message: jobResult.connectionStatus === 'success' ? 'Connection test successful' : 'Connection test failed',
+          jobId: job.id,
+          ualStatus: jobResult.ualStatus,
+          details: {
+            applicationId,
+            fqdn,
+            authMethod: certificateThumbprint ? 'certificate' : 'clientSecret',
+            connectionStatus: jobResult.connectionStatus,
+            testResult: jobResult.result
+          }
+        });
+      } catch (jobError) {
+        res.status(500).json({
+          success: false,
+          message: 'Connection test failed',
+          jobId: job.id,
+          details: {
+            applicationId,
+            fqdn,
+            authMethod: certificateThumbprint ? 'certificate' : 'clientSecret',
+            error: jobError.message
+          }
+        });
+      }
 
     } catch (error) {
       logger.error('Test connection error:', error);

@@ -330,18 +330,27 @@ const AnalysisJobModel = {
   create: async (jobData) => {
     const query = `
       INSERT INTO maes.analysis_jobs (
-        extraction_id, type, status, priority, progress, parameters
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        extraction_id, organization_id, type, status, priority, progress, parameters
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING *
     `;
-    return await insert(query, [
+    const result = await insert(query, [
       jobData.extractionId,
+      jobData.organizationId,
       jobData.type,
       jobData.status || 'pending',
       jobData.priority || 'medium',
       jobData.progress || 0,
       JSON.stringify(jobData.parameters || {})
     ]);
+    
+    // Add the original data back to the result for job creation
+    if (result) {
+      result.extractionId = jobData.extractionId;
+      result.organizationId = jobData.organizationId;
+    }
+    
+    return result;
   },
 
   update: async (id, updates) => {
