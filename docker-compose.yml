@@ -13,8 +13,15 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
     networks:
       - maes-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maes_user -d maes_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -26,6 +33,12 @@ services:
       - redis_data:/data
     networks:
       - maes-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
@@ -40,49 +53,62 @@ services:
       - es_data:/usr/share/elasticsearch/data
     networks:
       - maes-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   api:
     build: ./api
+    image: maes-api:latest
     container_name: maes-api
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
       ELASTICSEARCH_URL: http://elasticsearch:9200
       JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-character-secret-key-here!}
       PORT: 3000
     ports:
       - "3000:3000"
-    volumes:
-      - ./api:/app
-      - /app/node_modules
     depends_on:
-      - postgres
-      - redis
-      - elasticsearch
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     networks:
       - maes-network
-    command: npm run dev
+    restart: unless-stopped
+    command: ${API_COMMAND:-node src/index.js}
 
   extractor:
     build: ./services/extractor
+    image: maes-extractor:latest
     container_name: maes-extractor
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
+      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
     volumes:
-      - ./services/extractor:/app
-      - /Users/ruji/Microsoft-Extractor-Suite:/extractor-suite:ro
       - extractor_output:/output
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - maes-network
+    restart: unless-stopped
 
   analyzer:
     build: ./services/analyzer
+    image: maes-analyzer:latest
     container_name: maes-analyzer
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
@@ -90,19 +116,22 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
     volumes:
-      - ./services/analyzer:/app
-      - /Users/ruji/Microsoft-Analyzer-Suite:/analyzer-suite:ro
       - extractor_output:/input:ro
       - analyzer_output:/output
     depends_on:
-      - redis
-      - postgres
-      - elasticsearch
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
     networks:
       - maes-network
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
+    image: maes-frontend:latest
     container_name: maes-frontend
     environment:
       VITE_API_URL: ${API_URL:-http://localhost:3000}
@@ -112,6 +141,7 @@ services:
       - api
     networks:
       - maes-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

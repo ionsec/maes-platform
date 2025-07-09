@@ -22,7 +22,7 @@
 
 3. **Build and start the services**
    ```bash
-   docker compose -f docker-compose.prod.yml up -d --build
+   docker compose up -d --build
    ```
 
 4. **Apply database migrations (if needed)**
@@ -37,10 +37,15 @@
 
 ## Development Setup
 
-For local development with hot-reloading:
+For local development with hot-reloading, add this to your `.env` file:
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+API_COMMAND=npm run dev
+```
+
+Then restart the API container:
+```bash
+docker compose restart api
 ```
 
 ## Production Deployment
@@ -49,7 +54,7 @@ docker compose -f docker-compose.dev.yml up -d
 
 1. Build and tag images:
    ```bash
-   docker compose -f docker-compose.prod.yml build
+   docker compose build
    docker tag maes-api:latest your-registry/maes-api:latest
    docker tag maes-frontend:latest your-registry/maes-frontend:latest
    docker tag maes-extractor:latest your-registry/maes-extractor:latest
@@ -64,7 +69,7 @@ docker compose -f docker-compose.dev.yml up -d
    docker push your-registry/maes-analyzer:latest
    ```
 
-3. On production server, update docker-compose.prod.yml to use registry images.
+3. On production server, update docker-compose.yml to use registry images instead of building locally.
 
 ### Environment Variables
 
@@ -81,7 +86,7 @@ Required environment variables:
 All services include health checks. Monitor service health:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
+docker compose ps
 ```
 
 ### Backup and Restore
