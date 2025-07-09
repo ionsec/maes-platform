@@ -20,6 +20,7 @@ const createExtractionJob = async (extraction) => {
         startDate: extraction.start_date,
         endDate: extraction.end_date,
         tenantId: organization.tenant_id,
+        organization: organization.fqdn || organization.tenant_id, // Use FQDN if available, fallback to tenant_id
         ...extraction.parameters
       },
       credentials: organization.credentials

@@ -27,7 +27,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  CircularProgress,
+  Chip
 } from '@mui/material';
 import {
   Save as SaveIcon,
@@ -35,7 +37,10 @@ import {
   Delete as DeleteIcon,
   Add as AddIcon,
   Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon
+  VisibilityOff as VisibilityOffIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon,
+  CloudSync as CloudSyncIcon
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
@@ -49,9 +54,16 @@ const Settings = () => {
   const [showCredentials, setShowCredentials] = useState({});
   const [credentialsLoading, setCredentialsLoading] = useState(false);
   const [actualCredentials, setActualCredentials] = useState({});
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [connectionTestResult, setConnectionTestResult] = useState(null);
   const { control, handleSubmit, reset, setValue } = useForm();
-  const { control: credentialsControl, handleSubmit: handleCredentialsSubmit, reset: resetCredentials } = useForm();
+  const { control: credentialsControl, handleSubmit: handleCredentialsSubmit, reset: resetCredentials, watch: watchCredentials } = useForm();
   const { enqueueSnackbar } = useSnackbar();
+  
+  const watchedApplicationId = watchCredentials('applicationId');
+  const watchedFqdn = watchCredentials('fqdn');
+  const watchedClientSecret = watchCredentials('clientSecret');
+  const watchedCertificateThumbprint = watchCredentials('certificateThumbprint');
 
   const fetchOrganization = async () => {
     setLoading(true);
@@ -62,6 +74,7 @@ const Settings = () => {
       // Set form values
       setValue('organizationName', response.data.organization.name);
       setValue('tenantId', response.data.organization.tenantId);
+      setValue('fqdn', response.data.organization.fqdn || '');
       setValue('extractionScheduleEnabled', response.data.organization.settings?.extractionSchedule?.enabled || false);
       setValue('extractionInterval', response.data.organization.settings?.extractionSchedule?.interval || 'daily');
       setValue('extractionTime', response.data.organization.settings?.extractionSchedule?.time || '02:00');
@@ -87,6 +100,7 @@ const Settings = () => {
       const payload = {
         name: data.organizationName,
         tenantId: data.tenantId,
+        fqdn: data.fqdn,
         settings: {
           extractionSchedule: {
             enabled: data.extractionScheduleEnabled,
@@ -146,6 +160,41 @@ const Settings = () => {
     return '••••••••••••••••';
   };
 
+  const testConnection = async () => {
+    setTestingConnection(true);
+    setConnectionTestResult(null);
+    
+    try {
+      const payload = {
+        applicationId: watchedApplicationId,
+        fqdn: watchedFqdn,
+        clientSecret: watchedClientSecret,
+        certificateThumbprint: watchedCertificateThumbprint
+      };
+      
+      const response = await axios.post('/api/organizations/test-connection', payload);
+      
+      setConnectionTestResult({
+        success: true,
+        message: response.data.message,
+        details: response.data.details
+      });
+      
+      enqueueSnackbar('Connection test successful!', { variant: 'success' });
+    } catch (error) {
+      const errorData = error.response?.data;
+      setConnectionTestResult({
+        success: false,
+        message: errorData?.error || 'Connection test failed',
+        details: errorData?.details || {}
+      });
+      
+      enqueueSnackbar(errorData?.error || 'Connection test failed', { variant: 'error' });
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   const onCredentialsSubmit = async (data) => {
     setCredentialsLoading(true);
     try {
@@ -158,10 +207,12 @@ const Settings = () => {
 
       await axios.put('/api/organizations/current/credentials', credentialsPayload);
 
-      // Update tenant ID if it was changed
-      if (data.credentialsTenantId && data.credentialsTenantId !== organization?.tenantId) {
+      // Update tenant ID and FQDN if they were changed
+      if ((data.credentialsTenantId && data.credentialsTenantId !== organization?.tenantId) || 
+          (data.fqdn && data.fqdn !== organization?.fqdn)) {
         const orgPayload = {
-          tenantId: data.credentialsTenantId
+          tenantId: data.credentialsTenantId,
+          fqdn: data.fqdn
         };
         await axios.put('/api/organizations/current', orgPayload);
       }
@@ -238,6 +289,29 @@ const Settings = () => {
                             label="Tenant ID"
                             placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                             helperText={fieldState.error?.message || "Microsoft 365 tenant identifier"}
+                            error={fieldState.invalid}
+                          />
+                        )}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <Controller
+                        name="fqdn"
+                        control={control}
+                        rules={{ 
+                          required: 'FQDN is required',
+                          pattern: {
+                            value: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])*$/,
+                            message: 'Invalid FQDN format (e.g., contoso.onmicrosoft.com)'
+                          }
+                        }}
+                        render={({ field, fieldState }) => (
+                          <TextField
+                            {...field}
+                            fullWidth
+                            label="Organization FQDN"
+                            placeholder="contoso.onmicrosoft.com"
+                            helperText={fieldState.error?.message || "Your Microsoft 365 organization domain (used for PowerShell connections)"}
                             error={fieldState.invalid}
                           />
                         )}
@@ -449,11 +523,12 @@ const Settings = () => {
                   startIcon={<AddIcon />}
                   onClick={() => {
                     setCredentialsDialogOpen(true);
-                    // Pre-populate the tenant ID field
+                    // Pre-populate the tenant ID and FQDN fields
                     setTimeout(() => {
-                      if (organization?.tenantId) {
+                      if (organization) {
                         resetCredentials({
-                          credentialsTenantId: organization.tenantId,
+                          credentialsTenantId: organization.tenantId || '',
+                          fqdn: organization.fqdn || '',
                           applicationId: '',
                           clientSecret: '',
                           certificateThumbprint: ''
@@ -546,8 +621,31 @@ const Settings = () => {
           <DialogContent>
             <Alert severity="info" sx={{ mb: 3 }}>
               To extract data from Microsoft 365 and Azure, you need to configure application credentials.
-              These credentials are stored encrypted and used only for data extraction.
+              These credentials are stored encrypted and used only for data extraction. Follow the 
+              <a href="https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps" target="_blank" rel="noopener" style={{ marginLeft: '4px' }}>
+                Microsoft documentation
+              </a> to set up your Azure application.
             </Alert>
+            
+            {connectionTestResult && (
+              <Alert 
+                severity={connectionTestResult.success ? 'success' : 'error'} 
+                sx={{ mb: 3 }}
+                onClose={() => setConnectionTestResult(null)}
+              >
+                <Typography variant="subtitle2" gutterBottom>{connectionTestResult.message}</Typography>
+                {connectionTestResult.details?.recommendations && (
+                  <Box sx={{ mt: 1 }}>
+                    <Typography variant="caption" display="block" gutterBottom>Recommendations:</Typography>
+                    <ul style={{ margin: 0, paddingLeft: 20 }}>
+                      {connectionTestResult.details.recommendations.map((rec, idx) => (
+                        <li key={idx}><Typography variant="caption">{rec}</Typography></li>
+                      ))}
+                    </ul>
+                  </Box>
+                )}
+              </Alert>
+            )}
             <Grid container spacing={3}>
               <Grid item xs={12}>
                 <Controller
@@ -605,7 +703,7 @@ const Settings = () => {
                   )}
                 />
               </Grid>
-              <Grid item xs={12}>
+              <Grid item xs={12} md={6}>
                 <Controller
                   name="credentialsTenantId"
                   control={credentialsControl}
@@ -628,22 +726,68 @@ const Settings = () => {
                   )}
                 />
               </Grid>
+              <Grid item xs={12} md={6}>
+                <Controller
+                  name="fqdn"
+                  control={credentialsControl}
+                  rules={{ 
+                    required: 'FQDN is required',
+                    pattern: {
+                      value: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])*$/,
+                      message: 'Invalid FQDN format (e.g., contoso.onmicrosoft.com)'
+                    }
+                  }}
+                  render={({ field, fieldState }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Organization FQDN"
+                      placeholder="contoso.onmicrosoft.com"
+                      helperText={fieldState.error?.message || "Your M365 domain (required for PowerShell)"}
+                      error={fieldState.invalid}
+                    />
+                  )}
+                />
+              </Grid>
+              <Grid item xs={12}>
+                <Alert severity="warning">
+                  <Typography variant="body2">
+                    <strong>Important:</strong> Ensure your Azure application has the following:
+                  </Typography>
+                  <ul style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
+                    <li>Exchange.ManageAsApp permission in Office 365 Exchange Online API</li>
+                    <li>Admin consent granted for the permissions</li>
+                    <li>The app assigned to users in Enterprise Applications</li>
+                  </ul>
+                </Alert>
+              </Grid>
             </Grid>
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => {
-              setCredentialsDialogOpen(false);
-              resetCredentials();
-            }}>
-              Cancel
-            </Button>
-            <Button 
-              type="submit"
-              variant="contained"
-              disabled={credentialsLoading}
+          <DialogActions sx={{ justifyContent: 'space-between' }}>
+            <Button
+              onClick={testConnection}
+              startIcon={testingConnection ? <CircularProgress size={16} /> : <CloudSyncIcon />}
+              disabled={testingConnection || !watchedApplicationId || !watchedFqdn || (!watchedClientSecret && !watchedCertificateThumbprint)}
             >
-              {credentialsLoading ? 'Saving...' : 'Save Credentials'}
+              {testingConnection ? 'Testing...' : 'Test Connection'}
             </Button>
+            <Box>
+              <Button onClick={() => {
+                setCredentialsDialogOpen(false);
+                resetCredentials();
+                setConnectionTestResult(null);
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit"
+                variant="contained"
+                disabled={credentialsLoading}
+                sx={{ ml: 1 }}
+              >
+                {credentialsLoading ? 'Saving...' : 'Save Credentials'}
+              </Button>
+            </Box>
           </DialogActions>
         </form>
       </Dialog>

@@ -48,20 +48,27 @@ extractionQueue.process('extract-data', async (job) => {
 
 // Build PowerShell command based on extraction type
 function buildPowerShellCommand(type, parameters, credentials) {
-  const baseCommand = `Import-Module '${EXTRACTOR_SUITE_PATH}/Microsoft-Extractor-Suite.psd1';`;
+  const baseCommand = `Import-Module Microsoft-Extractor-Suite -Force;`;
   
   let command = baseCommand;
   
-  // Add unattended authentication using native Exchange Online commands
-  if (credentials.certificateThumbprint) {
-    // Certificate-based authentication
-    command += `Connect-ExchangeOnline -AppId '${credentials.applicationId}' -CertificateThumbprint '${credentials.certificateThumbprint}' -Organization '${parameters.tenantId}';`;
+  // Add unattended authentication using Connect-M365 command
+  if (credentials.certificateFilePath || credentials.applicationId) {
+    // Certificate-based authentication with PFX file (use default container path)
+    const certPath = credentials.certificateFilePath || '/output/app.pfx';
+    const securePwd = `ConvertTo-SecureString -String 'Password123' -AsPlainText -Force`;
+    command += `$CertPwd = ${securePwd}; `;
+    command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateFilePath '${certPath}' -CertificatePassword $CertPwd -Organization '${parameters.organization || parameters.tenantId}';`;
+  } else if (credentials.certificateThumbprint) {
+    // Certificate-based authentication with thumbprint
+    command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateThumbprint '${credentials.certificateThumbprint}' -Organization '${parameters.organization || parameters.tenantId}';`;
   } else if (credentials.clientSecret) {
-    // Client secret authentication - create secure string
+    // Client secret authentication
     const secureSecret = `ConvertTo-SecureString -String '${credentials.clientSecret}' -AsPlainText -Force`;
-    command += `$SecureSecret = ${secureSecret}; Connect-ExchangeOnline -AppId '${credentials.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${credentials.applicationId}', $SecureSecret)) -Organization '${parameters.tenantId}';`;
+    command += `$SecureSecret = ${secureSecret}; `;
+    command += `Connect-M365 -AppId '${credentials.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${credentials.applicationId}', $SecureSecret)) -Organization '${parameters.organization || parameters.tenantId}';`;
   } else {
-    throw new Error('Missing authentication credentials. Either certificateThumbprint or clientSecret is required for unattended extraction.');
+    throw new Error('Missing authentication credentials. Either certificateFilePath, certificateThumbprint or clientSecret is required for unattended extraction.');
   }
   
   // Add extraction command based on type
@@ -106,11 +113,35 @@ async function executePowerShell(command, job) {
     ps.stderr.on('data', (data) => {
       stderr += data.toString();
       logger.error(`PowerShell error: ${data.toString()}`);
+      
+      // Check for common errors
+      if (stderr.includes('AADSTS700016') || stderr.includes('Application with identifier')) {
+        logger.error('Error: Invalid Azure AD Application ID or permissions. Please verify the App ID and ensure proper permissions are granted.');
+      }
+      
+      if (stderr.includes('Organization') && stderr.includes('not found')) {
+        logger.error('Error: Organization not found. Please use the FQDN (e.g., contoso.onmicrosoft.com) instead of Tenant ID for the -Organization parameter.');
+      }
+      
+      if (stderr.includes('certificate') && (stderr.includes('not found') || stderr.includes('invalid'))) {
+        logger.error('Error: Certificate authentication failed. Please verify the certificate file path, thumbprint, and password.');
+      }
     });
     
     ps.on('close', (code) => {
       if (code !== 0) {
-        reject(new Error(`PowerShell exited with code ${code}: ${stderr}`));
+        let errorMessage = `PowerShell exited with code ${code}: ${stderr}`;
+        
+        // Provide more specific error messages
+        if (stderr.includes('Organization') && stderr.includes('not found')) {
+          errorMessage = 'Organization not found. Please ensure you are using the FQDN (e.g., yourcompany.onmicrosoft.com) and not the Tenant ID (GUID) for the Organization parameter.';
+        } else if (stderr.includes('AADSTS700016')) {
+          errorMessage = 'Azure AD authentication failed. Please verify your App ID and ensure the application has the required permissions (Exchange.ManageAsApp).';
+        } else if (stderr.includes('certificate')) {
+          errorMessage = 'Certificate authentication failed. Please check the certificate file path, password, and ensure it is properly configured in Azure AD.';
+        }
+        
+        reject(new Error(errorMessage));
       } else {
         resolve({ stdout, stderr, statistics: parseStatistics(stdout) });
       }

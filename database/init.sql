@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     tenant_id VARCHAR(255) UNIQUE NOT NULL,
+    fqdn VARCHAR(255),
     subscription_id VARCHAR(255),
     organization_type VARCHAR(50) DEFAULT 'standalone' CHECK (organization_type IN ('mssp', 'client', 'standalone')),
     subscription_status VARCHAR(50) DEFAULT 'active',
@@ -184,6 +185,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 
 -- Create indexes
 CREATE INDEX idx_organizations_tenant_id ON organizations(tenant_id);
+CREATE INDEX idx_organizations_fqdn ON organizations(fqdn);
 CREATE INDEX idx_organizations_is_active ON organizations(is_active);
 
 CREATE INDEX idx_users_organization_id ON users(organization_id);
