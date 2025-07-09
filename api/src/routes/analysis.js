@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
-const { AnalysisJob, Extraction } = require('../models');
+const { AnalysisJob, Extraction } = require('../services/models');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { createAnalysisJob } = require('../services/jobService');

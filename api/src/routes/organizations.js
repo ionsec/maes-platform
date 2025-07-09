@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { Organization, User } = require('../models');
+const { Organization, User } = require('../services/models');
 const { authenticateToken, requireRole, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');

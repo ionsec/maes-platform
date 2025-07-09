@@ -110,7 +110,7 @@ router.post('/logs',
       }
 
       // Create a real extraction record in the database for the uploaded data
-      const { Extraction } = require('../models');
+      const { Extraction } = require('../services/models');
       
       const extraction = await Extraction.create({
         type: dataType,
@@ -246,7 +246,7 @@ router.get('/data/:extractionId',
       
       if (!extraction) {
         // Check database for the extraction
-        const { Extraction } = require('../models');
+        const { Extraction } = require('../services/models');
         const dbExtraction = await Extraction.findByPk(extractionId);
         
         if (!dbExtraction || !dbExtraction.parameters?.isUpload) {
