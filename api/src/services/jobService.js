@@ -48,6 +48,40 @@ const createExtractionJob = async (extraction) => {
   }
 };
 
+// Create test connection job
+const createTestConnectionJob = async (testData) => {
+  try {
+    const jobData = {
+      testId: `test-${Date.now()}`,
+      type: 'test-connection',
+      organizationId: testData.organizationId,
+      userId: testData.userId,
+      parameters: {
+        applicationId: testData.applicationId,
+        fqdn: testData.fqdn,
+        certificateThumbprint: testData.certificateThumbprint,
+        clientSecret: testData.clientSecret
+      }
+    };
+
+    const jobOptions = {
+      priority: 15, // High priority for testing
+      attempts: 1, // Don't retry connection tests
+      removeOnComplete: 5,
+      removeOnFail: 5
+    };
+
+    const job = await extractionQueue.add('test-connection', jobData, jobOptions);
+    
+    logger.info(`Connection test job queued with job ID ${job.id}`);
+    
+    return job;
+  } catch (error) {
+    logger.error('Failed to create test connection job:', error);
+    throw error;
+  }
+};
+
 // Create analysis job
 const createAnalysisJob = async (analysisJob) => {
   try {
@@ -169,6 +203,7 @@ setInterval(cleanupJobs, 6 * 60 * 60 * 1000); // Every 6 hours
 
 module.exports = {
   createExtractionJob,
+  createTestConnectionJob,
   createAnalysisJob,
   getQueueStats,
   cancelJob,

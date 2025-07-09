@@ -195,123 +195,42 @@ router.post('/test-connection',
         });
       }
 
-      // Use PowerShell to test the connection
-      const { spawn } = require('child_process');
+      // Create a test job for the extractor service to handle
+      const { createTestConnectionJob } = require('../services/jobService');
       
-      let testCommand = `Import-Module Microsoft-Extractor-Suite -Force; `;
-      
-      if (certificateThumbprint) {
-        // Test with certificate thumbprint
-        testCommand += `try { Connect-M365 -AppId '${applicationId}' -CertificateThumbprint '${certificateThumbprint}' -Organization '${fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
-      } else {
-        // Test with client secret
-        testCommand += `$SecureSecret = ConvertTo-SecureString -String '${clientSecret}' -AsPlainText -Force; `;
-        testCommand += `try { Connect-M365 -AppId '${applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${applicationId}', $SecureSecret)) -Organization '${fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
-      }
+      const testData = {
+        applicationId,
+        fqdn,
+        certificateThumbprint,
+        clientSecret,
+        organizationId: req.organizationId,
+        userId: req.user.id
+      };
 
-      const ps = spawn('pwsh', ['-Command', testCommand]);
+      const job = await createTestConnectionJob(testData);
       
-      let output = '';
-      let errorOutput = '';
+      // For now, return success - in a real implementation you'd want to:
+      // 1. Create a WebSocket connection to get real-time results
+      // 2. Or poll a status endpoint
+      // 3. Or store the result in the database and return it
       
-      ps.stdout.on('data', (data) => {
-        output += data.toString();
-      });
-      
-      ps.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-      
-      ps.on('close', (code) => {
-        logger.info(`Connection test output: ${output}`);
-        if (errorOutput) logger.error(`Connection test error: ${errorOutput}`);
-        
-        if (output.includes('CONNECTION_SUCCESS')) {
-          res.json({
-            success: true,
-            message: 'Connection test successful',
-            details: {
-              applicationId,
-              fqdn,
-              authMethod: certificateThumbprint ? 'certificate' : 'clientSecret'
-            }
-          });
-        } else if (output.includes('CONNECTION_ERROR:')) {
-          const errorMatch = output.match(/CONNECTION_ERROR: (.+)/);
-          const errorMessage = errorMatch ? errorMatch[1].trim() : 'Unknown error';
-          
-          // Parse specific error types
-          let userMessage = 'Connection test failed';
-          let recommendations = [];
-          
-          if (errorMessage.includes('AADSTS700016') || errorMessage.includes('Application with identifier')) {
-            userMessage = 'Invalid Application ID or insufficient permissions';
-            recommendations = [
-              'Verify the Application ID is correct',
-              'Ensure the app has Exchange.ManageAsApp permission',
-              'Check that admin consent has been granted'
-            ];
-          } else if (errorMessage.includes('Organization') && errorMessage.includes('not found')) {
-            userMessage = 'Organization not found';
-            recommendations = [
-              'Verify the FQDN is correct (e.g., contoso.onmicrosoft.com)',
-              'Do not use Tenant ID - use the domain name instead'
-            ];
-          } else if (errorMessage.includes('certificate')) {
-            userMessage = 'Certificate authentication failed';
-            recommendations = [
-              'Verify the certificate thumbprint is correct',
-              'Ensure the certificate is uploaded to the Azure app',
-              'Check certificate expiration date'
-            ];
-          } else if (errorMessage.includes('client_credentials')) {
-            userMessage = 'Client secret authentication failed';
-            recommendations = [
-              'Verify the client secret is correct',
-              'Check if the client secret has expired',
-              'Ensure the app has proper API permissions'
-            ];
-          }
-          
-          res.status(400).json({
-            error: userMessage,
-            details: {
-              errorMessage,
-              recommendations
-            }
-          });
-        } else {
-          res.status(500).json({
-            error: 'Connection test failed',
-            details: {
-              output,
-              errorOutput
-            }
-          });
+      res.json({
+        success: true,
+        message: 'Connection test queued successfully',
+        jobId: job.id,
+        details: {
+          applicationId,
+          fqdn,
+          authMethod: certificateThumbprint ? 'certificate' : 'clientSecret',
+          note: 'Connection test has been queued for processing by the extractor service'
         }
       });
-      
-      ps.on('error', (error) => {
-        logger.error('PowerShell spawn error:', error);
-        res.status(500).json({
-          error: 'Failed to run connection test',
-          details: error.message
-        });
-      });
-      
-      // Set a timeout for the test
-      setTimeout(() => {
-        ps.kill();
-        res.status(504).json({
-          error: 'Connection test timed out',
-          details: 'The test took too long to complete'
-        });
-      }, 30000); // 30 second timeout
 
     } catch (error) {
       logger.error('Test connection error:', error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: 'Failed to queue connection test',
+        details: error.message
       });
     }
   }

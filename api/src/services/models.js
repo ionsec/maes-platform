@@ -121,19 +121,76 @@ const OrganizationModel = {
   create: async (orgData) => {
     const query = `
       INSERT INTO maes.organizations (
-        name, tenant_id, subscription_id, settings, credentials, is_active, metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        name, tenant_id, fqdn, subscription_id, settings, credentials, is_active, metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `;
     return await insert(query, [
       orgData.name,
       orgData.tenantId,
+      orgData.fqdn,
       orgData.subscriptionId,
       JSON.stringify(orgData.settings || {}),
       JSON.stringify(orgData.credentials || {}),
       orgData.isActive !== false,
       JSON.stringify(orgData.metadata || {})
     ]);
+  },
+
+  update: async (id, updates) => {
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+
+    Object.keys(updates).forEach(key => {
+      if (key !== 'id') {
+        const dbKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        if (['settings', 'credentials', 'metadata'].includes(dbKey)) {
+          fields.push(`${dbKey} = $${paramCount}`);
+          values.push(JSON.stringify(updates[key]));
+        } else {
+          fields.push(`${dbKey} = $${paramCount}`);
+          values.push(updates[key]);
+        }
+        paramCount++;
+      }
+    });
+
+    if (fields.length === 0) return null;
+
+    values.push(id);
+    const query = `
+      UPDATE maes.organizations 
+      SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $${paramCount}
+      RETURNING *
+    `;
+    return await update(query, values);
+  },
+
+  findByPk: async (id) => {
+    return await getRow('SELECT * FROM maes.organizations WHERE id = $1', [id]);
+  },
+
+  count: async (conditions = {}) => {
+    let whereClause = '';
+    const values = [];
+    let paramCount = 1;
+
+    if (Object.keys(conditions).length > 0) {
+      const clauses = [];
+      Object.keys(conditions).forEach(key => {
+        const dbKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        clauses.push(`${dbKey} = $${paramCount}`);
+        values.push(conditions[key]);
+        paramCount++;
+      });
+      whereClause = ` WHERE ${clauses.join(' AND ')}`;
+    }
+
+    const query = `SELECT COUNT(*) as count FROM maes.organizations${whereClause}`;
+    const result = await getRow(query, values);
+    return parseInt(result.count);
   }
 };
 
