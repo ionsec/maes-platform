@@ -97,6 +97,7 @@ services:
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
     volumes:
       - extractor_output:/output
+      - ./certs:/certs:ro
     depends_on:
       redis:
         condition: service_healthy

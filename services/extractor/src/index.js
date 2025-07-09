@@ -85,11 +85,14 @@ function buildPowerShellCommand(type, parameters, credentials) {
   
   // Add unattended authentication using Connect-M365 command
   if (credentials.certificateFilePath || credentials.applicationId) {
-    // Certificate-based authentication with PFX file (use default container path)
-    const certPath = credentials.certificateFilePath || '/output/app.pfx';
+    // Certificate-based authentication with PFX file (prefer mounted certs over generated)
+    const mountedCertPath = '/certs/app.pfx';
+    const fallbackCertPath = '/output/app.pfx';
+    const certPath = credentials.certificateFilePath || mountedCertPath;
     const securePwd = `ConvertTo-SecureString -String 'Password123' -AsPlainText -Force`;
     command += `$CertPwd = ${securePwd}; `;
-    command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateFilePath '${certPath}' -CertificatePassword $CertPwd -Organization '${parameters.organization || parameters.tenantId}';`;
+    command += `if (Test-Path '${certPath}') { $CertToUse = '${certPath}' } else { $CertToUse = '${fallbackCertPath}' }; `;
+    command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.organization || parameters.tenantId}';`;
   } else if (credentials.certificateThumbprint) {
     // Certificate-based authentication with thumbprint
     command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateThumbprint '${credentials.certificateThumbprint}' -Organization '${parameters.organization || parameters.tenantId}';`;
@@ -137,11 +140,13 @@ function buildTestConnectionCommand(parameters) {
     command += `$SecureSecret = ${secureSecret}; `;
     command += `try { Connect-M365 -AppId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   } else {
-    // Test with default PFX certificate
-    const certPath = '/output/app.pfx';
+    // Test with default PFX certificate - first try mounted certs, then fallback to generated
+    const certPath = '/certs/app.pfx';
+    const fallbackCertPath = '/output/app.pfx';
     const securePwd = `ConvertTo-SecureString -String 'Password123' -AsPlainText -Force`;
     command += `$CertPwd = ${securePwd}; `;
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath '${certPath}' -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `if (Test-Path '${certPath}') { $CertToUse = '${certPath}' } else { $CertToUse = '${fallbackCertPath}' }; `;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   }
   
   return command;

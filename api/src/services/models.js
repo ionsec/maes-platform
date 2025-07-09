@@ -142,9 +142,25 @@ const OrganizationModel = {
     const values = [];
     let paramCount = 1;
 
+    // Map camelCase to snake_case for database columns
+    const fieldMapping = {
+      organizationName: 'name',
+      tenantId: 'tenant_id',
+      fqdn: 'fqdn',
+      subscriptionId: 'subscription_id',
+      organizationType: 'organization_type',
+      subscriptionStatus: 'subscription_status',
+      serviceTier: 'service_tier',
+      settings: 'settings',
+      credentials: 'credentials',
+      isActive: 'is_active',
+      metadata: 'metadata'
+    };
+
     Object.keys(updates).forEach(key => {
       if (key !== 'id') {
-        const dbKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        const dbKey = fieldMapping[key] || key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        
         if (['settings', 'credentials', 'metadata'].includes(dbKey)) {
           fields.push(`${dbKey} = $${paramCount}`);
           values.push(JSON.stringify(updates[key]));
@@ -165,6 +181,8 @@ const OrganizationModel = {
       WHERE id = $${paramCount}
       RETURNING *
     `;
+    
+    logger.info('Organization update query:', { query, values });
     return await update(query, values);
   },
 
