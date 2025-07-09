@@ -118,14 +118,20 @@ function buildPowerShellCommand(type, parameters, credentials) {
     command += `$CertPwd = ${securePwd}; `;
     command += `if (Test-Path '${certPath}') { $CertToUse = '${certPath}' } else { $CertToUse = '${fallbackCertPath}' }; `;
     command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.organization || parameters.tenantId}';`;
+    // Add Microsoft Graph authentication
+    command += `Connect-MgGraph -ClientId '${credentials.applicationId}' -CertificateThumbprint (Get-PfxCertificate -FilePath $CertToUse -Password $CertPwd).Thumbprint -TenantId '${parameters.tenantId || parameters.organization}';`;
   } else if (credentials.certificateThumbprint) {
     // Certificate-based authentication with thumbprint
     command += `Connect-M365 -AppId '${credentials.applicationId}' -CertificateThumbprint '${credentials.certificateThumbprint}' -Organization '${parameters.organization || parameters.tenantId}';`;
+    // Add Microsoft Graph authentication
+    command += `Connect-MgGraph -ClientId '${credentials.applicationId}' -CertificateThumbprint '${credentials.certificateThumbprint}' -TenantId '${parameters.tenantId || parameters.organization}';`;
   } else if (credentials.clientSecret) {
     // Client secret authentication
     const secureSecret = `ConvertTo-SecureString -String '${credentials.clientSecret}' -AsPlainText -Force`;
     command += `$SecureSecret = ${secureSecret}; `;
     command += `Connect-M365 -AppId '${credentials.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${credentials.applicationId}', $SecureSecret)) -Organization '${parameters.organization || parameters.tenantId}';`;
+    // Add Microsoft Graph authentication
+    command += `Connect-MgGraph -ClientId '${credentials.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${credentials.applicationId}', $SecureSecret)) -TenantId '${parameters.tenantId || parameters.organization}';`;
   } else {
     throw new Error('Missing authentication credentials. Either certificateFilePath, certificateThumbprint or clientSecret is required for unattended extraction.');
   }
@@ -185,12 +191,12 @@ function buildTestConnectionCommand(parameters) {
   
   if (parameters.certificateThumbprint) {
     // Test with certificate thumbprint
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateThumbprint '${parameters.certificateThumbprint}' -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateThumbprint '${parameters.certificateThumbprint}' -Organization '${parameters.fqdn}' -ErrorAction Stop; Connect-MgGraph -ClientId '${parameters.applicationId}' -CertificateThumbprint '${parameters.certificateThumbprint}' -TenantId '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false; Disconnect-MgGraph } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   } else if (parameters.clientSecret) {
     // Test with client secret
     const secureSecret = `ConvertTo-SecureString -String '${parameters.clientSecret}' -AsPlainText -Force`;
     command += `$SecureSecret = ${secureSecret}; `;
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -Organization '${parameters.fqdn}' -ErrorAction Stop; Connect-MgGraph -ClientId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -TenantId '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false; Disconnect-MgGraph } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   } else {
     // Test with default PFX certificate - first try mounted certs, then fallback to generated
     const certPath = '/certs/app.pfx';
@@ -198,7 +204,7 @@ function buildTestConnectionCommand(parameters) {
     const securePwd = `ConvertTo-SecureString -String 'Password123' -AsPlainText -Force`;
     command += `$CertPwd = ${securePwd}; `;
     command += `if (Test-Path '${certPath}') { $CertToUse = '${certPath}' } else { $CertToUse = '${fallbackCertPath}' }; `;
-    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath $CertToUse -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Connect-MgGraph -ClientId '${parameters.applicationId}' -CertificateThumbprint (Get-PfxCertificate -FilePath $CertToUse -Password $CertPwd).Thumbprint -TenantId '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; Disconnect-ExchangeOnline -Confirm:$false; Disconnect-MgGraph } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   }
   
   return command;
