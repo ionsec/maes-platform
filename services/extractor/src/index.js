@@ -46,6 +46,37 @@ extractionQueue.process('extract-data', async (job) => {
   }
 });
 
+// Process connection test jobs
+extractionQueue.process('test-connection', async (job) => {
+  const { testId, parameters } = job.data;
+  
+  logger.info(`Starting connection test ${testId}`);
+  
+  try {
+    // Update job progress
+    await job.progress(50);
+    
+    // Build test connection command
+    const testCommand = buildTestConnectionCommand(parameters);
+    
+    // Execute PowerShell test
+    const result = await executePowerShell(testCommand, job);
+    
+    logger.info(`Connection test ${testId} completed successfully`);
+    
+    return {
+      success: true,
+      testId,
+      result: result.stdout,
+      connectionStatus: result.stdout.includes('CONNECTION_SUCCESS') ? 'success' : 'failed'
+    };
+    
+  } catch (error) {
+    logger.error(`Connection test ${testId} failed:`, error);
+    throw error;
+  }
+});
+
 // Build PowerShell command based on extraction type
 function buildPowerShellCommand(type, parameters, credentials) {
   const baseCommand = `Import-Module Microsoft-Extractor-Suite -Force;`;
@@ -87,6 +118,31 @@ function buildPowerShellCommand(type, parameters, credentials) {
   };
   
   command += extractionCommands[type] || '';
+  
+  return command;
+}
+
+// Build PowerShell command for connection testing
+function buildTestConnectionCommand(parameters) {
+  const baseCommand = `Import-Module Microsoft-Extractor-Suite -Force;`;
+  
+  let command = baseCommand;
+  
+  if (parameters.certificateThumbprint) {
+    // Test with certificate thumbprint
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateThumbprint '${parameters.certificateThumbprint}' -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+  } else if (parameters.clientSecret) {
+    // Test with client secret
+    const secureSecret = `ConvertTo-SecureString -String '${parameters.clientSecret}' -AsPlainText -Force`;
+    command += `$SecureSecret = ${secureSecret}; `;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -ClientSecretCredential (New-Object System.Management.Automation.PSCredential('${parameters.applicationId}', $SecureSecret)) -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+  } else {
+    // Test with default PFX certificate
+    const certPath = '/output/app.pfx';
+    const securePwd = `ConvertTo-SecureString -String 'Password123' -AsPlainText -Force`;
+    command += `$CertPwd = ${securePwd}; `;
+    command += `try { Connect-M365 -AppId '${parameters.applicationId}' -CertificateFilePath '${certPath}' -CertificatePassword $CertPwd -Organization '${parameters.fqdn}' -ErrorAction Stop; Write-Host 'CONNECTION_SUCCESS'; Disconnect-ExchangeOnline -Confirm:$false } catch { Write-Host "CONNECTION_ERROR: $_" }`;
+  }
   
   return command;
 }
