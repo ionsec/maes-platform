@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-const { User, Organization, AuditLog } = require('../models');
+const { User, Organization, AuditLog, sequelize } = require('../models');
 const { authenticateToken, requirePermission, ROLE_PERMISSIONS } = require('../middleware/auth');
 const { logger } = require('../utils/logger');
 
@@ -22,7 +22,91 @@ const generateIncidentNumber = async (organizationId) => {
   return `INC-${year}-${(count + 1).toString().padStart(3, '0')}`;
 };
 
-// Register new organization (MSSP or Client)
+// Register new organization with admin user (combined endpoint)
+router.post('/organization', async (req, res) => {
+  const t = await sequelize.transaction();
+  
+  try {
+    const { organization, adminUser } = req.body;
+    
+    // Validate required fields
+    if (!organization || !adminUser) {
+      return res.status(400).json({ error: 'Organization and admin user details are required' });
+    }
+    
+    // Create organization
+    const newOrg = await Organization.create({
+      name: organization.name,
+      tenantId: organization.tenantId || generateTenantId(),
+      organizationType: organization.organizationType || 'standalone',
+      subscriptionStatus: 'active',
+      serviceTier: organization.serviceTier || 'basic',
+      settings: organization.settings || {},
+      credentials: {},
+      isActive: true,
+      metadata: {
+        domain: organization.domain,
+        industry: organization.industry,
+        employeeCount: organization.employeeCount,
+        billingEmail: organization.billingEmail
+      }
+    }, { transaction: t });
+    
+    // Determine the role based on organization type
+    let userRole = adminUser.role;
+    if (!userRole) {
+      userRole = organization.organizationType === 'mssp' ? 'mssp_admin' : 
+                 organization.organizationType === 'client' ? 'client_admin' : 
+                 'standalone_admin';
+    }
+    
+    // Create admin user (password will be hashed by the model)
+    const newUser = await User.create({
+      organizationId: newOrg.id,
+      email: adminUser.email,
+      username: adminUser.username,
+      password: adminUser.password,
+      firstName: adminUser.firstName,
+      lastName: adminUser.lastName,
+      role: userRole,
+      permissions: ROLE_PERMISSIONS[userRole] || ROLE_PERMISSIONS.standalone_admin,
+      isActive: true
+    }, { transaction: t });
+    
+    // Commit transaction
+    await t.commit();
+    
+    logger.info(`Created organization: ${newOrg.id} with admin user: ${newUser.id}`);
+    
+    res.status(201).json({
+      success: true,
+      organization: {
+        id: newOrg.id,
+        name: newOrg.name,
+        tenantId: newOrg.tenantId,
+        organizationType: newOrg.organizationType
+      },
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        username: newUser.username,
+        role: newUser.role
+      }
+    });
+    
+  } catch (error) {
+    await t.rollback();
+    logger.error('Organization registration error:', error);
+    
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'Email or username already exists' });
+    }
+    
+    res.status(500).json({ error: 'Failed to create organization. Please try again.' });
+  }
+});
+
+// Register new organization (MSSP or Client) - original endpoint
 router.post('/organizations', async (req, res) => {
   try {
     const {
