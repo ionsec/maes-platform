@@ -8,6 +8,8 @@
 
 **MAES: The M365 Analyzer & Extractor Suite** is an open-source, full-stack SaaS platform that brings together the best of two proven forensic toolkits—**Microsoft-Analyzer-Suite** and **Microsoft-Extractor-Suite**—into a single, unified solution for acquiring, processing, and investigating Microsoft 365 data at scale.
 
+> **Developed by [IONSEC.IO Dev Team](https://github.com/ionsec/maes-platform)** - Specializing in Incident Response Services and Cybersecurity Solutions
+
 ## 🚀 Key Features
 
 ### 📊 **Unified Data Extraction**
@@ -84,7 +86,7 @@ MAES follows a modern microservices architecture with the following components:
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/your-org/maes-platform.git
+git clone https://github.com/ionsec/maes-platform.git
 cd maes-platform
 ```
 
@@ -102,6 +104,7 @@ docker-compose up -d
 4. **Access the application**:
 - **Web Interface**: http://localhost:8080
 - **API Documentation**: http://localhost:3000/api/docs
+- **SIEM Integration**: http://localhost:3000/api/siem/events
 - **Default Login**: admin@maes.local / admin123
 
 ### First-Time Setup
@@ -153,6 +156,23 @@ curl -X POST http://localhost:3000/api/analysis \
 - **MITRE ATT&CK Mapping**: Automatic threat technique identification
 - **Affected Entities**: Clear visibility of impacted users and resources
 - **Evidence Collection**: Comprehensive forensic evidence gathering
+
+#### 🔗 **SIEM Integration**
+- **Multi-Format Export**: Splunk, QRadar, Elasticsearch, CEF formats
+- **Real-time Streaming**: Live event forwarding to SIEM systems
+- **Custom Mappings**: Configurable field mappings for different SIEMs
+- **Download Options**: CSV, JSON, XML, CEF file downloads
+
+```bash
+# Export events for Splunk
+curl -X GET "http://localhost:3000/api/siem/events?format=splunk" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+
+# Download events as CSV
+curl -X GET "http://localhost:3000/api/siem/download?format=csv" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  --output security-events.csv
+```
 
 ## 🛠️ Development
 
@@ -315,9 +335,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - **Documentation**: [docs.maes.local](https://docs.maes.local)
-- **Issues**: [GitHub Issues](https://github.com/your-org/maes-platform/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/maes-platform/discussions)
-- **Security**: security@maes.local
+- **Issues**: [GitHub Issues](https://github.com/ionsec/maes-platform/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/ionsec/maes-platform/discussions)
+- **Security**: security@ionsec.io
+- **Incident Response Services**: [contact@ionsec.io](mailto:contact@ionsec.io)
 
 ---
 

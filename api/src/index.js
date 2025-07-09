@@ -3,11 +3,13 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
+const swaggerUi = require('swagger-ui-express');
 const { createServer } = require('http');
 const { Server } = require('socket.io');
 const { pool } = require('./services/database');
 const { logger } = require('./utils/logger');
 const { rateLimiter } = require('./middleware/rateLimiter');
+const swaggerSpecs = require('./swagger');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -19,6 +21,7 @@ const alertRoutes = require('./routes/alerts');
 const reportRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const registrationRoutes = require('./routes/registration');
+const siemRoutes = require('./routes/siem');
 
 const app = express();
 
@@ -42,6 +45,26 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Swagger API documentation
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'MAES API Documentation',
+  customfavIcon: '/favicon.ico',
+  swaggerOptions: {
+    persistAuthorization: true,
+    displayRequestDuration: true,
+    filter: true,
+    showExtensions: true,
+    showCommonExtensions: true
+  }
+}));
+
+// API documentation JSON endpoint
+app.get('/api/docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpecs);
+});
+
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/organizations', organizationRoutes);
@@ -52,6 +75,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/registration', registrationRoutes);
+app.use('/api/siem', siemRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

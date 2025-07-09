@@ -3,6 +3,12 @@
   "version": "1.0.0",
   "description": "MAES: The M365 Analyzer & Extractor Suite - Frontend Application",
   "private": true,
+  "author": "IONSEC.IO Dev Team",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ionsec/maes-platform.git"
+  },
+  "homepage": "https://github.com/ionsec/maes-platform",
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

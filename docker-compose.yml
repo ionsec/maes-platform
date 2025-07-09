@@ -72,6 +72,8 @@ services:
       JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-character-secret-key-here!}
+      SIEM_EXPORT_LIMIT: ${SIEM_EXPORT_LIMIT:-1000}
+      SIEM_RATE_LIMIT: ${SIEM_RATE_LIMIT:-50}
       PORT: 3000
     ports:
       - "3000:3000"
