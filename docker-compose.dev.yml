@@ -1,0 +1,93 @@
+name: maes-platform-dev
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg14
+    container_name: maes-postgres-dev
+    environment:
+      POSTGRES_DB: maes_db
+      POSTGRES_USER: maes_user
+      POSTGRES_PASSWORD: maes_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
+    networks:
+      - maes-network-dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: maes-redis-dev
+    command: redis-server --requirepass redis_dev_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+    networks:
+      - maes-network-dev
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: maes-elasticsearch-dev
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data_dev:/usr/share/elasticsearch/data
+    networks:
+      - maes-network-dev
+
+  api:
+    build: ./api
+    container_name: maes-api-dev
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://maes_user:maes_dev_password@postgres:5432/maes_db
+      REDIS_URL: redis://:redis_dev_password@redis:6379
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      JWT_SECRET: dev_jwt_secret_12345
+      SERVICE_AUTH_TOKEN: dev_service_token_12345
+      ENCRYPTION_KEY: dev-encryption-key-32-characters!
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    depends_on:
+      - postgres
+      - redis
+      - elasticsearch
+    networks:
+      - maes-network-dev
+    command: npm run dev
+
+  frontend:
+    build: ./frontend
+    container_name: maes-frontend-dev
+    environment:
+      VITE_API_URL: http://localhost:3000
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/dist
+    depends_on:
+      - api
+    networks:
+      - maes-network-dev
+
+volumes:
+  postgres_data_dev:
+  redis_data_dev:
+  es_data_dev:
+
+networks:
+  maes-network-dev:
+    driver: bridge
