@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
-const { Alert, User, AuditLog, sequelize } = require('../models');
+const { Alert, User, AuditLog } = require('../services/models');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
@@ -436,7 +436,7 @@ router.get('/stats/summary', async (req, res) => {
       attributes: [
         'severity',
         'status',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        [sequelize.fn('COUNT'.col('id')), 'count']
       ],
       group: ['severity', 'status'],
       raw: true

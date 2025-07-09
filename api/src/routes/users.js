@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { User, Organization, AuditLog, sequelize } = require('../models');
+const { User, Organization, AuditLog } = require('../services/models');
 const { authenticateToken, requirePermission, requireOrganizationAccess } = require('../middleware/auth');
 const { logger } = require('../utils/logger');
 
