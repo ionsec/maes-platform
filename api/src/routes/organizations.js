@@ -23,7 +23,7 @@ router.get('/current', async (req, res) => {
     }
 
     // Return organization with credentials for UI display
-    const orgData = organization.toJSON();
+    const orgData = { ...organization };
     
     // Check if user wants to see actual credentials
     const showCredentials = req.query.showCredentials === 'true';
@@ -87,19 +87,13 @@ router.put('/current',
       if (fqdn) updateData.fqdn = fqdn;
       if (settings) updateData.settings = { ...settings };
 
-      const [updatedRows] = await Organization.update(updateData, {
-        where: { id: req.organizationId }
-      });
+      const updatedOrganization = await Organization.update(req.organizationId, updateData);
 
-      if (updatedRows === 0) {
+      if (!updatedOrganization) {
         return res.status(404).json({
           error: 'Organization not found'
         });
       }
-
-      const updatedOrganization = await Organization.findByPk(req.organizationId, {
-        attributes: { exclude: ['credentials'] }
-      });
 
       res.json({
         success: true,
@@ -142,12 +136,9 @@ router.put('/current/credentials',
         certificateThumbprint: certificateThumbprint || null
       };
 
-      const [updatedRows] = await Organization.update(
-        { credentials },
-        { where: { id: req.organizationId } }
-      );
+      const updatedOrganization = await Organization.update(req.organizationId, { credentials });
 
-      if (updatedRows === 0) {
+      if (!updatedOrganization) {
         return res.status(404).json({
           error: 'Organization not found'
         });
