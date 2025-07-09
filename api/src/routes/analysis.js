@@ -12,6 +12,74 @@ const router = express.Router();
 router.use(authenticateToken);
 router.use(apiRateLimiter);
 
+/**
+ * @swagger
+ * /api/analysis:
+ *   get:
+ *     summary: Get analysis jobs with pagination and filtering
+ *     tags: [Analysis]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *         description: Number of items per page
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, running, completed, failed, cancelled]
+ *         description: Filter by status
+ *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *         description: Filter by analysis type
+ *     responses:
+ *       200:
+ *         description: List of analysis jobs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 analysisJobs:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/AnalysisJob'
+ *                 pagination:
+ *                   $ref: '#/components/schemas/Pagination'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       401:
+ *         description: Unauthorized
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // Get analysis jobs with pagination and filtering
 router.get('/', 
   [
