@@ -699,9 +699,10 @@ if (!isMainThread && workerData.type === 'job_processor') {
   
   // Process job function
   async function processJob(job) {
+    // Use the analysis job database ID, not the Bull queue job ID
+    const jobId = job.data.analysisId || job.id;
+    
     try {
-      // Use the analysis job database ID, not the Bull queue job ID
-      const jobId = job.data.analysisId || job.id;
       
       parentPort.postMessage({
         type: 'job_started',
