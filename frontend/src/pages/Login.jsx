@@ -46,6 +46,17 @@ const Login = () => {
         <Card>
           <CardContent sx={{ p: 4 }}>
             <Box sx={{ textAlign: 'center', mb: 3 }}>
+              <Box sx={{ mb: 2 }}>
+                <img 
+                  src="/MAES_Logo.png" 
+                  alt="MAES Logo"
+                  style={{
+                    maxWidth: '200px',
+                    height: 'auto',
+                    maxHeight: '80px'
+                  }}
+                />
+              </Box>
               <Typography variant="h4" component="h1" gutterBottom color="primary">
                 MAES
               </Typography>

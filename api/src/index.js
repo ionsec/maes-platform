@@ -47,7 +47,13 @@ app.use(compression());
 
 // CORS configuration
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  origin: [
+    process.env.CORS_ORIGIN || 'https://localhost',
+    'https://localhost',
+    'https://localhost:443',
+    'http://localhost:8080', // Keep for backward compatibility
+    'http://localhost'
+  ],
   credentials: true,
   optionsSuccessStatus: 200
 };

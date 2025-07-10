@@ -1,5 +1,9 @@
 # MAES: The M365 Analyzer & Extractor Suite
 
+<div align="center">
+  <img src="MAES_Logo.png" alt="MAES Logo" width="300" />
+</div>
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 

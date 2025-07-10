@@ -147,8 +147,8 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
     volumes:
-      - extractor_output:/input:ro
-      - analyzer_output:/output
+      - extractor_output:/output:ro
+      - analyzer_output:/analyzer_output
     depends_on:
       redis:
         condition: service_healthy
@@ -165,9 +165,10 @@ services:
     image: maes-frontend:latest
     container_name: maes-frontend
     environment:
-      VITE_API_URL: ${API_URL:-http://localhost:3000}
+      VITE_API_URL: ${API_URL:-https://localhost:3000}
     ports:
-      - "8080:80"
+      - "80:80"    # HTTP redirect to HTTPS
+      - "443:443"  # HTTPS main port
     depends_on:
       - api
     networks:
