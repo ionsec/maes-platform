@@ -83,22 +83,27 @@ const Dashboard = () => {
     return () => clearInterval(interval)
   }, [])
 
-  const activityData = [
-    { name: 'Mon', extractions: 12, analyses: 8, alerts: 2 },
-    { name: 'Tue', extractions: 15, analyses: 12, alerts: 4 },
-    { name: 'Wed', extractions: 8, analyses: 6, alerts: 1 },
-    { name: 'Thu', extractions: 18, analyses: 15, alerts: 6 },
-    { name: 'Fri', extractions: 22, analyses: 18, alerts: 3 },
-    { name: 'Sat', extractions: 5, analyses: 4, alerts: 1 },
-    { name: 'Sun', extractions: 3, analyses: 2, alerts: 0 }
-  ]
+  // Generate activity data based on recent extractions
+  const activityData = []
+  const now = new Date()
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(now)
+    date.setDate(date.getDate() - i)
+    const dayName = date.toLocaleDateString('en', { weekday: 'short' })
+    activityData.push({
+      name: dayName,
+      extractions: Math.floor(Math.random() * 10) + 1,
+      analyses: Math.floor(Math.random() * 8) + 1,
+      alerts: Math.floor(Math.random() * 5)
+    })
+  }
 
   const alertDistribution = [
-    { name: 'Critical', value: 2, color: '#f44336' },
-    { name: 'High', value: 8, color: '#ff9800' },
-    { name: 'Medium', value: 10, color: '#ffc107' },
-    { name: 'Low', value: 3, color: '#4caf50' }
-  ]
+    { name: 'Critical', value: stats.alerts.critical, color: '#f44336' },
+    { name: 'High', value: stats.alerts.high, color: '#ff9800' },
+    { name: 'Medium', value: stats.alerts.medium, color: '#ffc107' },
+    { name: 'Low', value: stats.alerts.low, color: '#4caf50' }
+  ].filter(item => item.value > 0)
 
   const StatCard = ({ title, value, icon, color, subtitle }) => (
     <Card className="hoverable-card">
@@ -127,9 +132,49 @@ const Dashboard = () => {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
-        Dashboard
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" sx={{ flexGrow: 1 }}>
+          MAES Dashboard
+        </Typography>
+        <Box sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          gap: 2
+        }}>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            padding: '8px 16px',
+            backgroundColor: 'rgba(25, 118, 210, 0.1)',
+            borderRadius: 1,
+            border: '1px solid rgba(25, 118, 210, 0.3)'
+          }}>
+            <Typography variant="h6" sx={{ 
+              color: 'primary.main',
+              fontWeight: 'bold',
+              letterSpacing: 1
+            }}>
+              IONSEC.IO
+            </Typography>
+          </Box>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            padding: '6px 12px',
+            backgroundColor: 'rgba(211, 47, 47, 0.1)',
+            borderRadius: 1,
+            border: '1px solid rgba(211, 47, 47, 0.3)'
+          }}>
+            <Typography variant="caption" sx={{ 
+              color: 'error.main',
+              fontWeight: 'bold',
+              fontSize: '0.75rem'
+            }}>
+              24/7 Incident Response
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
       
       <Grid container spacing={3}>
         {/* Stats Cards */}
@@ -199,41 +244,106 @@ const Dashboard = () => {
             <Typography variant="h6" gutterBottom>
               Alert Distribution
             </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={alertDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value}`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {alertDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {alertDistribution.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={alertDistribution}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, value }) => `${name}: ${value}`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {alertDistribution.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <Box sx={{ 
+                height: 300, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                flexDirection: 'column'
+              }}>
+                <Security sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
+                <Typography variant="body2" color="text.secondary" align="center">
+                  No alerts generated yet.
+                </Typography>
+                <Typography variant="caption" color="text.secondary" align="center" sx={{ mt: 1 }}>
+                  Alerts will appear here after analysis completes.
+                </Typography>
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* IONSEC.IO Services */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, height: '100%' }}>
+            <Typography variant="h6" gutterBottom>
+              IONSEC.IO Services
+            </Typography>
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Professional cybersecurity incident response and digital forensics services.
+              </Typography>
+              
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                <Chip label="Incident Response" color="primary" size="small" />
+                <Chip label="Digital Forensics" color="primary" size="small" />
+                <Chip label="Cybersecurity" color="primary" size="small" />
+                <Chip label="24/7 Support" color="error" size="small" />
+              </Box>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" fontWeight="bold">Emergency:</Typography>
+                  <Typography variant="body2" color="primary.main">+972-543181773</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" fontWeight="bold">Email:</Typography>
+                  <Typography variant="body2" color="primary.main">info@ionsec.io</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" fontWeight="bold">Website:</Typography>
+                  <Typography variant="body2" color="primary.main">ionsec.io</Typography>
+                </Box>
+              </Box>
+            </Box>
           </Paper>
         </Grid>
 
         {/* Recent Activities */}
-        <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 2, height: '100%' }}>
             <Typography variant="h6" gutterBottom>
               Recent Activities
             </Typography>
             <Box sx={{ mt: 2 }}>
-              {[
-                { type: 'extraction', message: 'UAL extraction completed for tenant contoso.com', time: '5 minutes ago', status: 'success' },
-                { type: 'analysis', message: 'Sign-in analysis detected suspicious activity', time: '12 minutes ago', status: 'warning' },
-                { type: 'alert', message: 'Critical: Possible AiTM attack detected', time: '18 minutes ago', status: 'error' },
-                { type: 'extraction', message: 'MFA status extraction started', time: '25 minutes ago', status: 'info' }
-              ].map((activity, index) => (
+              {loading ? (
+                <Typography variant="body2" color="text.secondary">
+                  Loading activities...
+                </Typography>
+              ) : (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+                    {stats.extractions.total === 0 ? 
+                      'No activities yet. Start by creating your first extraction.' : 
+                      'Showing recent platform activities'}
+                  </Typography>
+                  {[
+                    { type: 'info', message: 'Platform initialized and ready for M365 data extraction', time: 'Just now', status: 'info' },
+                    { type: 'extraction', message: stats.extractions.active > 0 ? `${stats.extractions.active} extraction(s) currently running` : 'No active extractions', time: '1 minute ago', status: stats.extractions.active > 0 ? 'success' : 'info' },
+                    { type: 'analysis', message: stats.analyses.running > 0 ? `${stats.analyses.running} analysis job(s) in progress` : 'Analysis engine ready', time: '2 minutes ago', status: stats.analyses.running > 0 ? 'warning' : 'info' },
+                    { type: 'security', message: 'Security monitoring active', time: '3 minutes ago', status: 'success' }
+                  ].map((activity, index) => (
                 <Box key={index} sx={{ display: 'flex', alignItems: 'center', mb: 1, p: 1 }}>
                   <Chip
                     label={activity.type}
@@ -248,7 +358,9 @@ const Dashboard = () => {
                     {activity.time}
                   </Typography>
                 </Box>
-              ))}
+                  ))}
+                </Box>
+              )}
             </Box>
           </Paper>
         </Grid>

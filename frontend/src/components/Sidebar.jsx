@@ -17,7 +17,8 @@ import {
   Warning,
   Assessment,
   Settings,
-  Security
+  Security,
+  Description
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 
@@ -37,7 +38,12 @@ const Sidebar = ({ open, onClose }) => {
   const location = useLocation()
 
   const handleNavigation = (path) => {
-    navigate(path)
+    if (path.startsWith('http')) {
+      // External link - open in new tab
+      window.open(path, '_blank')
+    } else {
+      navigate(path)
+    }
     // Only close on mobile
     if (window.innerWidth < 900) {
       onClose()
@@ -61,6 +67,27 @@ const Sidebar = ({ open, onClose }) => {
         ))}
       </List>
       <Divider />
+      <List>
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={() => handleNavigation('http://localhost:3000/api/docs')}
+          >
+            <ListItemIcon><Description /></ListItemIcon>
+            <ListItemText primary="API Documentation" />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={() => handleNavigation('https://ionsec.io')}
+          >
+            <ListItemIcon><Security /></ListItemIcon>
+            <ListItemText 
+              primary="IONSEC.IO Services" 
+              secondary="Incident Response & Forensics"
+            />
+          </ListItemButton>
+        </ListItem>
+      </List>
     </Box>
   )
 

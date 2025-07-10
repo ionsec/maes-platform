@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { CssBaseline } from '@mui/material'
 import { SnackbarProvider } from 'notistack'
+import { AuthProvider } from './contexts/AuthContext'
 import App from './App'
 import './index.css'
 
@@ -41,7 +42,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <CssBaseline />
         <BrowserRouter>
           <SnackbarProvider maxSnack={3}>
-            <App />
+            <AuthProvider>
+              <App />
+            </AuthProvider>
           </SnackbarProvider>
         </BrowserRouter>
       </ThemeProvider>

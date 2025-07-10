@@ -279,6 +279,67 @@ router.get('/:id/progress', async (req, res) => {
   }
 });
 
+// Update extraction status (internal service endpoint)
+router.patch('/:id/status', async (req, res) => {
+  try {
+    // Check for service authentication
+    const serviceToken = req.headers['x-service-token'];
+    if (!serviceToken || serviceToken !== process.env.SERVICE_AUTH_TOKEN) {
+      return res.status(401).json({
+        error: 'Unauthorized - Invalid service token'
+      });
+    }
+
+    const { status, outputFiles, statistics, completedAt, errorMessage } = req.body;
+
+    // Validate status
+    if (!['pending', 'running', 'completed', 'failed', 'cancelled'].includes(status)) {
+      return res.status(400).json({
+        error: 'Invalid status'
+      });
+    }
+
+    // Update extraction record
+    const updateData = { status };
+    if (outputFiles) updateData.outputFiles = outputFiles;
+    if (statistics) updateData.statistics = statistics;
+    if (completedAt) updateData.completedAt = new Date(completedAt);
+    if (errorMessage) updateData.errorMessage = errorMessage;
+
+    const extraction = await Extraction.update(req.params.id, updateData);
+
+    if (!extraction) {
+      return res.status(404).json({
+        error: 'Extraction not found'
+      });
+    }
+
+    // Emit real-time update
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`org-${extraction.organizationId}`).emit('extraction.updated', {
+        id: extraction.id,
+        status: extraction.status,
+        outputFiles: extraction.outputFiles,
+        statistics: extraction.statistics
+      });
+    }
+
+    logger.info(`Extraction ${req.params.id} status updated to ${status}`);
+
+    res.json({
+      success: true,
+      extraction
+    });
+
+  } catch (error) {
+    logger.error('Update extraction status error:', error);
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
 // Get extraction logs
 router.get('/:id/logs', async (req, res) => {
   try {

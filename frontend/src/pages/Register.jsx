@@ -690,14 +690,39 @@ const Register = () => {
           <CardContent sx={{ p: 4 }}>
             <Box sx={{ textAlign: 'center', mb: 3 }}>
               <Typography variant="h4" component="h1" gutterBottom color="primary">
-                CIRA Platform
+                MAES Platform
               </Typography>
               <Typography variant="body1" color="text.secondary" gutterBottom>
-                Cloud Investigation and Response Automation
+                M365 Analyzer & Extractor Suite
               </Typography>
-              <Typography variant="h6" color="primary">
+              <Typography variant="h6" color="primary" gutterBottom>
                 Organization Registration
               </Typography>
+              <Box sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1,
+                mt: 2
+              }}>
+                <Typography variant="caption" color="text.secondary">
+                  Powered by
+                </Typography>
+                <Box sx={{ 
+                  padding: '4px 8px',
+                  backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                  borderRadius: 1,
+                  border: '1px solid rgba(25, 118, 210, 0.3)'
+                }}>
+                  <Typography variant="caption" sx={{ 
+                    color: 'primary.main',
+                    fontWeight: 'bold',
+                    letterSpacing: 0.5
+                  }}>
+                    IONSEC.IO
+                  </Typography>
+                </Box>
+              </Box>
             </Box>
 
             {error && (

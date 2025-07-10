@@ -15,6 +15,8 @@ REDIS_URL=redis://:redis_secure_password@redis:6379
 
 # Elasticsearch Configuration
 ELASTICSEARCH_URL=http://elasticsearch:9200
+ELASTICSEARCH_USERNAME=
+ELASTICSEARCH_PASSWORD=
 
 # JWT Configuration
 JWT_SECRET=your_jwt_secret_here_change_in_production
@@ -86,6 +88,14 @@ The new SIEM integration features use these variables:
 
 - `SIEM_EXPORT_LIMIT`: Maximum events to export (default: 1000)
 - `SIEM_RATE_LIMIT`: Rate limit for SIEM exports (default: 50 requests/minute)
+
+## Elasticsearch Configuration
+
+The Elasticsearch integration uses these variables:
+
+- `ELASTICSEARCH_URL`: Elasticsearch server URL (default: http://elasticsearch:9200)
+- `ELASTICSEARCH_USERNAME`: Elasticsearch username (optional, for authentication)
+- `ELASTICSEARCH_PASSWORD`: Elasticsearch password (optional, for authentication)
 
 ## Health Checks
 

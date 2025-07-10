@@ -49,9 +49,28 @@ const Header = ({ onMenuClick }) => {
           <MenuIcon />
         </IconButton>
 
-        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          MAES: M365 Analyzer & Extractor Suite
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
+          <Typography variant="h6" component="div" sx={{ mr: 2 }}>
+            MAES: M365 Analyzer & Extractor Suite
+          </Typography>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            padding: '4px 12px',
+            backgroundColor: 'rgba(25, 118, 210, 0.1)',
+            borderRadius: 1,
+            border: '1px solid rgba(25, 118, 210, 0.3)'
+          }}>
+            <Typography variant="caption" sx={{ 
+              color: 'primary.main',
+              fontWeight: 'bold',
+              letterSpacing: 0.5,
+              fontSize: '0.75rem'
+            }}>
+              Powered by IONSEC.IO
+            </Typography>
+          </Box>
+        </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <Tooltip title="Notifications">
