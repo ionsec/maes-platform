@@ -92,6 +92,30 @@ app.use('/api/registration', registrationRoutes);
 app.use('/api/siem', siemRoutes);
 app.use('/api/elasticsearch', elasticsearchRoutes);
 
+// Certificate download endpoint
+app.get('/api/certificates/app.crt', (req, res) => {
+  const path = require('path');
+  const fs = require('fs');
+  
+  try {
+    const certPath = path.join('/app/certs/app.crt');
+    
+    logger.info(`Attempting to serve certificate from: ${certPath}`);
+    
+    if (!fs.existsSync(certPath)) {
+      logger.error(`Certificate not found at path: ${certPath}`);
+      return res.status(404).json({ error: 'Certificate not found' });
+    }
+    
+    res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+    res.setHeader('Content-Disposition', 'attachment; filename="app.crt"');
+    res.sendFile(path.resolve(certPath));
+  } catch (error) {
+    logger.error('Certificate download error:', error);
+    res.status(500).json({ error: 'Failed to download certificate' });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);

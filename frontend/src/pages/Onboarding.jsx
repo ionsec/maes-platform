@@ -37,7 +37,8 @@ import {
   Business,
   Launch,
   Close,
-  SkipNext
+  SkipNext,
+  Download
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import axios from '../utils/axios'
@@ -249,20 +250,62 @@ const Onboarding = () => {
     }
   }
 
-  const handleSkipOnboarding = () => {
-    // Update the auth store directly to mark onboarding as completed
-    useAuthStore.getState().updateUser({ needsOnboarding: false })
-    
-    setSuccess('Onboarding skipped! You can configure settings later in the Settings page.')
-    setTimeout(() => navigate('/dashboard'), 2000)
+  const handleSkipOnboarding = async () => {
+    setLoading(true)
+    try {
+      // Call API to mark onboarding as complete
+      await axios.post('/api/auth/complete-onboarding')
+      
+      // Update the auth store to reflect the change
+      useAuthStore.getState().updateUser({ needsOnboarding: false })
+      
+      setSuccess('Onboarding skipped! You can configure settings later in the Settings page.')
+      setTimeout(() => navigate('/dashboard'), 2000)
+    } catch (error) {
+      setError('Failed to complete onboarding. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleCompleteOnboarding = () => {
-    // Update the auth store directly to mark onboarding as completed
-    useAuthStore.getState().updateUser({ needsOnboarding: false })
-    
-    setSuccess('Onboarding completed! Redirecting to dashboard...')
-    setTimeout(() => navigate('/dashboard'), 2000)
+  const handleCompleteOnboarding = async () => {
+    setLoading(true)
+    try {
+      // Call API to mark onboarding as complete
+      await axios.post('/api/auth/complete-onboarding')
+      
+      // Update the auth store to reflect the change
+      useAuthStore.getState().updateUser({ needsOnboarding: false })
+      
+      setSuccess('Onboarding completed! Redirecting to dashboard...')
+      setTimeout(() => navigate('/dashboard'), 2000)
+    } catch (error) {
+      setError('Failed to complete onboarding. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDownloadCertificate = async () => {
+    try {
+      const response = await axios.get('/api/certificates/app.crt', {
+        responseType: 'blob'
+      })
+      
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', 'app.crt')
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      
+      setSuccess('Certificate downloaded successfully!')
+    } catch (error) {
+      setError('Failed to download certificate. Please try again.')
+    }
   }
 
   const renderStepContent = (step) => {
@@ -496,6 +539,22 @@ const Onboarding = () => {
                     You can leave this field empty to use the default certificate, or provide your own certificate thumbprint.
                   </Typography>
                 </Alert>
+                
+                <Box sx={{ mb: 2 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={handleDownloadCertificate}
+                    startIcon={<Download />}
+                    size="small"
+                    color="primary"
+                  >
+                    Download Certificate (app.crt)
+                  </Button>
+                  <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
+                    Download this certificate to upload to your Azure App Registration
+                  </Typography>
+                </Box>
+                
                 <TextField
                   label="Certificate Thumbprint (Optional)"
                   fullWidth
@@ -656,9 +715,10 @@ const Onboarding = () => {
                 onClick={handleCompleteOnboarding}
                 size="large"
                 fullWidth
-                startIcon={<CheckCircle />}
+                disabled={loading}
+                startIcon={loading ? <CircularProgress size={20} /> : <CheckCircle />}
               >
-                Go to Dashboard
+                {loading ? 'Completing Setup...' : 'Go to Dashboard'}
               </Button>
             </Box>
           </Box>
@@ -674,6 +734,17 @@ const Onboarding = () => {
       <Box sx={{ py: 4 }}>
         <Paper sx={{ p: 4 }}>
           <Box sx={{ textAlign: 'center', mb: 4 }}>
+            <Box sx={{ mb: 3 }}>
+              <img 
+                src="/MAES_Logo.png" 
+                alt="MAES Platform Logo" 
+                style={{ 
+                  height: '80px', 
+                  width: 'auto',
+                  objectFit: 'contain'
+                }} 
+              />
+            </Box>
             <Typography variant="h4" gutterBottom>
               Welcome to MAES Platform
             </Typography>
