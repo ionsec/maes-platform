@@ -41,7 +41,6 @@ RUN pwsh -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted"
     pwsh -Command "Install-Module -Name Microsoft-Extractor-Suite -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name ExchangeOnlineManagement -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name AzureAD -Force -AllowClobber -Scope AllUsers" && \
-    pwsh -Command "Install-Module -Name AzureADPreview -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name Az -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name Microsoft.Graph -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name MSOnline -Force -AllowClobber -Scope AllUsers" && \

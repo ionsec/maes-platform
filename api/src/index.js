@@ -10,6 +10,7 @@ const { pool } = require('./services/database');
 const { logger } = require('./utils/logger');
 const { rateLimiter } = require('./middleware/rateLimiter');
 const swaggerSpecs = require('./swagger');
+const elasticsearchService = require('./services/elasticsearch');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -22,50 +23,63 @@ const reportRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const registrationRoutes = require('./routes/registration');
 const siemRoutes = require('./routes/siem');
+const elasticsearchRoutes = require('./routes/elasticsearch');
 
 const app = express();
 
 // Trust proxy for rate limiting behind nginx
 app.set('trust proxy', 1);
 
-// Middleware
-app.use(helmet());
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
-  credentials: true
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
 }));
+
+// Compression middleware
 app.use(compression());
-app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+
+// Body parsing middleware
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
+
+// Logging middleware
+app.use(morgan('combined', {
+  stream: {
+    write: (message) => logger.info(message.trim())
+  }
+}));
+
+// Rate limiting
 app.use(rateLimiter);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version || '1.0.0'
+  });
 });
 
-// Swagger API documentation
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
-  customCss: '.swagger-ui .topbar { display: none }',
-  customSiteTitle: 'MAES API Documentation',
-  customfavIcon: '/favicon.ico',
-  swaggerOptions: {
-    persistAuthorization: true,
-    displayRequestDuration: true,
-    filter: true,
-    showExtensions: true,
-    showCommonExtensions: true
-  }
-}));
+// API documentation
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
 
-// API documentation JSON endpoint
-app.get('/api/docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerSpecs);
-});
-
-// API routes
+// Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/users', userRoutes);
@@ -76,46 +90,61 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/registration', registrationRoutes);
 app.use('/api/siem', siemRoutes);
+app.use('/api/elasticsearch', elasticsearchRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  res.status(500).json({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+  });
 });
 
 // 404 handler
-app.use((req, res) => {
-  res.status(404).json({ error: 'Endpoint not found' });
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Not found',
+    message: 'The requested resource was not found'
+  });
 });
 
-const PORT = process.env.PORT || 3000;
-
-// Create HTTP server and Socket.IO
+// Create HTTP server
 const httpServer = createServer(app);
+
+// Socket.IO setup
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:8080",
-    methods: ["GET", "POST"]
+    origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+    credentials: true
   }
 });
 
-// Store socket.io instance in app
-app.set('io', io);
-
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  logger.info(`Socket connected: ${socket.id}`);
-
-  // Handle organization room joining
+  logger.info(`Client connected: ${socket.id}`);
+  
+  socket.on('disconnect', () => {
+    logger.info(`Client disconnected: ${socket.id}`);
+  });
+  
+  // Join organization room
   socket.on('join-organization', (organizationId) => {
     socket.join(`org-${organizationId}`);
-    logger.info(`Socket ${socket.id} joined organization room: org-${organizationId}`);
+    logger.info(`Client ${socket.id} joined organization ${organizationId}`);
   });
-
-  socket.on('disconnect', () => {
-    logger.info(`Socket disconnected: ${socket.id}`);
+  
+  // Leave organization room
+  socket.on('leave-organization', (organizationId) => {
+    socket.leave(`org-${organizationId}`);
+    logger.info(`Client ${socket.id} left organization ${organizationId}`);
   });
 });
+
+// Make io available to routes
+app.set('io', io);
+
+const PORT = process.env.PORT || 3000;
 
 // Database connection and server startup
 async function startServer() {
@@ -123,6 +152,10 @@ async function startServer() {
     // Test database connection
     await pool.query('SELECT NOW()');
     logger.info('Database connection established successfully');
+
+    // Initialize Elasticsearch service
+    await elasticsearchService.initialize();
+    logger.info('Elasticsearch service initialized successfully');
 
     // Start server
     httpServer.listen(PORT, () => {
@@ -135,6 +168,24 @@ async function startServer() {
   }
 }
 
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM received, shutting down gracefully');
+  httpServer.close(() => {
+    logger.info('HTTP server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('SIGINT received, shutting down gracefully');
+  httpServer.close(() => {
+    logger.info('HTTP server closed');
+    process.exit(0);
+  });
+});
+
+// Start the server
 startServer();
 
 module.exports = app;

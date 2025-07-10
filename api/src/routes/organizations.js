@@ -114,8 +114,18 @@ router.put('/current/credentials',
   requirePermission('canManageOrganization'),
   [
     body('applicationId').isUUID().withMessage('Application ID must be a valid UUID'),
-    body('clientSecret').isLength({ min: 1 }).withMessage('Client Secret is required'),
-    body('certificateThumbprint').optional({ values: 'falsy' }).isLength({ min: 1 }).withMessage('Certificate Thumbprint cannot be empty if provided')
+    body('clientSecret').optional().custom((value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        return value.length >= 1;
+      }
+      return true;
+    }).withMessage('Client Secret cannot be empty if provided'),
+    body('certificateThumbprint').optional().custom((value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        return value.length >= 1;
+      }
+      return true;
+    }).withMessage('Certificate Thumbprint cannot be empty if provided')
   ],
   async (req, res) => {
     try {
@@ -130,9 +140,16 @@ router.put('/current/credentials',
 
       const { applicationId, clientSecret, certificateThumbprint } = req.body;
       
+      // Validate that either certificate or client secret is provided
+      if (!certificateThumbprint && !clientSecret) {
+        return res.status(400).json({
+          error: 'Either certificateThumbprint or clientSecret must be provided'
+        });
+      }
+      
       const credentials = {
         applicationId,
-        clientSecret,
+        clientSecret: clientSecret || null,
         certificateThumbprint: certificateThumbprint || null
       };
 
@@ -164,8 +181,18 @@ router.post('/test-connection',
   [
     body('applicationId').isUUID().withMessage('Application ID must be a valid UUID'),
     body('fqdn').matches(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])*$/).withMessage('FQDN must be a valid domain name'),
-    body('certificateThumbprint').optional().isLength({ min: 1 }).withMessage('Certificate Thumbprint cannot be empty if provided'),
-    body('clientSecret').optional().isLength({ min: 1 }).withMessage('Client Secret cannot be empty if provided')
+    body('certificateThumbprint').optional().custom((value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        return value.length >= 1;
+      }
+      return true;
+    }).withMessage('Certificate Thumbprint cannot be empty if provided'),
+    body('clientSecret').optional().custom((value) => {
+      if (value !== undefined && value !== null && value !== '') {
+        return value.length >= 1;
+      }
+      return true;
+    }).withMessage('Client Secret cannot be empty if provided')
   ],
   async (req, res) => {
     try {
@@ -249,10 +276,13 @@ router.post('/test-connection',
 // Get organization statistics
 router.get('/stats', async (req, res) => {
   try {
-    // Get user count
-    const userCount = await User.count({
-      where: { organizationId: req.organizationId, isActive: true }
-    });
+    // Get user count using our custom models
+    const { getRow } = require('../services/database');
+    const userCountResult = await getRow(
+      'SELECT COUNT(*) as count FROM maes.users WHERE organization_id = $1 AND is_active = true',
+      [req.organizationId]
+    );
+    const userCount = parseInt(userCountResult.count);
 
     // Additional statistics would be gathered from other models
     const stats = {

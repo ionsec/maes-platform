@@ -169,9 +169,16 @@ const Settings = () => {
       const payload = {
         applicationId: watchedApplicationId,
         fqdn: watchedFqdn,
-        clientSecret: watchedClientSecret,
-        certificateThumbprint: watchedCertificateThumbprint
+        clientSecret: watchedClientSecret || undefined,
+        certificateThumbprint: watchedCertificateThumbprint || undefined
       };
+      
+      // Remove undefined values to avoid sending them
+      Object.keys(payload).forEach(key => {
+        if (payload[key] === undefined || payload[key] === null || payload[key] === '') {
+          delete payload[key];
+        }
+      });
       
       const response = await axios.post('/api/organizations/test-connection', payload);
       
@@ -203,9 +210,16 @@ const Settings = () => {
       // Save credentials
       const credentialsPayload = {
         applicationId: data.applicationId,
-        clientSecret: data.clientSecret,
-        certificateThumbprint: data.certificateThumbprint || null
+        clientSecret: data.clientSecret || undefined,
+        certificateThumbprint: data.certificateThumbprint || undefined
       };
+
+      // Remove undefined values to avoid sending them
+      Object.keys(credentialsPayload).forEach(key => {
+        if (credentialsPayload[key] === undefined || credentialsPayload[key] === null || credentialsPayload[key] === '') {
+          delete credentialsPayload[key];
+        }
+      });
 
       await axios.put('/api/organizations/current/credentials', credentialsPayload);
 

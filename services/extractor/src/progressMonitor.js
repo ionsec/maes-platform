@@ -265,18 +265,29 @@ function updateExtractionProgress(extractionId, job) {
     
     // Store the interval so we can clear it later
     pollInterval.extractionId = extractionId;
+    
+    // Store the interval reference for cleanup
+    pollInterval.monitorId = extractionId;
   }
 
   function stopMonitoring() {
     isMonitoring = false;
     
     if (watcher) {
-      watcher.close();
+      try {
+        watcher.close();
+      } catch (error) {
+        logger.warn('Error closing file watcher:', error);
+      }
       watcher = null;
     }
     
     // Clear any existing polling intervals
-    // Note: intervals will auto-clear when isMonitoring becomes false
+    // Find and clear intervals for this extraction
+    const intervals = setInterval(() => {}, 0);
+    if (intervals && intervals.monitorId === extractionId) {
+      clearInterval(intervals);
+    }
     
     logger.info(`Stopped progress monitoring for extraction ${extractionId}`);
   }

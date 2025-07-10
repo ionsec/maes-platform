@@ -1,10 +1,12 @@
 import React, { useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { Container } from '@mui/material'
+import { Container, Box } from '@mui/material'
 import { useAuthStore } from './stores/authStore'
 import { setNavigate } from './utils/axios'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
+import SOSButton from './components/SOSButton'
+import Footer from './components/Footer'
 import Dashboard from './pages/Dashboard'
 import Extractions from './pages/Extractions'
 import Analysis from './pages/Analysis'
@@ -13,6 +15,7 @@ import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Onboarding from './pages/Onboarding'
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -69,28 +72,47 @@ function App() {
     )
   }
 
+  // Check if user needs onboarding
+  if (user?.needsOnboarding) {
+    return (
+      <Routes>
+        <Route path="/onboarding" element={<Onboarding />} />
+        <Route path="*" element={<Navigate to="/onboarding" replace />} />
+      </Routes>
+    )
+  }
+
   return (
-    <div style={{ display: 'flex' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <Header onMenuClick={toggleSidebar} />
-      <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <Container 
-        maxWidth={false} 
-        sx={{ 
-          mt: 8, 
-          ml: { xs: 0, sm: '240px' }, // Always account for sidebar on desktop
-          transition: 'margin-left 0.3s' 
-        }}
-      >
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/extractions" element={<Extractions />} />
-          <Route path="/analysis" element={<Analysis />} />
-          <Route path="/alerts" element={<Alerts />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
-        </Routes>
-      </Container>
+      <div style={{ display: 'flex', flex: 1 }}>
+        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+        <Container 
+          maxWidth={false} 
+          sx={{ 
+            mt: 8, 
+            ml: { xs: 0, sm: '240px' }, // Always account for sidebar on desktop
+            transition: 'margin-left 0.3s',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <Box sx={{ flex: 1 }}>
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/extractions" element={<Extractions />} />
+              <Route path="/analysis" element={<Analysis />} />
+              <Route path="/alerts" element={<Alerts />} />
+              <Route path="/reports" element={<Reports />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </Box>
+          <Footer />
+        </Container>
+      </div>
+      <SOSButton />
     </div>
   )
 }

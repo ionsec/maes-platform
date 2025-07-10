@@ -117,6 +117,13 @@ export const useAuthStore = create(
 
       clearError: () => set({ error: null }),
       
+      updateUser: (updates) => {
+        const { user } = get()
+        if (user) {
+          set({ user: { ...user, ...updates } })
+        }
+      },
+      
       // Initialize axios headers from stored token
       initializeAuth: () => {
         const { token } = get()

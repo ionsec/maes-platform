@@ -100,6 +100,17 @@ const UserModel = {
     return await update(query, [id]);
   },
 
+  // Update password
+  updatePassword: async (id, hashedPassword) => {
+    const query = `
+      UPDATE maes.users 
+      SET password = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id, username, email
+    `;
+    return await update(query, [id, hashedPassword]);
+  },
+
   // Validate password
   validatePassword: async (id, password) => {
     const user = await getRow('SELECT password FROM maes.users WHERE id = $1', [id]);

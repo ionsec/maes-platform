@@ -659,6 +659,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
     return mapping[type] || ['T1562.001'];
   }
 
+  
   // Generate recommendations for worker context
   function generateRecommendations(analysisResult) {
     const recommendations = [];
@@ -790,26 +791,83 @@ if (!isMainThread && workerData.type === 'job_processor') {
       // Import analysis functions
       const axios = require('axios');
       
-      // Fetch uploaded data from API
+      // Fetch extraction data
       parentPort.postMessage({
         type: 'job_progress',
         jobId: data.id,
-        data: { progress: 20, message: 'Fetching uploaded data' }
+        data: { progress: 20, message: 'Loading extraction data' }
       });
 
-      const response = await axios.get(`http://api:3000/api/upload/data/${extractionId}`, {
-        headers: {
-          'x-service-token': process.env.SERVICE_AUTH_TOKEN
-        },
-        timeout: 30000
-      });
+      let auditData = [];
       
-      if (!response.data || !response.data.success) {
-        throw new Error('Failed to fetch uploaded data from API');
+      // First, try to fetch from upload endpoint (for uploaded data)
+      try {
+        const uploadResponse = await axios.get(`http://api:3000/api/upload/data/${extractionId}`, {
+          headers: {
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN
+          },
+          timeout: 30000
+        });
+        
+        if (uploadResponse.data && uploadResponse.data.success) {
+          auditData = uploadResponse.data.data;
+          logger.info(`Successfully fetched uploaded data: ${auditData.length} entries`);
+        }
+      } catch (uploadError) {
+        // If not uploaded data, try to read from extractor output files
+        logger.info('No uploaded data found, checking extractor output files...');
+        
+        const fs = require('fs');
+        const path = require('path');
+        const csvParser = require('csv-parser');
+        
+        // Check common output directories
+        const possiblePaths = [
+          `/extractor_output/${extractionId}`,
+          `/output/${extractionId}`,
+          `/app/output/${extractionId}`
+        ];
+        
+        let dataFound = false;
+        for (const basePath of possiblePaths) {
+          if (fs.existsSync(basePath)) {
+            const files = fs.readdirSync(basePath);
+            const csvFiles = files.filter(f => f.endsWith('.csv') || f.endsWith('.json'));
+            
+            for (const file of csvFiles) {
+              const filePath = path.join(basePath, file);
+              logger.info(`Reading extraction file: ${filePath}`);
+              
+              if (file.endsWith('.json')) {
+                const content = fs.readFileSync(filePath, 'utf8');
+                const jsonData = JSON.parse(content);
+                auditData = auditData.concat(Array.isArray(jsonData) ? jsonData : [jsonData]);
+                dataFound = true;
+              } else if (file.endsWith('.csv')) {
+                // Parse CSV file
+                const results = [];
+                await new Promise((resolve, reject) => {
+                  fs.createReadStream(filePath)
+                    .pipe(csvParser())
+                    .on('data', (data) => results.push(data))
+                    .on('end', () => resolve())
+                    .on('error', reject);
+                });
+                auditData = auditData.concat(results);
+                dataFound = true;
+              }
+            }
+            
+            if (dataFound) break;
+          }
+        }
+        
+        if (!dataFound) {
+          throw new Error('No extraction data found. Please ensure the extraction completed successfully and data is available.');
+        }
       }
-
-      const auditData = response.data.data;
-      logger.info(`Successfully fetched uploaded data: ${auditData.length} entries`);
+      
+      logger.info(`Loaded ${auditData.length} audit log entries for analysis`);
       
       parentPort.postMessage({
         type: 'job_progress',

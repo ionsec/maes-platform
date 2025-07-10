@@ -43,42 +43,12 @@ router.get('/',
       if (req.query.severity) where.severity = req.query.severity;
       if (req.query.category) where.category = req.query.category;
 
-      const { count, rows } = await Alert.findAndCountAll({
-        where,
-        include: [
-          {
-            model: User,
-            as: 'acknowledgedByUser',
-            attributes: ['id', 'username', 'firstName', 'lastName'],
-            required: false
-          },
-          {
-            model: User,
-            as: 'assignedToUser',
-            attributes: ['id', 'username', 'firstName', 'lastName'],
-            required: false
-          },
-          {
-            model: User,
-            as: 'resolvedByUser',
-            attributes: ['id', 'username', 'firstName', 'lastName'],
-            required: false
-          }
-        ],
-        limit,
-        offset,
-        order: [['created_at', 'DESC']]
-      });
+      const result = await Alert.findAll(req.organizationId, where, page, limit);
 
       res.json({
         success: true,
-        alerts: rows,
-        pagination: {
-          total: count,
-          page,
-          pages: Math.ceil(count / limit),
-          limit
-        }
+        alerts: result.alerts,
+        pagination: result.pagination
       });
 
     } catch (error) {
@@ -93,32 +63,7 @@ router.get('/',
 // Get single alert
 router.get('/:id', async (req, res) => {
   try {
-    const alert = await Alert.findOne({
-      where: {
-        id: req.params.id,
-        organizationId: req.organizationId
-      },
-      include: [
-        {
-          model: User,
-          as: 'acknowledgedByUser',
-          attributes: ['id', 'username', 'firstName', 'lastName'],
-          required: false
-        },
-        {
-          model: User,
-          as: 'assignedToUser',
-          attributes: ['id', 'username', 'firstName', 'lastName'],
-          required: false
-        },
-        {
-          model: User,
-          as: 'resolvedByUser',
-          attributes: ['id', 'username', 'firstName', 'lastName'],
-          required: false
-        }
-      ]
-    });
+    const alert = await Alert.findById(req.params.id, req.organizationId);
 
     if (!alert) {
       return res.status(404).json({
@@ -144,12 +89,7 @@ router.put('/:id/acknowledge',
   requirePermission('canManageAlerts'),
   async (req, res) => {
     try {
-      const alert = await Alert.findOne({
-        where: {
-          id: req.params.id,
-          organizationId: req.organizationId
-        }
-      });
+      const alert = await Alert.findById(req.params.id, req.organizationId);
 
       if (!alert) {
         return res.status(404).json({
@@ -164,24 +104,26 @@ router.put('/:id/acknowledge',
       }
 
       // Update alert
-      alert.status = 'acknowledged';
-      alert.acknowledgedBy = req.user.id;
-      alert.acknowledgedAt = new Date();
-      await alert.save();
+      await Alert.update(req.params.id, {
+        status: 'acknowledged',
+        acknowledgedBy: req.user.id,
+        acknowledgedAt: new Date()
+      });
 
       // Emit real-time update
       const io = req.app.get('io');
       if (io) {
         io.to(`org-${req.organizationId}`).emit('alert.acknowledged', {
           id: alert.id,
-          status: alert.status,
+          status: 'acknowledged',
           acknowledgedBy: req.user.id
         });
       }
 
+      const updatedAlert = await Alert.findById(req.params.id, req.organizationId);
       res.json({
         success: true,
-        alert
+        alert: updatedAlert
       });
 
     } catch (error) {
@@ -211,12 +153,7 @@ router.put('/:id/assign',
 
       const { assignedTo } = req.body;
 
-      const alert = await Alert.findOne({
-        where: {
-          id: req.params.id,
-          organizationId: req.organizationId
-        }
-      });
+      const alert = await Alert.findById(req.params.id, req.organizationId);
 
       if (!alert) {
         return res.status(404).json({
@@ -225,26 +162,20 @@ router.put('/:id/assign',
       }
 
       // Verify assigned user exists in same organization
-      const assignedUser = await User.findOne({
-        where: {
-          id: assignedTo,
-          organizationId: req.organizationId,
-          isActive: true
-        }
-      });
+      const assignedUser = await User.findById(assignedTo);
 
-      if (!assignedUser) {
+      if (!assignedUser || assignedUser.organization_id !== req.organizationId || !assignedUser.is_active) {
         return res.status(404).json({
           error: 'Assigned user not found'
         });
       }
 
       // Update alert
-      alert.assignedTo = assignedTo;
+      const updateData = { assignedTo };
       if (alert.status === 'new') {
-        alert.status = 'investigating';
+        updateData.status = 'investigating';
       }
-      await alert.save();
+      await Alert.update(req.params.id, updateData);
 
       // Emit real-time update
       const io = req.app.get('io');
@@ -252,13 +183,14 @@ router.put('/:id/assign',
         io.to(`org-${req.organizationId}`).emit('alert.assigned', {
           id: alert.id,
           assignedTo,
-          status: alert.status
+          status: updateData.status || alert.status
         });
       }
 
+      const updatedAlert = await Alert.findById(req.params.id, req.organizationId);
       res.json({
         success: true,
-        alert
+        alert: updatedAlert
       });
 
     } catch (error) {
@@ -289,12 +221,7 @@ router.put('/:id/resolve',
 
       const { resolutionNotes, status } = req.body;
 
-      const alert = await Alert.findOne({
-        where: {
-          id: req.params.id,
-          organizationId: req.organizationId
-        }
-      });
+      const alert = await Alert.findById(req.params.id, req.organizationId);
 
       if (!alert) {
         return res.status(404).json({
@@ -309,25 +236,28 @@ router.put('/:id/resolve',
       }
 
       // Update alert
-      alert.status = status;
-      alert.resolvedBy = req.user.id;
-      alert.resolvedAt = new Date();
-      if (resolutionNotes) alert.resolutionNotes = resolutionNotes;
-      await alert.save();
+      const updateData = {
+        status,
+        resolvedBy: req.user.id,
+        resolvedAt: new Date()
+      };
+      if (resolutionNotes) updateData.resolutionNotes = resolutionNotes;
+      await Alert.update(req.params.id, updateData);
 
       // Emit real-time update
       const io = req.app.get('io');
       if (io) {
         io.to(`org-${req.organizationId}`).emit('alert.resolved', {
           id: alert.id,
-          status: alert.status,
+          status: status,
           resolvedBy: req.user.id
         });
       }
 
+      const updatedAlert = await Alert.findById(req.params.id, req.organizationId);
       res.json({
         success: true,
-        alert
+        alert: updatedAlert
       });
 
     } catch (error) {
@@ -377,17 +307,14 @@ router.post('/',
       }
 
       const alert = await Alert.create({
+        organizationId,
         title,
         description,
         severity,
-        source,
-        status,
-        organizationId,
-        analysisId,
-        extractionId,
-        data,
         type: data.finding?.type || 'general',
         category: data.finding?.category || 'other',
+        status,
+        source: data.finding?.source || source,
         affectedEntities: data.finding?.affectedEntities || data.affectedEntities || {
           users: [],
           resources: [],
@@ -404,7 +331,13 @@ router.post('/',
           techniques: [],
           subTechniques: []
         },
-        recommendations: data.finding?.recommendations || data.recommendations || []
+        recommendations: data.finding?.recommendations || data.recommendations || [],
+        tags: data.finding?.tags || [],
+        metadata: {
+          analysisId,
+          extractionId,
+          ...data
+        }
       });
 
       logger.info(`Alert created: ${title} (${severity})`);
@@ -426,21 +359,14 @@ router.post('/',
 // Get alert statistics
 router.get('/stats/summary', async (req, res) => {
   try {
-    const where = {};
-    if (req.organizationId) {
-      where.organizationId = req.organizationId;
-    }
+    const { getRows } = require('../services/database');
     
-    const stats = await Alert.findAll({
-      where,
-      attributes: [
-        'severity',
-        'status',
-        [sequelize.fn('COUNT'.col('id')), 'count']
-      ],
-      group: ['severity', 'status'],
-      raw: true
-    });
+    const stats = await getRows(`
+      SELECT severity, status, COUNT(*) as count 
+      FROM maes.alerts 
+      WHERE organization_id = $1 
+      GROUP BY severity, status
+    `, [req.organizationId]);
 
     // Transform to more usable format
     const summary = {
@@ -473,12 +399,7 @@ router.delete('/:id',
   requirePermission('canManageAlerts'),
   async (req, res) => {
     try {
-      const alert = await Alert.findOne({
-        where: {
-          id: req.params.id,
-          organizationId: req.organizationId
-        }
-      });
+      const alert = await Alert.findById(req.params.id, req.organizationId);
 
       if (!alert) {
         return res.status(404).json({
@@ -486,7 +407,8 @@ router.delete('/:id',
         });
       }
 
-      await alert.destroy();
+      const { remove } = require('../services/database');
+      await remove('DELETE FROM maes.alerts WHERE id = $1', [req.params.id]);
 
       // Log deletion action
       await AuditLog.create({

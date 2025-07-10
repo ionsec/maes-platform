@@ -167,6 +167,10 @@ router.post('/login',
         details: { username }
       });
 
+      // Check if user needs onboarding
+      const needsOnboarding = user.organization_name === 'MAES Default Organization' || 
+                              username === 'admin';
+
       // Return user data (without password)
       const userData = {
         id: user.id,
@@ -176,10 +180,12 @@ router.post('/login',
         lastName: user.last_name,
         role: user.role,
         permissions: user.permissions,
+        needsOnboarding,
         organization: {
           id: user.organization_id,
           name: user.organization_name,
           tenantId: user.tenant_id,
+          fqdn: user.organization_fqdn,
           isActive: user.organization_active
         }
       };
@@ -295,5 +301,82 @@ router.get('/profile', authenticateToken, async (req, res) => {
     });
   }
 });
+
+// Change password endpoint
+router.put('/change-password', 
+  authenticateToken,
+  [
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { currentPassword, newPassword } = req.body;
+      const userId = req.user.id;
+
+      // Get user with current password
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          error: 'User not found'
+        });
+      }
+
+      // Verify current password
+      const isValidPassword = await bcrypt.compare(currentPassword, user.password);
+      if (!isValidPassword) {
+        await AuditLog.create({
+          userId: userId,
+          organizationId: req.organizationId,
+          action: 'password_change_failed',
+          category: 'authentication',
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+          details: { reason: 'invalid_current_password' }
+        });
+
+        return res.status(401).json({
+          error: 'Current password is incorrect'
+        });
+      }
+
+      // Hash new password
+      const saltRounds = 12;
+      const hashedPassword = await bcrypt.hash(newPassword, saltRounds);
+
+      // Update password
+      await User.updatePassword(userId, hashedPassword);
+
+      // Log successful password change
+      await AuditLog.create({
+        userId: userId,
+        organizationId: req.organizationId,
+        action: 'password_changed',
+        category: 'authentication',
+        ipAddress: req.ip,
+        userAgent: req.get('User-Agent')
+      });
+
+      res.json({
+        success: true,
+        message: 'Password changed successfully'
+      });
+
+    } catch (error) {
+      logger.error('Password change error:', error);
+      res.status(500).json({
+        error: 'Internal server error'
+      });
+    }
+  }
+);
 
 module.exports = router;
