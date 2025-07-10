@@ -827,42 +827,61 @@ if (!isMainThread && workerData.type === 'job_processor') {
         
         // Check common output directories
         const possiblePaths = [
-          `/extractor_output/${extractionId}`,
           `/output/${extractionId}`,
-          `/app/output/${extractionId}`
+          `/extractor_output/${extractionId}`,
+          `/app/output/${extractionId}`,
+          `/shared/output/${extractionId}`
         ];
         
         let dataFound = false;
+        
+        // Log all paths being checked
+        logger.info(`Looking for extraction data in paths: ${possiblePaths.join(', ')}`);
+        
         for (const basePath of possiblePaths) {
+          logger.info(`Checking path: ${basePath}`);
           if (fs.existsSync(basePath)) {
+            logger.info(`Path exists: ${basePath}`);
             const files = fs.readdirSync(basePath);
+            logger.info(`Files found in ${basePath}: ${files.join(', ')}`);
             const csvFiles = files.filter(f => f.endsWith('.csv') || f.endsWith('.json'));
+            logger.info(`Data files found: ${csvFiles.join(', ')}`);
             
             for (const file of csvFiles) {
               const filePath = path.join(basePath, file);
               logger.info(`Reading extraction file: ${filePath}`);
               
-              if (file.endsWith('.json')) {
-                const content = fs.readFileSync(filePath, 'utf8');
-                const jsonData = JSON.parse(content);
-                auditData = auditData.concat(Array.isArray(jsonData) ? jsonData : [jsonData]);
-                dataFound = true;
-              } else if (file.endsWith('.csv')) {
-                // Parse CSV file
-                const results = [];
-                await new Promise((resolve, reject) => {
-                  fs.createReadStream(filePath)
-                    .pipe(csvParser())
-                    .on('data', (data) => results.push(data))
-                    .on('end', () => resolve())
-                    .on('error', reject);
-                });
-                auditData = auditData.concat(results);
-                dataFound = true;
+              try {
+                if (file.endsWith('.json')) {
+                  const content = fs.readFileSync(filePath, 'utf8');
+                  const jsonData = JSON.parse(content);
+                  const dataArray = Array.isArray(jsonData) ? jsonData : [jsonData];
+                  auditData = auditData.concat(dataArray);
+                  dataFound = true;
+                  logger.info(`Loaded ${dataArray.length} records from ${file}`);
+                } else if (file.endsWith('.csv')) {
+                  // Parse CSV file
+                  const results = [];
+                  await new Promise((resolve, reject) => {
+                    fs.createReadStream(filePath)
+                      .pipe(csvParser())
+                      .on('data', (data) => results.push(data))
+                      .on('end', () => resolve())
+                      .on('error', reject);
+                  });
+                  auditData = auditData.concat(results);
+                  dataFound = true;
+                  logger.info(`Loaded ${results.length} records from ${file}`);
+                }
+              } catch (fileError) {
+                logger.error(`Error reading file ${filePath}: ${fileError.message}`);
+                continue;
               }
             }
             
             if (dataFound) break;
+          } else {
+            logger.info(`Path does not exist: ${basePath}`);
           }
         }
         

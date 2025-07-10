@@ -38,8 +38,10 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:https": "vite --https",
     "build": "vite build",
     "preview": "vite preview",
+    "preview:https": "vite preview --https",
     "lint": "eslint src/"
   },
   "browserslist": {

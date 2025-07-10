@@ -177,11 +177,37 @@ function updateExtractionProgress(extractionId, job) {
         }
       }
 
-      // Check for completion indicators
+      // Check for completion indicators and total count
       if (/export\s+completed|extraction\s+finished|collection\s+complete/i.test(line)) {
         currentProgress = 95;
         logger.info(`Extraction ${extractionId} near completion: ${line.trim()}`);
         await updateProgress(currentProgress, 'running', line.trim());
+      }
+      
+      // Check for total items collected patterns
+      const totalPatterns = [
+        /Total\s+items\s+collected:\s*(\d+)/i,
+        /Total\s+events\s+exported:\s*(\d+)/i,
+        /Total\s+records\s+processed:\s*(\d+)/i,
+        /(\d+)\s+items\s+have\s+been\s+extracted/i,
+        /(\d+)\s+audit\s+logs\s+exported/i,
+        /Exported\s+(\d+)\s+records/i,
+        /Collection\s+complete.*?(\d+)\s+items/i
+      ];
+      
+      for (const totalPattern of totalPatterns) {
+        const match = line.match(totalPattern);
+        if (match) {
+          const totalItems = parseInt(match[1]);
+          if (totalItems > 0) {
+            logger.info(`Extraction ${extractionId} total items collected: ${totalItems}`);
+            await updateProgress(currentProgress, 'running', `Total items collected: ${totalItems}`);
+            
+            // Store total count in job data for API to retrieve
+            job.data.totalItemsCollected = totalItems;
+            break;
+          }
+        }
       }
     }
   }

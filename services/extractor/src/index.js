@@ -2,6 +2,7 @@ const Queue = require('bull');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
+const crypto = require('crypto');
 const { logger } = require('./logger');
 const { updateExtractionProgress } = require('./progressMonitor');
 const axios = require('axios');
@@ -442,11 +443,29 @@ async function processOutput(extractionId, type) {
   
   try {
     const files = await fs.readdir(OUTPUT_PATH);
+    logger.info(`Processing output for extraction ${extractionId}, type: ${type}`);
+    logger.info(`Found files in output directory: ${files.join(', ')}`);
     
     for (const file of files) {
-      if (file.includes(type) || file.includes('Combined')) {
+      // Check if file matches extraction type or is a data file
+      const isDataFile = file.includes(type) || 
+                        file.includes('Combined') ||
+                        file.includes('UAL-') || // Unified Audit Log files
+                        file.includes('AzureAD') ||
+                        file.includes('Exchange') ||
+                        file.includes('SharePoint') ||
+                        file.includes('Teams') ||
+                        file.endsWith('.csv') ||
+                        file.endsWith('.json');
+      
+      // Skip certificate files
+      const isCertFile = file.endsWith('.pfx') || file.endsWith('.crt') || file.endsWith('.key');
+      
+      if (isDataFile && !isCertFile) {
         const filePath = path.join(OUTPUT_PATH, file);
         const stats = await fs.stat(filePath);
+        
+        logger.info(`Processing data file: ${file} (size: ${stats.size} bytes)`);
         
         outputFiles.push({
           filename: file,
@@ -458,7 +477,9 @@ async function processOutput(extractionId, type) {
         // Move file to extraction-specific directory
         const extractionDir = path.join(OUTPUT_PATH, extractionId);
         await fs.mkdir(extractionDir, { recursive: true });
-        await fs.rename(filePath, path.join(extractionDir, file));
+        const newPath = path.join(extractionDir, file);
+        await fs.rename(filePath, newPath);
+        logger.info(`Moved ${file} to ${newPath}`);
       }
     }
   } catch (error) {
@@ -598,8 +619,8 @@ setInterval(healthCheck, 5 * 60 * 1000);
 // Helper function to trigger analysis after extraction
 async function triggerAnalysis(extractionId, extractionType, organizationId, outputFiles) {
   try {
-    // Generate a unique analysis ID
-    const analysisId = `analysis-${extractionId}-${Date.now()}`;
+    // Generate a unique analysis ID (UUID format)
+    const analysisId = crypto.randomUUID();
     
     // Map extraction types to analysis types
     const analysisTypeMap = {
