@@ -168,8 +168,15 @@ router.post('/login',
       });
 
       // Check if user needs onboarding
-      const needsOnboarding = user.organization_name === 'MAES Default Organization' || 
-                              username === 'admin';
+      const preferences = typeof user.preferences === 'string' ? 
+        JSON.parse(user.preferences || '{}') : 
+        user.preferences || {};
+      
+      // User needs onboarding if:
+      // 1. Organization is still the default AND
+      // 2. User hasn't completed onboarding before
+      const needsOnboarding = user.organization_name === 'MAES Default Organization' && 
+                              !preferences.onboardingCompleted;
 
       // Return user data (without password)
       const userData = {
@@ -378,5 +385,79 @@ router.put('/change-password',
     }
   }
 );
+
+/**
+ * @swagger
+ * /api/auth/complete-onboarding:
+ *   post:
+ *     summary: Mark user onboarding as complete
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Onboarding marked as complete
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: Unauthorized
+ *       500:
+ *         description: Internal server error
+ */
+router.post('/complete-onboarding', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    
+    logger.info('Complete onboarding request', { userId, organizationId: req.organizationId });
+    
+    // Directly update user preferences without needing to fetch the user first
+    // This avoids the User.findById issue
+    const query = `
+      UPDATE maes.users 
+      SET preferences = COALESCE(preferences, '{}')::jsonb || '{"onboardingCompleted": true}'::jsonb,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1
+      RETURNING id
+    `;
+    
+    const { getRow } = require('../services/database');
+    const result = await getRow(query, [userId]);
+    
+    if (!result) {
+      logger.error('User not found for onboarding completion', { userId });
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    logger.info('Onboarding marked as complete', { userId });
+    
+    // Log the completion
+    await AuditLog.create({
+      userId: userId,
+      organizationId: req.organizationId,
+      action: 'onboarding_completed',
+      category: 'authentication',
+      ipAddress: req.ip,
+      userAgent: req.get('User-Agent')
+    });
+    
+    res.json({
+      success: true,
+      message: 'Onboarding marked as complete'
+    });
+    
+  } catch (error) {
+    logger.error('Complete onboarding error:', error);
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
 
 module.exports = router;

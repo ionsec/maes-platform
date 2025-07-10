@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { logger } = require('./logger');
 
-const LOG_FILE_PATH = '/app/Output/LogFile.txt';
+const LOG_FILE_PATH = '/output/LogFile.txt';
 const OUTPUT_PATH = '/output';
 
 // Monitor LogFile.txt for extraction progress

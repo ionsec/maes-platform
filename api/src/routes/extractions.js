@@ -282,11 +282,10 @@ router.get('/:id/progress', async (req, res) => {
 // Update extraction status (internal service endpoint)
 router.patch('/:id/status', async (req, res) => {
   try {
-    // Check for service authentication
-    const serviceToken = req.headers['x-service-token'];
-    if (!serviceToken || serviceToken !== process.env.SERVICE_AUTH_TOKEN) {
-      return res.status(401).json({
-        error: 'Unauthorized - Invalid service token'
+    // This endpoint is only for internal service communication
+    if (!req.isServiceRequest) {
+      return res.status(403).json({
+        error: 'This endpoint is for internal service communication only'
       });
     }
 

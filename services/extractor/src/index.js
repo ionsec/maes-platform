@@ -256,7 +256,7 @@ function buildPowerShellCommand(type, parameters, credentials) {
       Write-Host "Starting Unified Audit Log extraction...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
       try {
-        Get-UAL;
+        Get-UAL -OutputDir '${OUTPUT_PATH}';
         Write-Host "UAL extraction completed successfully.";
       } catch {
         Write-Error "UAL extraction failed: $_";

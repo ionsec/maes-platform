@@ -700,9 +700,12 @@ if (!isMainThread && workerData.type === 'job_processor') {
   // Process job function
   async function processJob(job) {
     try {
+      // Use the analysis job database ID, not the Bull queue job ID
+      const jobId = job.data.analysisId || job.id;
+      
       parentPort.postMessage({
         type: 'job_started',
-        jobId: job.id
+        jobId: jobId
       });
 
       logger.info(`Worker ${workerId} processing job ${job.id} (${job.type})`);
@@ -714,7 +717,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
           result = await processExtractionJob(job.data);
           break;
         case 'analysis':
-          result = await processAnalysisJob(job.data);
+          result = await processAnalysisJob(job.data, jobId);
           break;
         default:
           throw new Error(`Unknown job type: ${job.type}`);
@@ -722,7 +725,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
 
       parentPort.postMessage({
         type: 'job_completed',
-        jobId: job.id,
+        jobId: jobId,
         data: result
       });
 
@@ -731,7 +734,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
       
       parentPort.postMessage({
         type: 'job_failed',
-        jobId: job.id,
+        jobId: jobId,
         error: {
           message: error.message,
           stack: error.stack
@@ -777,13 +780,13 @@ if (!isMainThread && workerData.type === 'job_processor') {
   }
 
   // Process analysis job
-  async function processAnalysisJob(data) {
+  async function processAnalysisJob(data, jobId) {
     const { analysisId, extractionId, organizationId, analysisType } = data;
     
     // Update progress
     parentPort.postMessage({
       type: 'job_progress',
-      jobId: data.id,
+      jobId: jobId,
       data: { progress: 10, message: 'Starting analysis' }
     });
 
@@ -794,7 +797,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
       // Fetch extraction data
       parentPort.postMessage({
         type: 'job_progress',
-        jobId: data.id,
+        jobId: jobId,
         data: { progress: 20, message: 'Loading extraction data' }
       });
 
@@ -871,7 +874,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
       
       parentPort.postMessage({
         type: 'job_progress',
-        jobId: data.id,
+        jobId: jobId,
         data: { progress: 40, message: 'Analyzing audit logs' }
       });
 
@@ -884,7 +887,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
       
       parentPort.postMessage({
         type: 'job_progress',
-        jobId: data.id,
+        jobId: jobId,
         data: { progress: 70, message: 'Generating alerts' }
       });
 
@@ -898,7 +901,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
       
       parentPort.postMessage({
         type: 'job_progress',
-        jobId: data.id,
+        jobId: jobId,
         data: { progress: 90, message: 'Finalizing analysis' }
       });
 

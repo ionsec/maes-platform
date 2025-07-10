@@ -301,9 +301,20 @@ const ROLE_PERMISSIONS = {
   }
 };
 
-// Authenticate JWT token
+// Authenticate JWT token (with service token bypass)
 const authenticateToken = async (req, res, next) => {
   try {
+    // Check for service token first (for internal service communication)
+    const serviceToken = req.headers['x-service-token'];
+    logger.info(`Service token check: provided=${serviceToken ? 'PRESENT' : 'MISSING'}, expected=PRESENT, match=${serviceToken === process.env.SERVICE_AUTH_TOKEN}`);
+    
+    if (serviceToken === process.env.SERVICE_AUTH_TOKEN) {
+      // Skip JWT authentication for internal services
+      logger.info('Service token authenticated, bypassing JWT');
+      req.isServiceRequest = true;
+      return next();
+    }
+
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -345,6 +356,7 @@ const authenticateToken = async (req, res, next) => {
       }
 
       req.user = user;
+      req.userId = user.id;
       req.organizationId = user.organization_id;
       next();
     });
