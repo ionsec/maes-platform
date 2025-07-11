@@ -93,6 +93,8 @@ services:
       PORT: 3000
       # Domain configuration for CORS
       DOMAIN: ${DOMAIN:-localhost}
+      PUBLIC_IP: ${PUBLIC_IP:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
     ports:
       - "3000:3000"
