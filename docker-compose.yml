@@ -91,6 +91,9 @@ services:
       SIEM_EXPORT_LIMIT: ${SIEM_EXPORT_LIMIT:-1000}
       SIEM_RATE_LIMIT: ${SIEM_RATE_LIMIT:-50}
       PORT: 3000
+      # Domain configuration for CORS
+      DOMAIN: ${DOMAIN:-localhost}
+      CORS_ORIGIN: ${CORS_ORIGIN:-}
     ports:
       - "3000:3000"
     volumes:
@@ -165,7 +168,12 @@ services:
     image: maes-frontend:latest
     container_name: maes-frontend
     environment:
+      # Frontend configuration
       VITE_API_URL: ${API_URL:-https://localhost:3000}
+      # SSL and domain configuration
+      DOMAIN: ${DOMAIN:-localhost}
+      USE_LETS_ENCRYPT: ${USE_LETS_ENCRYPT:-false}
+      LETSENCRYPT_STAGING: ${LETSENCRYPT_STAGING:-false}
     ports:
       - "80:80"    # HTTP redirect to HTTPS
       - "443:443"  # HTTPS main port
