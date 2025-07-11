@@ -34,7 +34,11 @@ PORT=3000
 API_URL=http://localhost:3000
 
 # CORS Configuration
-CORS_ORIGIN=http://localhost:8080
+# Optional: Specific CORS origin override (if not set, will auto-detect based on DOMAIN)
+CORS_ORIGIN=
+# Domain for the application (used for CORS and SSL)
+DOMAIN=localhost
+# Frontend URL (for development and documentation)
 FRONTEND_URL=http://localhost:8080
 
 # Rate Limiting
@@ -96,6 +100,27 @@ The Elasticsearch integration uses these variables:
 - `ELASTICSEARCH_URL`: Elasticsearch server URL (default: http://elasticsearch:9200)
 - `ELASTICSEARCH_USERNAME`: Elasticsearch username (optional, for authentication)
 - `ELASTICSEARCH_PASSWORD`: Elasticsearch password (optional, for authentication)
+
+## CORS and Domain Configuration
+
+The application now supports dynamic CORS configuration based on the deployment environment:
+
+### Automatic CORS Origins
+The API automatically allows the following origins:
+- `localhost` with various ports (for development)
+- The domain specified in `DOMAIN` environment variable
+- Any explicit `CORS_ORIGIN` if provided
+
+### Public IP to Localhost Redirects
+The application handles scenarios where:
+1. Frontend is accessed via public IP
+2. User gets redirected to localhost (common in development)
+3. API calls work properly despite the domain change
+
+### Environment Variables for CORS
+- `DOMAIN`: Sets the primary domain for the application
+- `CORS_ORIGIN`: Optional override for specific CORS origin
+- `API_URL`: Used by frontend to determine API endpoint
 
 ## Health Checks
 

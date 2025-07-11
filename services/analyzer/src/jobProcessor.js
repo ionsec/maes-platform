@@ -221,12 +221,34 @@ class JobProcessor {
   // Update job progress
   async updateJobProgress(jobId, progress, message) {
     try {
-      const job = await AnalysisJob.findByPk(jobId);
+      // Try to find by primary key first
+      let job = await AnalysisJob.findByPk(jobId);
+      
+      // If not found by PK, try to find by id field
+      if (!job) {
+        const { getRow } = require('./services/database');
+        const jobRecord = await getRow('SELECT * FROM maes.analysis_jobs WHERE id = $1', [jobId]);
+        if (jobRecord) {
+          job = { 
+            update: async (data) => {
+              const { execute } = require('./services/database');
+              await execute(
+                'UPDATE maes.analysis_jobs SET progress = $1, status = $2, updated_at = NOW() WHERE id = $3',
+                [data.progress, data.status, jobId]
+              );
+            }
+          };
+        }
+      }
+      
       if (job) {
         await job.update({
           progress,
           status: progress === 100 ? 'completed' : 'running'
         });
+        logger.info(`Updated job ${jobId} progress: ${progress}% - ${message || ''}`);
+      } else {
+        logger.warn(`Job ${jobId} not found in database for progress update`);
       }
     } catch (error) {
       logger.error(`Failed to update job progress for ${jobId}:`, error);
@@ -236,7 +258,26 @@ class JobProcessor {
   // Handle job completion
   async handleJobCompletion(jobId, data) {
     try {
-      const job = await AnalysisJob.findByPk(jobId);
+      // Try to find by primary key first
+      let job = await AnalysisJob.findByPk(jobId);
+      
+      // If not found by PK, try to find by id field
+      if (!job) {
+        const { getRow } = require('./services/database');
+        const jobRecord = await getRow('SELECT * FROM maes.analysis_jobs WHERE id = $1', [jobId]);
+        if (jobRecord) {
+          job = { 
+            update: async (data) => {
+              const { execute } = require('./services/database');
+              await execute(
+                'UPDATE maes.analysis_jobs SET status = $1, progress = $2, completed_at = $3, results = $4, alerts = $5, updated_at = NOW() WHERE id = $6',
+                [data.status, data.progress, data.completedAt, JSON.stringify(data.results), JSON.stringify(data.alerts), jobId]
+              );
+            }
+          };
+        }
+      }
+      
       if (job) {
         await job.update({
           status: 'completed',
@@ -245,6 +286,9 @@ class JobProcessor {
           results: data.results,
           alerts: data.alerts
         });
+        logger.info(`Completed job ${jobId} with ${data.results?.findings?.length || 0} findings and ${data.alerts?.length || 0} alerts`);
+      } else {
+        logger.warn(`Job ${jobId} not found in database for completion update`);
       }
     } catch (error) {
       logger.error(`Failed to handle job completion for ${jobId}:`, error);
@@ -254,13 +298,35 @@ class JobProcessor {
   // Handle job failure
   async handleJobFailure(jobId, error) {
     try {
-      const job = await AnalysisJob.findByPk(jobId);
+      // Try to find by primary key first
+      let job = await AnalysisJob.findByPk(jobId);
+      
+      // If not found by PK, try to find by id field
+      if (!job) {
+        const { getRow } = require('./services/database');
+        const jobRecord = await getRow('SELECT * FROM maes.analysis_jobs WHERE id = $1', [jobId]);
+        if (jobRecord) {
+          job = { 
+            update: async (data) => {
+              const { execute } = require('./services/database');
+              await execute(
+                'UPDATE maes.analysis_jobs SET status = $1, error_message = $2, error_details = $3, updated_at = NOW() WHERE id = $4',
+                [data.status, data.errorMessage, JSON.stringify(data.errorDetails), jobId]
+              );
+            }
+          };
+        }
+      }
+      
       if (job) {
         await job.update({
           status: 'failed',
           errorMessage: error.message,
           errorDetails: error
         });
+        logger.error(`Failed job ${jobId}: ${error.message}`);
+      } else {
+        logger.warn(`Job ${jobId} not found in database for failure update`);
       }
     } catch (updateError) {
       logger.error(`Failed to handle job failure for ${jobId}:`, updateError);
