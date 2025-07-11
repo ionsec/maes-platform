@@ -45,15 +45,33 @@ app.use(helmet({
 // Compression middleware
 app.use(compression());
 
-// CORS configuration
-const corsOptions = {
-  origin: [
-    process.env.CORS_ORIGIN || 'https://localhost',
+// CORS configuration - dynamic based on domain
+const buildCorsOrigins = () => {
+  const domain = process.env.DOMAIN || 'localhost';
+  const origins = [
+    // Always include localhost for development
     'https://localhost',
     'https://localhost:443',
-    'http://localhost:8080', // Keep for backward compatibility
+    'http://localhost:8080', // Backward compatibility
     'http://localhost'
-  ],
+  ];
+
+  // Add custom domain origins if not localhost
+  if (domain !== 'localhost') {
+    origins.push(`https://${domain}`);
+    origins.push(`http://${domain}`); // For Let's Encrypt challenge
+  }
+
+  // Add explicit CORS_ORIGIN if provided
+  if (process.env.CORS_ORIGIN) {
+    origins.push(process.env.CORS_ORIGIN);
+  }
+
+  return origins;
+};
+
+const corsOptions = {
+  origin: buildCorsOrigins(),
   credentials: true,
   optionsSuccessStatus: 200
 };

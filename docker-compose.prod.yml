@@ -1,0 +1,65 @@
+# Production Docker Compose Override
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+name: maes-platform
+
+services:
+  frontend:
+    environment:
+      - DOMAIN=${DOMAIN}
+      - USE_LETS_ENCRYPT=${USE_LETS_ENCRYPT:-true}
+      - LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING:-false}
+    volumes:
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    depends_on:
+      - certbot
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: maes-certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ./ssl:/ssl
+    environment:
+      - DOMAIN=${DOMAIN}
+      - EMAIL=${EMAIL}
+      - LETSENCRYPT_STAGING=${LETSENCRYPT_STAGING:-false}
+    command: >
+      sh -c '
+        if [ "$${LETSENCRYPT_STAGING}" = "true" ]; then
+          STAGING_FLAG="--staging"
+        else
+          STAGING_FLAG=""
+        fi;
+        
+        if [ ! -d "/etc/letsencrypt/live/$${DOMAIN}" ]; then
+          echo "🔒 Obtaining initial certificate for $${DOMAIN}...";
+          certbot certonly --webroot --webroot-path=/var/www/certbot \
+            --email $${EMAIL} --agree-tos --no-eff-email \
+            $${STAGING_FLAG} -d $${DOMAIN} || exit 1;
+          echo "✅ Initial certificate obtained";
+        else
+          echo "✅ Certificate already exists for $${DOMAIN}";
+        fi;
+        
+        # Keep container running for renewal
+        while true; do
+          echo "💤 Sleeping for 12 hours...";
+          sleep 43200;
+          echo "🔄 Attempting certificate renewal...";
+          certbot renew --webroot --webroot-path=/var/www/certbot;
+          echo "📡 Reloading nginx...";
+          docker exec maes-frontend nginx -s reload || true;
+        done
+      '
+    restart: unless-stopped
+    networks:
+      - maes-network
+
+volumes:
+  certbot_certs:
+    driver: local
+  certbot_www:
+    driver: local
