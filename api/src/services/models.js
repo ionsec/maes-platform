@@ -307,10 +307,20 @@ const ExtractionModel = {
     const values = [];
     let paramCount = 1;
 
+    // Fields that should be stored as JSON
+    const jsonFields = ['outputFiles', 'statistics', 'errorDetails', 'parameters'];
+
     Object.keys(updates).forEach(key => {
       if (key !== 'id') {
-        fields.push(`${key.replace(/([A-Z])/g, '_$1').toLowerCase()} = $${paramCount}`);
-        values.push(updates[key]);
+        const dbKey = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        fields.push(`${dbKey} = $${paramCount}`);
+        
+        // Convert to JSON for JSON fields
+        if (jsonFields.includes(key)) {
+          values.push(JSON.stringify(updates[key]));
+        } else {
+          values.push(updates[key]);
+        }
         paramCount++;
       }
     });

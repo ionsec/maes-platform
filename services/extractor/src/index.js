@@ -619,35 +619,71 @@ setInterval(healthCheck, 5 * 60 * 1000);
 // Helper function to trigger analysis after extraction
 async function triggerAnalysis(extractionId, extractionType, organizationId, outputFiles) {
   try {
-    // Generate a unique analysis ID (UUID format)
-    const analysisId = crypto.randomUUID();
-    
     // Map extraction types to analysis types
     const analysisTypeMap = {
-      'unified_audit_log': 'entra_audit_logs',
-      'azure_signin_logs': 'azure_signin_analysis',
-      'azure_audit_logs': 'azure_audit_analysis',
+      'unified_audit_log': 'ual_analysis',
+      'azure_signin_logs': 'signin_analysis',
+      'azure_audit_logs': 'audit_analysis',
       'full_extraction': 'comprehensive_analysis'
     };
     
-    const analysisType = analysisTypeMap[extractionType] || 'general_analysis';
+    const analysisType = analysisTypeMap[extractionType] || 'ual_analysis';
     
     logger.info(`Triggering ${analysisType} analysis for extraction ${extractionId}`);
     
-    // Add analysis job to queue
-    const analysisJob = await analysisQueue.add('analyze-data', {
-      analysisId,
-      extractionId,
-      organizationId: organizationId || '00000000-0000-0000-0000-000000000001',
-      analysisType,
-      parameters: {
-        extractionType,
-        outputFiles,
-        autoTriggered: true
-      }
-    });
+    // Create analysis job via API to ensure proper database record creation
+    const apiUrl = process.env.API_URL || 'http://api:3000';
     
-    logger.info(`Analysis job ${analysisJob.id} created for extraction ${extractionId}`);
+    try {
+      const response = await axios.post(
+        `${apiUrl}/api/analysis/internal`,
+        {
+          extractionId,
+          type: analysisType,
+          priority: 'medium',
+          parameters: {
+            extractionType,
+            outputFiles,
+            autoTriggered: true,
+            enableThreatIntel: true,
+            enablePatternDetection: true,
+            enableAnomalyDetection: false
+          }
+        },
+        {
+          headers: {
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        }
+      );
+      
+      if (response.data && response.data.success) {
+        logger.info(`Analysis job ${response.data.analysisJob.id} created for extraction ${extractionId} via API`);
+      } else {
+        throw new Error('API response indicated failure');
+      }
+      
+    } catch (apiError) {
+      logger.error('Failed to create analysis job via API, falling back to direct queue method:', apiError.message);
+      
+      // Fallback to direct queue method (original approach)
+      const analysisId = crypto.randomUUID();
+      const analysisJob = await analysisQueue.add('analyze-data', {
+        analysisId,
+        extractionId,
+        organizationId: organizationId || '00000000-0000-0000-0000-000000000001',
+        analysisType,
+        parameters: {
+          extractionType,
+          outputFiles,
+          autoTriggered: true
+        }
+      });
+      
+      logger.info(`Analysis job ${analysisJob.id} created for extraction ${extractionId} via fallback method`);
+    }
     
   } catch (error) {
     logger.error('Error triggering analysis:', error);

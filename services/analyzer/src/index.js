@@ -48,16 +48,25 @@ function setupQueueProcessors() {
     try {
       logger.info(`Processing analysis job: ${job.id}`);
       
-      const { analysisId, extractionId, organizationId, analysisType, parameters } = job.data;
+      const { analysisId, extractionId, organizationId, analysisType, type, parameters } = job.data;
+      
+      // Use either analysisType or type (for consistency)
+      const actualAnalysisType = analysisType || type || 'ual_analysis';
+      
+      // If we have an analysisId from the database, use it; otherwise create one
+      const actualAnalysisId = analysisId || `auto_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       // Add job to multi-threaded processor
       await jobProcessor.addJob('analysis', {
-        id: analysisId,
-        analysisId,
+        id: actualAnalysisId,
+        analysisId: actualAnalysisId,
         extractionId,
         organizationId,
-        analysisType,
-        parameters,
+        analysisType: actualAnalysisType,
+        parameters: {
+          ...parameters,
+          priority: parameters?.priority || 'medium'
+        },
         priority: parameters?.priority || 'medium'
       });
 

@@ -9,6 +9,7 @@ const { Server } = require('socket.io');
 const { pool } = require('./services/database');
 const { logger } = require('./utils/logger');
 const { rateLimiter } = require('./middleware/rateLimiter');
+const { redirectHandler } = require('./middleware/redirectHandler');
 const swaggerSpecs = require('./swagger');
 const elasticsearchService = require('./services/elasticsearch');
 
@@ -53,13 +54,18 @@ const buildCorsOrigins = () => {
     'https://localhost',
     'https://localhost:443',
     'http://localhost:8080', // Backward compatibility
-    'http://localhost'
+    'http://localhost',
+    'http://localhost:3000',
+    'https://localhost:3000'
   ];
 
   // Add custom domain origins if not localhost
   if (domain !== 'localhost') {
     origins.push(`https://${domain}`);
     origins.push(`http://${domain}`); // For Let's Encrypt challenge
+    // Add with explicit ports
+    origins.push(`https://${domain}:443`);
+    origins.push(`http://${domain}:80`);
   }
 
   // Add explicit CORS_ORIGIN if provided
@@ -67,13 +73,39 @@ const buildCorsOrigins = () => {
     origins.push(process.env.CORS_ORIGIN);
   }
 
-  return origins;
+  // Add API URL variations
+  if (process.env.API_URL) {
+    origins.push(process.env.API_URL);
+  }
+
+  // Remove duplicates and filter out empty strings
+  return [...new Set(origins.filter(origin => origin))];
 };
 
 const corsOptions = {
-  origin: buildCorsOrigins(),
+  origin: function (origin, callback) {
+    const allowedOrigins = buildCorsOrigins();
+    
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Check if the origin is in our allowed list
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      // Log for debugging
+      logger.warn(`CORS blocked origin: ${origin}. Allowed origins:`, allowedOrigins);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  // Allow all headers that might be sent
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['X-Total-Count', 'X-Page', 'X-Per-Page'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']
 };
 app.use(cors(corsOptions));
 
@@ -90,6 +122,9 @@ app.use(morgan('combined', {
 
 // Rate limiting
 app.use(rateLimiter);
+
+// Redirect handler middleware
+app.use(redirectHandler);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -163,8 +198,9 @@ const httpServer = createServer(app);
 // Socket.IO setup
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
-    credentials: true
+    origin: buildCorsOrigins(),
+    credentials: true,
+    methods: ['GET', 'POST']
   }
 });
 
