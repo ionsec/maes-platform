@@ -668,13 +668,49 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
     } catch (apiError) {
       logger.error('Failed to create analysis job via API, falling back to direct queue method:', apiError.message);
       
-      // Fallback to direct queue method (original approach)
+      // Fallback to direct queue method - but also try to create database record
       const analysisId = crypto.randomUUID();
+      
+      try {
+        // Try to create database record directly
+        const axios = require('axios');
+        const dbResponse = await axios.post(
+          `${apiUrl}/api/analysis/internal/direct`,
+          {
+            id: analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001',
+            type: analysisType,
+            priority: 'medium',
+            parameters: {
+              extractionType,
+              outputFiles,
+              autoTriggered: true
+            }
+          },
+          {
+            headers: {
+              'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+              'Content-Type': 'application/json'
+            },
+            timeout: 5000
+          }
+        );
+        
+        if (dbResponse.data && dbResponse.data.success) {
+          logger.info(`Database record created for fallback analysis job ${analysisId}`);
+        }
+      } catch (dbError) {
+        logger.warn('Failed to create database record for fallback analysis job:', dbError.message);
+      }
+      
+      // Add to queue regardless of database record creation
       const analysisJob = await analysisQueue.add('analyze-data', {
         analysisId,
         extractionId,
         organizationId: organizationId || '00000000-0000-0000-0000-000000000001',
         analysisType,
+        type: analysisType,
         parameters: {
           extractionType,
           outputFiles,
