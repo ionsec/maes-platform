@@ -8,7 +8,170 @@ const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
-// Apply authentication and rate limiting
+// Internal endpoint for service-triggered analysis (BEFORE auth middleware)
+router.post('/internal', 
+  [
+    body('extractionId').isUUID().withMessage('Valid extraction ID is required'),
+    body('type').isIn([
+      'ual_analysis',
+      'signin_analysis',
+      'audit_analysis',
+      'mfa_analysis',
+      'oauth_analysis',
+      'risky_detection_analysis',
+      'risky_user_analysis',
+      'message_trace_analysis',
+      'device_analysis',
+      'comprehensive_analysis'
+    ]).withMessage('Invalid analysis type'),
+    body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
+    body('parameters').optional().isObject().withMessage('Parameters must be an object')
+  ],
+  async (req, res) => {
+    try {
+      // Check service authentication token
+      const serviceToken = req.headers['x-service-token'];
+      if (!serviceToken || serviceToken !== process.env.SERVICE_AUTH_TOKEN) {
+        return res.status(403).json({
+          error: 'Invalid service token'
+        });
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { extractionId, type, priority = 'medium', parameters = {} } = req.body;
+
+      // Get extraction to determine organization
+      const { getRow } = require('../services/database');
+      const extraction = await getRow(
+        'SELECT * FROM maes.extractions WHERE id = $1',
+        [extractionId]
+      );
+
+      if (!extraction) {
+        return res.status(404).json({
+          error: 'Extraction not found'
+        });
+      }
+
+      if (extraction.status !== 'completed') {
+        return res.status(400).json({
+          error: 'Cannot analyze incomplete extraction'
+        });
+      }
+
+      // Create analysis job record
+      const analysisJob = await AnalysisJob.create({
+        extractionId,
+        organizationId: extraction.organization_id,
+        type,
+        priority,
+        parameters: {
+          ...parameters,
+          autoTriggered: true
+        },
+        status: 'pending'
+      });
+
+      // Queue analysis job
+      await createAnalysisJob(analysisJob);
+
+      logger.info(`Internal analysis job created: ${analysisJob.id} for extraction ${extractionId}`);
+
+      res.status(201).json({
+        success: true,
+        analysisJob
+      });
+
+    } catch (error) {
+      logger.error('Create internal analysis job error:', error);
+      res.status(500).json({
+        error: 'Internal server error'
+      });
+    }
+  }
+);
+
+// Direct database record creation endpoint (for fallback scenarios)
+router.post('/internal/direct', 
+  [
+    body('id').isUUID().withMessage('Valid job ID is required'),
+    body('extractionId').isUUID().withMessage('Valid extraction ID is required'),
+    body('organizationId').isUUID().withMessage('Valid organization ID is required'),
+    body('type').isIn([
+      'ual_analysis',
+      'signin_analysis',
+      'audit_analysis',
+      'mfa_analysis',
+      'oauth_analysis',
+      'risky_detection_analysis',
+      'risky_user_analysis',
+      'message_trace_analysis',
+      'device_analysis',
+      'comprehensive_analysis'
+    ]).withMessage('Invalid analysis type'),
+    body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
+    body('parameters').optional().isObject().withMessage('Parameters must be an object')
+  ],
+  async (req, res) => {
+    try {
+      // Check service authentication token
+      const serviceToken = req.headers['x-service-token'];
+      if (!serviceToken || serviceToken !== process.env.SERVICE_AUTH_TOKEN) {
+        return res.status(403).json({
+          error: 'Invalid service token'
+        });
+      }
+
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { id, extractionId, organizationId, type, priority = 'medium', parameters = {} } = req.body;
+
+      // Create analysis job record with specific ID
+      const { execute } = require('../services/database');
+      await execute(
+        `INSERT INTO maes.analysis_jobs (id, extraction_id, organization_id, type, priority, parameters, status, created_at, updated_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+        [id, extractionId, organizationId, type, priority, JSON.stringify({...parameters, autoTriggered: true}), 'pending']
+      );
+
+      logger.info(`Direct analysis job record created: ${id} for extraction ${extractionId}`);
+
+      res.status(201).json({
+        success: true,
+        analysisJob: {
+          id,
+          extractionId,
+          organizationId,
+          type,
+          priority,
+          parameters: {...parameters, autoTriggered: true},
+          status: 'pending'
+        }
+      });
+
+    } catch (error) {
+      logger.error('Create direct analysis job record error:', error);
+      res.status(500).json({
+        error: 'Internal server error'
+      });
+    }
+  }
+);
+
+// Apply authentication and rate limiting to other routes
 router.use(authenticateToken);
 router.use(apiRateLimiter);
 
@@ -392,96 +555,6 @@ router.post('/:id/cancel',
 
     } catch (error) {
       logger.error('Cancel analysis job error:', error);
-      res.status(500).json({
-        error: 'Internal server error'
-      });
-    }
-  }
-);
-
-// Internal endpoint for service-triggered analysis (no auth required, uses service token)
-router.post('/internal', 
-  [
-    body('extractionId').isUUID().withMessage('Valid extraction ID is required'),
-    body('type').isIn([
-      'ual_analysis',
-      'signin_analysis',
-      'audit_analysis',
-      'mfa_analysis',
-      'oauth_analysis',
-      'risky_detection_analysis',
-      'risky_user_analysis',
-      'message_trace_analysis',
-      'device_analysis',
-      'comprehensive_analysis'
-    ]).withMessage('Invalid analysis type'),
-    body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
-    body('parameters').optional().isObject().withMessage('Parameters must be an object')
-  ],
-  async (req, res) => {
-    try {
-      // Check service authentication token
-      const serviceToken = req.headers['x-service-token'];
-      if (!serviceToken || serviceToken !== process.env.SERVICE_AUTH_TOKEN) {
-        return res.status(403).json({
-          error: 'Invalid service token'
-        });
-      }
-
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          error: 'Validation failed',
-          details: errors.array()
-        });
-      }
-
-      const { extractionId, type, priority = 'medium', parameters = {} } = req.body;
-
-      // Get extraction to determine organization
-      const { getRow } = require('../services/database');
-      const extraction = await getRow(
-        'SELECT * FROM maes.extractions WHERE id = $1',
-        [extractionId]
-      );
-
-      if (!extraction) {
-        return res.status(404).json({
-          error: 'Extraction not found'
-        });
-      }
-
-      if (extraction.status !== 'completed') {
-        return res.status(400).json({
-          error: 'Cannot analyze incomplete extraction'
-        });
-      }
-
-      // Create analysis job record
-      const analysisJob = await AnalysisJob.create({
-        extractionId,
-        organizationId: extraction.organization_id,
-        type,
-        priority,
-        parameters: {
-          ...parameters,
-          autoTriggered: true
-        },
-        status: 'pending'
-      });
-
-      // Queue analysis job
-      await createAnalysisJob(analysisJob);
-
-      logger.info(`Internal analysis job created: ${analysisJob.id} for extraction ${extractionId}`);
-
-      res.status(201).json({
-        success: true,
-        analysisJob
-      });
-
-    } catch (error) {
-      logger.error('Create internal analysis job error:', error);
       res.status(500).json({
         error: 'Internal server error'
       });
