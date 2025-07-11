@@ -46,31 +46,51 @@ app.use(helmet({
 // Compression middleware
 app.use(compression());
 
-// CORS configuration - dynamic based on domain
+// CORS configuration - dynamic based on environment variables
 const buildCorsOrigins = () => {
-  const domain = process.env.DOMAIN || 'localhost';
-  const origins = [
-    // Always include localhost for development
+  const origins = [];
+
+  // Always include localhost for development
+  origins.push(
     'https://localhost',
     'https://localhost:443',
-    'http://localhost:8080', // Backward compatibility
+    'http://localhost:8080',
     'http://localhost',
     'http://localhost:3000',
     'https://localhost:3000'
-  ];
+  );
 
-  // Add custom domain origins if not localhost
-  if (domain !== 'localhost') {
-    origins.push(`https://${domain}`);
-    origins.push(`http://${domain}`); // For Let's Encrypt challenge
-    // Add with explicit ports
-    origins.push(`https://${domain}:443`);
-    origins.push(`http://${domain}:80`);
+  // Add DOMAIN if provided
+  if (process.env.DOMAIN) {
+    const domain = process.env.DOMAIN;
+    origins.push(
+      `https://${domain}`,
+      `http://${domain}`,
+      `https://${domain}:443`,
+      `http://${domain}:80`
+    );
   }
 
-  // Add explicit CORS_ORIGIN if provided
+  // Add PUBLIC_IP if provided
+  if (process.env.PUBLIC_IP) {
+    const publicIP = process.env.PUBLIC_IP;
+    origins.push(
+      `https://${publicIP}`,
+      `http://${publicIP}`,
+      `https://${publicIP}:443`,
+      `http://${publicIP}:80`
+    );
+  }
+
+  // Add FRONTEND_URL if provided
+  if (process.env.FRONTEND_URL) {
+    origins.push(process.env.FRONTEND_URL);
+  }
+
+  // Add explicit CORS_ORIGIN if provided (can be comma-separated)
   if (process.env.CORS_ORIGIN) {
-    origins.push(process.env.CORS_ORIGIN);
+    const corsOrigins = process.env.CORS_ORIGIN.split(',').map(origin => origin.trim());
+    origins.push(...corsOrigins);
   }
 
   // Add API URL variations
@@ -79,7 +99,7 @@ const buildCorsOrigins = () => {
   }
 
   // Remove duplicates and filter out empty strings
-  return [...new Set(origins.filter(origin => origin))];
+  return [...new Set(origins.filter(origin => origin && origin.length > 0))];
 };
 
 const corsOptions = {

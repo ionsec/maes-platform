@@ -93,9 +93,14 @@ cp .env.example .env
 **Required environment variables for production:**
 ```bash
 # Domain Configuration
-DOMAIN=yourdomain.com              # Your domain
+DOMAIN=yourdomain.com              # Your domain (e.g., maes-demo.ionsec.io)
 USE_LETS_ENCRYPT=true             # Enable Let's Encrypt
 EMAIL=admin@yourdomain.com        # Required for Let's Encrypt
+
+# CORS Configuration (automatically configured based on DOMAIN)
+# PUBLIC_IP=1.2.3.4               # Alternative: Use public IP instead of domain
+# FRONTEND_URL=https://your-frontend-url.com  # Alternative: Explicit frontend URL
+# CORS_ORIGIN=https://domain1.com,https://domain2.com  # Manual override
 
 # Security (CHANGE THESE!)
 POSTGRES_PASSWORD=your_secure_postgres_password
@@ -113,6 +118,13 @@ REDIS_URL=redis://:your_secure_redis_password@redis:6379
 # API Configuration
 NODE_ENV=production
 PORT=3000
+API_URL=https://yourdomain.com:3000  # API endpoint for frontend
+```
+
+**Frontend configuration (frontend/.env):**
+```bash
+# Point frontend to your API endpoint
+VITE_API_URL=https://yourdomain.com:3000
 ```
 
 ## 📊 Using MAES
@@ -205,9 +217,12 @@ docker push your-registry/maes-analyzer:latest
 - Check available disk space for logs and data
 
 ### CORS Issues
-- Verify `DOMAIN` environment variable is set correctly
-- Check API logs for CORS-related errors
-- Ensure frontend can reach API endpoints
+- **Common error**: "Access to XMLHttpRequest blocked by CORS policy"
+- **Solution**: Set `DOMAIN` environment variable to your deployment domain
+- **Example**: For deployment on `maes-demo.ionsec.io`, set `DOMAIN=maes-demo.ionsec.io`
+- **Alternative**: Use `PUBLIC_IP` for IP-based deployments or `CORS_ORIGIN` for manual override
+- **Frontend**: Ensure `VITE_API_URL` in `frontend/.env` points to correct API endpoint
+- Check API logs for CORS-related errors: `docker logs maes-api`
 
 ## 📋 Backup & Maintenance
 
