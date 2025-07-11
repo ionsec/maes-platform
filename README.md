@@ -69,7 +69,7 @@ cp .env.example .env
 
 2. **Access the application**:
    - **Web Interface**: https://localhost (dev) or https://yourdomain.com (prod)
-   - **API Documentation**: https://localhost:3000/api/docs
+   - **API Documentation**: https://localhost/api/docs (proxied via nginx)
    - **Default Login**: admin@maes.local / admin123
 
 ## 🔒 SSL & Domain Configuration
@@ -117,14 +117,14 @@ REDIS_URL=redis://:your_secure_redis_password@redis:6379
 
 # API Configuration
 NODE_ENV=production
-PORT=3000
-API_URL=https://yourdomain.com:3000  # API endpoint for frontend
+PORT=3000  # Internal port only (not exposed publicly)
+API_URL=https://yourdomain.com  # Frontend API URL (nginx proxies /api/ internally)
 ```
 
 **Frontend configuration (frontend/.env):**
 ```bash
-# Point frontend to your API endpoint
-VITE_API_URL=https://yourdomain.com:3000
+# Point frontend to your domain (nginx proxies API internally)
+VITE_API_URL=https://yourdomain.com
 ```
 
 ## 📊 Using MAES
@@ -168,6 +168,17 @@ VITE_API_URL=https://yourdomain.com:3000
 ## 🛠️ Development
 
 ### Local Development with Hot-reloading
+
+#### Method 1: Using Development Override (Recommended)
+```bash
+# Start with development configuration (exposes API port 3000)
+docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+# Access API directly at: http://localhost:3000/api/docs
+# Access frontend at: https://localhost
+```
+
+#### Method 2: Manual Development Setup
 Add this to your `.env` file:
 ```bash
 API_COMMAND=npm run dev
@@ -177,6 +188,8 @@ Then restart the API container:
 ```bash
 docker compose restart api
 ```
+
+**Note**: In production, port 3000 is not exposed publicly. All API requests go through nginx proxy at `/api/`
 
 ### Building for Production
 ```bash
@@ -199,7 +212,8 @@ docker push your-registry/maes-analyzer:latest
 ### Services Not Starting
 - Check logs: `docker compose logs <service-name>`
 - Ensure all environment variables are set correctly
-- Verify port availability (80, 443, 3000, 5432, 6379, 9200)
+- Verify port availability (80, 443, 5432, 6379, 9200)
+- **Note**: Port 3000 is internal only (not exposed in production)
 
 ### Registration Issues
 - Ensure database migrations have been applied
@@ -219,9 +233,14 @@ docker push your-registry/maes-analyzer:latest
 ### CORS Issues
 - **Common error**: "Access to XMLHttpRequest blocked by CORS policy"
 - **Solution**: Set `DOMAIN` environment variable to your deployment domain
-- **Example**: For deployment on `maes-demo.ionsec.io`, set `DOMAIN=maes-demo.ionsec.io`
+- **Example**: For deployment on `maes-demo.ionsec.io`:
+  ```bash
+  DOMAIN=maes-demo.ionsec.io
+  API_URL=https://maes-demo.ionsec.io
+  ```
+- **Frontend**: Ensure `VITE_API_URL=https://maes-demo.ionsec.io` (no port 3000)
 - **Alternative**: Use `PUBLIC_IP` for IP-based deployments or `CORS_ORIGIN` for manual override
-- **Frontend**: Ensure `VITE_API_URL` in `frontend/.env` points to correct API endpoint
+- **Development**: Use `docker-compose.dev.yml` to expose port 3000 for direct API access
 - Check API logs for CORS-related errors: `docker logs maes-api`
 
 ## 📋 Backup & Maintenance
