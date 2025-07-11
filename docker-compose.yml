@@ -96,8 +96,10 @@ services:
       PUBLIC_IP: ${PUBLIC_IP:-}
       FRONTEND_URL: ${FRONTEND_URL:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-}
-    ports:
-      - "3000:3000"
+    # Port 3000 is internal only - accessed via nginx proxy
+    # For development, uncomment the line below:
+    # ports:
+    #   - "3000:3000"
     volumes:
       - ./certs:/app/certs:ro
     depends_on:
@@ -170,8 +172,8 @@ services:
     image: maes-frontend:latest
     container_name: maes-frontend
     environment:
-      # Frontend configuration
-      VITE_API_URL: ${API_URL:-https://localhost:3000}
+      # Frontend configuration - API accessed through nginx proxy
+      VITE_API_URL: ${API_URL:-https://localhost}
       # SSL and domain configuration
       DOMAIN: ${DOMAIN:-localhost}
       USE_LETS_ENCRYPT: ${USE_LETS_ENCRYPT:-false}

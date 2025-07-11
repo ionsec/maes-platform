@@ -1,0 +1,13 @@
+# Development Docker Compose Override
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# This exposes the API port 3000 for direct development access
+
+name: maes-platform
+
+services:
+  api:
+    ports:
+      - "3000:3000"  # Expose API port for development
+    environment:
+      # Enable hot reload for development
+      API_COMMAND: npm run dev
