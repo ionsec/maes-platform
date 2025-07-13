@@ -37,8 +37,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Allow inline scripts for Swagger UI
       imgSrc: ["'self'", "data:", "https:"],
+      fontSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
     },
   },
 }));
@@ -155,8 +157,18 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API documentation
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs));
+// API documentation with custom options
+const swaggerOptions = {
+  swaggerOptions: {
+    persistAuthorization: true,
+  },
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'MAES API Documentation'
+};
+
+// Serve Swagger UI static assets explicitly
+app.use('/api/docs', swaggerUi.serve);
+app.get('/api/docs', swaggerUi.setup(swaggerSpecs, swaggerOptions));
 
 // Routes
 app.use('/api/auth', authRoutes);
