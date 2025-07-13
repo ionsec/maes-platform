@@ -125,8 +125,8 @@ router.post('/login',
         });
       }
 
-      // Check organization status
-      if (!user.organization_active) {
+      // Check organization status (skip for individual users without organization)
+      if (user.organization_id && !user.organization_active) {
         await AuditLog.create({
           userId: user.id,
           organizationId: user.organization_id,
@@ -458,6 +458,154 @@ router.post('/complete-onboarding', authenticateToken, async (req, res) => {
       error: 'Internal server error'
     });
   }
+});
+
+// Handle admin consent callback
+router.get('/callback', async (req, res) => {
+  const { tenant, admin_consent, error, error_description } = req.query;
+  
+  if (error) {
+    logger.warn(`Admin consent failed: ${error} - ${error_description}`);
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>MAES - Admin Consent Failed</title>
+        <style>
+          body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+          .error { color: #dc3545; background: #f8d7da; padding: 15px; border-radius: 5px; margin: 20px 0; }
+          .button { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px; }
+        </style>
+        <script>
+          setTimeout(() => {
+            window.location.href = '/register?consent=failed&error=${encodeURIComponent(error)}';
+          }, 3000);
+        </script>
+      </head>
+      <body>
+        <h1>MAES Admin Consent Failed</h1>
+        <div class="error">
+          <strong>Error:</strong> ${error}<br>
+          <strong>Description:</strong> ${error_description || 'Unknown error occurred'}
+        </div>
+        <p>Redirecting back to registration in 3 seconds...</p>
+        <a href="/register?consent=failed&error=${encodeURIComponent(error)}" class="button">Return to Registration Now</a>
+      </body>
+      </html>
+    `);
+  }
+
+  if (admin_consent === 'True' && tenant) {
+    logger.info(`Admin consent granted for tenant: ${tenant}`);
+    
+    try {
+      // Store the consent information temporarily
+      const consentToken = `consent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // In a real implementation, you'd store this in Redis or database
+      // For now, we'll pass it through URL params
+      
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>MAES - Admin Consent Successful</title>
+          <meta http-equiv="refresh" content="6;url=/register?consent=success&tenant=${encodeURIComponent(tenant)}&token=${consentToken}">
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; text-align: center; }
+            .success { color: #155724; background: #d4edda; padding: 15px; border-radius: 5px; margin: 20px 0; }
+            .info { background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
+            .countdown { font-size: 18px; font-weight: bold; color: #28a745; margin: 20px 0; }
+            .button { background: #28a745; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px; text-decoration: none; }
+            .button:hover { background: #218838; }
+          </style>
+          <script>
+            document.addEventListener('DOMContentLoaded', function() {
+              let countdown = 5;
+              const countdownEl = document.getElementById('countdown');
+              
+              function updateCountdown() {
+                countdown--;
+                console.log('Countdown:', countdown);
+                if (countdownEl) {
+                  countdownEl.textContent = countdown;
+                }
+                if (countdown <= 0) {
+                  console.log('Redirecting to registration...');
+                  window.location.href = '/register?consent=success&tenant=${encodeURIComponent(tenant)}&token=${consentToken}';
+                } else {
+                  setTimeout(updateCountdown, 1000);
+                }
+              }
+              
+              // Start countdown
+              setTimeout(updateCountdown, 1000);
+            });
+          </script>
+        </head>
+        <body>
+          <h1>🎉 MAES Successfully Installed!</h1>
+          <div class="success">
+            ✅ Admin consent has been granted successfully for your Microsoft 365 tenant.
+          </div>
+          <div class="info">
+            <strong>Tenant ID:</strong> ${tenant}<br>
+            <strong>Application:</strong> MAES (M365 Analyzer & Extractor Suite)
+          </div>
+          <p>MAES now has the necessary permissions to access your Microsoft 365 environment.</p>
+          <div class="countdown">
+            Redirecting to complete registration in <span id="countdown">5</span> seconds...
+          </div>
+          <a href="/register?consent=success&tenant=${encodeURIComponent(tenant)}&token=${consentToken}" class="button">Continue to Registration Now</a>
+        </body>
+        </html>
+      `);
+    } catch (error) {
+      logger.error('Error processing admin consent:', error);
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>MAES - Processing Error</title>
+          <script>
+            setTimeout(() => {
+              window.location.href = '/register?consent=error';
+            }, 3000);
+          </script>
+        </head>
+        <body>
+          <h1>Processing Error</h1>
+          <p>There was an error processing your consent. Redirecting back to registration...</p>
+        </body>
+        </html>
+      `);
+    }
+  }
+
+  // Fallback for other cases
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>MAES - Admin Consent</title>
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }
+        .button { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-top: 20px; }
+      </style>
+      <script>
+        setTimeout(() => {
+          window.location.href = '/register';
+        }, 3000);
+      </script>
+    </head>
+    <body>
+      <h1>MAES Admin Consent</h1>
+      <p>Thank you for visiting the MAES admin consent page.</p>
+      <p>Redirecting to registration...</p>
+      <a href="/register" class="button">Continue to Registration</a>
+    </body>
+    </html>
+  `);
 });
 
 module.exports = router;

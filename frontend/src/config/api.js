@@ -12,15 +12,15 @@ export const getApiUrl = () => {
   // Otherwise, construct API URL based on current location
   const protocol = window.location.protocol
   const hostname = window.location.hostname
+  const port = window.location.port
   
-  // If we're on localhost, use localhost:3000
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return `${protocol}//localhost:3000`
+  // In Docker setup, API is served through nginx on the same host/port
+  // API routes are proxied from /api/* to the backend
+  if (port) {
+    return `${protocol}//${hostname}:${port}`
+  } else {
+    return `${protocol}//${hostname}`
   }
-  
-  // For other domains, use the same domain with port 3000
-  // This prevents redirect issues when accessing via public IP
-  return `${protocol}//${hostname}:3000`
 }
 
 // API configuration object

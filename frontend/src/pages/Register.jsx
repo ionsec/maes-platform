@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -9,147 +9,112 @@ import {
   Alert,
   CircularProgress,
   Paper,
-  Stepper,
-  Step,
-  StepLabel,
   Grid,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  FormControlLabel,
-  Switch,
-  Divider,
-  Chip,
+  InputAdornment,
+  IconButton,
   Accordion,
   AccordionSummary,
-  AccordionDetails
+  AccordionDetails,
+  Chip
 } from '@mui/material';
 import {
-  ExpandMore as ExpandMoreIcon,
-  Business as BusinessIcon,
   Person as PersonIcon,
-  Security as SecurityIcon,
-  Payment as PaymentIcon
+  Email as EmailIcon,
+  Lock as LockIcon,
+  Visibility,
+  VisibilityOff,
+  ExpandMore as ExpandMoreIcon,
+  CloudQueue as CloudIcon,
+  CheckCircle as CheckCircleIcon,
+  Error as ErrorIcon
 } from '@mui/icons-material';
 import { useForm, Controller } from 'react-hook-form';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from '../utils/axios';
 
 const Register = () => {
-  const [activeStep, setActiveStep] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [tenantInfo, setTenantInfo] = useState(null);
+  const [consentStatus, setConsentStatus] = useState(null);
+  const [consentData, setConsentData] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
 
-  const { control, handleSubmit, watch, setValue, formState: { errors } } = useForm({
+  const { control, handleSubmit, watch, formState: { errors } } = useForm({
     defaultValues: {
-      // Organization details
-      organizationName: '',
-      organizationType: 'standalone',
-      tenantId: '',
-      domain: '',
-      industry: '',
-      employeeCount: '',
-      
-      // Admin user details
       firstName: '',
       lastName: '',
       email: '',
       username: '',
       password: '',
-      confirmPassword: '',
-      
-      // MSSP specific
-      msspId: '',
-      serviceTier: 'basic',
-      subscriptionPlan: 'monthly',
-      billingEmail: '',
-      
-      // Security settings
-      enableMFA: true,
-      enableAuditLogging: true,
-      dataRetentionDays: 90,
-      
-      // Service configuration
-      enableAutoExtraction: true,
-      enableAutoAnalysis: true,
-      enableThreatIntel: false,
-      enableMachineLearning: false
+      confirmPassword: ''
     }
   });
 
-  const organizationType = watch('organizationType');
   const password = watch('password');
 
-  const steps = [
-    'Organization Details',
-    'Admin Account',
-    'Service Configuration',
-    'Review & Submit'
-  ];
+  // Check for consent status from URL params and fetch tenant info
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const consent = searchParams.get('consent');
+    const tenant = searchParams.get('tenant');
+    const token = searchParams.get('token');
+    const consentError = searchParams.get('error');
 
-  const handleNext = () => {
-    setActiveStep((prevStep) => prevStep + 1);
-  };
+    console.log('Registration page - URL params:', { consent, tenant, token, consentError });
 
-  const handleBack = () => {
-    setActiveStep((prevStep) => prevStep - 1);
-  };
+    if (consent === 'success' && tenant) {
+      console.log('Setting consent status to success');
+      setConsentStatus('success');
+      setConsentData({ tenant, token });
+      setSuccess('✅ Microsoft 365 tenant consent completed successfully! You can now register your account.');
+    } else if (consent === 'failed') {
+      console.log('Setting consent status to failed');
+      setConsentStatus('failed');
+      setError(`❌ Tenant consent failed: ${consentError || 'Unknown error'}`);
+    } else if (consent === 'error') {
+      console.log('Setting consent status to error');
+      setConsentStatus('error');
+      setError('❌ There was an error processing your consent. Please try again.');
+    } else {
+      console.log('No consent status in URL, showing normal registration page');
+    }
+
+    const fetchTenantInfo = async () => {
+      try {
+        const response = await axios.get('/api/registration/tenant-app-info');
+        setTenantInfo(response.data.appInfo);
+      } catch (error) {
+        console.error('Failed to fetch tenant info:', error);
+      }
+    };
+    fetchTenantInfo();
+  }, [location]);
 
   const onSubmit = async (data) => {
+    // Check if consent is required and completed
+    if (!consentStatus || consentStatus !== 'success') {
+      setError('❌ Please complete Microsoft 365 tenant consent before registering.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      // Register organization and admin user
-      const response = await axios.post('/api/registration/organization', {
-        organization: {
-          name: data.organizationName,
-          organizationType: data.organizationType,
-          tenantId: data.tenantId,
-          domain: data.domain,
-          industry: data.industry,
-          employeeCount: parseInt(data.employeeCount),
-          serviceTier: data.serviceTier,
-          subscriptionPlan: data.subscriptionPlan,
-          billingEmail: data.billingEmail,
-          settings: {
-            security: {
-              enableMFA: data.enableMFA,
-              enableAuditLogging: data.enableAuditLogging,
-              dataRetentionDays: parseInt(data.dataRetentionDays)
-            },
-            extraction: {
-              enableAutoExtraction: data.enableAutoExtraction,
-              schedule: {
-                enabled: data.enableAutoExtraction,
-                interval: 'daily',
-                time: '02:00'
-              }
-            },
-            analysis: {
-              enableAutoAnalysis: data.enableAutoAnalysis,
-              enableThreatIntel: data.enableThreatIntel,
-              enableMachineLearning: data.enableMachineLearning
-            },
-            alerting: {
-              emailNotifications: true,
-              severityThreshold: 'medium'
-            }
-          }
-        },
-        adminUser: {
-          firstName: data.firstName,
-          lastName: data.lastName,
-          email: data.email,
-          username: data.username,
-          password: data.password,
-          role: data.organizationType === 'mssp' ? 'mssp_admin' : 
-                data.organizationType === 'client' ? 'client_admin' : 'standalone_admin'
-        }
+      const response = await axios.post('/api/registration/user', {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        username: data.username,
+        password: data.password,
+        tenantId: consentData?.tenant,
+        consentToken: consentData?.token
       });
 
       setSuccess('Registration successful! Redirecting to login...');
@@ -164,516 +129,6 @@ const Register = () => {
     }
   };
 
-  const renderOrganizationStep = () => (
-    <Grid container spacing={3}>
-      <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          <BusinessIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Organization Information
-        </Typography>
-      </Grid>
-      
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="organizationName"
-          control={control}
-          rules={{ required: 'Organization name is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Organization Name"
-              variant="outlined"
-              error={!!errors.organizationName}
-              helperText={errors.organizationName?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="organizationType"
-          control={control}
-          rules={{ required: 'Organization type is required' }}
-          render={({ field }) => (
-            <FormControl fullWidth error={!!errors.organizationType}>
-              <InputLabel>Organization Type</InputLabel>
-              <Select {...field} label="Organization Type">
-                <MenuItem value="standalone">Standalone Organization</MenuItem>
-                <MenuItem value="mssp">MSSP (Managed Security Service Provider)</MenuItem>
-                <MenuItem value="client">MSSP Client</MenuItem>
-              </Select>
-            </FormControl>
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="tenantId"
-          control={control}
-          rules={{ required: 'Tenant ID is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Microsoft 365 Tenant ID"
-              variant="outlined"
-              placeholder="e.g., 12345678-1234-1234-1234-123456789012"
-              error={!!errors.tenantId}
-              helperText={errors.tenantId?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="domain"
-          control={control}
-          rules={{ required: 'Domain is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Primary Domain"
-              variant="outlined"
-              placeholder="e.g., company.com"
-              error={!!errors.domain}
-              helperText={errors.domain?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="industry"
-          control={control}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Industry"
-              variant="outlined"
-              placeholder="e.g., Technology, Healthcare, Finance"
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="employeeCount"
-          control={control}
-          render={({ field }) => (
-            <FormControl fullWidth>
-              <InputLabel>Employee Count</InputLabel>
-              <Select {...field} label="Employee Count">
-                <MenuItem value="1-50">1-50</MenuItem>
-                <MenuItem value="51-200">51-200</MenuItem>
-                <MenuItem value="201-1000">201-1000</MenuItem>
-                <MenuItem value="1001-5000">1001-5000</MenuItem>
-                <MenuItem value="5000+">5000+</MenuItem>
-              </Select>
-            </FormControl>
-          )}
-        />
-      </Grid>
-
-      {organizationType === 'mssp' && (
-        <>
-          <Grid item xs={12}>
-            <Divider sx={{ my: 2 }}>
-              <Chip label="MSSP Configuration" color="primary" />
-            </Divider>
-          </Grid>
-          
-          <Grid item xs={12} md={6}>
-            <Controller
-              name="serviceTier"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel>Service Tier</InputLabel>
-                  <Select {...field} label="Service Tier">
-                    <MenuItem value="basic">Basic</MenuItem>
-                    <MenuItem value="professional">Professional</MenuItem>
-                    <MenuItem value="enterprise">Enterprise</MenuItem>
-                    <MenuItem value="premium">Premium</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
-            />
-          </Grid>
-
-          <Grid item xs={12} md={6}>
-            <Controller
-              name="subscriptionPlan"
-              control={control}
-              render={({ field }) => (
-                <FormControl fullWidth>
-                  <InputLabel>Subscription Plan</InputLabel>
-                  <Select {...field} label="Subscription Plan">
-                    <MenuItem value="monthly">Monthly</MenuItem>
-                    <MenuItem value="annual">Annual (20% discount)</MenuItem>
-                  </Select>
-                </FormControl>
-              )}
-            />
-          </Grid>
-
-          <Grid item xs={12} md={6}>
-            <Controller
-              name="billingEmail"
-              control={control}
-              rules={{ 
-                required: 'Billing email is required',
-                pattern: {
-                  value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-                  message: 'Invalid email address'
-                }
-              }}
-              render={({ field }) => (
-                <TextField
-                  {...field}
-                  fullWidth
-                  label="Billing Email"
-                  variant="outlined"
-                  error={!!errors.billingEmail}
-                  helperText={errors.billingEmail?.message}
-                />
-              )}
-            />
-          </Grid>
-        </>
-      )}
-    </Grid>
-  );
-
-  const renderAdminStep = () => (
-    <Grid container spacing={3}>
-      <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          <PersonIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Administrator Account
-        </Typography>
-      </Grid>
-      
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="firstName"
-          control={control}
-          rules={{ required: 'First name is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="First Name"
-              variant="outlined"
-              error={!!errors.firstName}
-              helperText={errors.firstName?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="lastName"
-          control={control}
-          rules={{ required: 'Last name is required' }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Last Name"
-              variant="outlined"
-              error={!!errors.lastName}
-              helperText={errors.lastName?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="email"
-          control={control}
-          rules={{ 
-            required: 'Email is required',
-            pattern: {
-              value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
-              message: 'Invalid email address'
-            }
-          }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Email Address"
-              variant="outlined"
-              type="email"
-              error={!!errors.email}
-              helperText={errors.email?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="username"
-          control={control}
-          rules={{ 
-            required: 'Username is required',
-            minLength: { value: 3, message: 'Username must be at least 3 characters' }
-          }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Username"
-              variant="outlined"
-              error={!!errors.username}
-              helperText={errors.username?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="password"
-          control={control}
-          rules={{ 
-            required: 'Password is required',
-            minLength: { value: 8, message: 'Password must be at least 8 characters' },
-            pattern: {
-              value: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/,
-              message: 'Password must contain uppercase, lowercase, number, and special character'
-            }
-          }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Password"
-              variant="outlined"
-              type="password"
-              error={!!errors.password}
-              helperText={errors.password?.message}
-            />
-          )}
-        />
-      </Grid>
-
-      <Grid item xs={12} md={6}>
-        <Controller
-          name="confirmPassword"
-          control={control}
-          rules={{ 
-            required: 'Please confirm your password',
-            validate: value => value === password || 'Passwords do not match'
-          }}
-          render={({ field }) => (
-            <TextField
-              {...field}
-              fullWidth
-              label="Confirm Password"
-              variant="outlined"
-              type="password"
-              error={!!errors.confirmPassword}
-              helperText={errors.confirmPassword?.message}
-            />
-          )}
-        />
-      </Grid>
-    </Grid>
-  );
-
-  const renderServiceStep = () => (
-    <Grid container spacing={3}>
-      <Grid item xs={12}>
-        <Typography variant="h6" gutterBottom>
-          <SecurityIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Service Configuration
-        </Typography>
-      </Grid>
-
-      <Grid item xs={12}>
-        <Accordion defaultExpanded>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography variant="subtitle1">Security Settings</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="enableMFA"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Enable Multi-Factor Authentication"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="enableAuditLogging"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Enable Audit Logging"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="dataRetentionDays"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      fullWidth
-                      label="Data Retention (days)"
-                      variant="outlined"
-                      type="number"
-                      inputProps={{ min: 30, max: 365 }}
-                    />
-                  )}
-                />
-              </Grid>
-            </Grid>
-          </AccordionDetails>
-        </Accordion>
-      </Grid>
-
-      <Grid item xs={12}>
-        <Accordion>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography variant="subtitle1">Extraction & Analysis</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="enableAutoExtraction"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Enable Automatic Data Extraction"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="enableAutoAnalysis"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Enable Automatic Analysis"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="enableThreatIntel"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Enable Threat Intelligence Integration"
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Controller
-                  name="enableMachineLearning"
-                  control={control}
-                  render={({ field }) => (
-                    <FormControlLabel
-                      control={<Switch {...field} checked={field.value} />}
-                      label="Enable Machine Learning Analysis"
-                    />
-                  )}
-                />
-              </Grid>
-            </Grid>
-          </AccordionDetails>
-        </Accordion>
-      </Grid>
-    </Grid>
-  );
-
-  const renderReviewStep = () => {
-    const formData = watch();
-    
-    return (
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Review Your Registration
-        </Typography>
-        
-        <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>Organization</Typography>
-                <Typography><strong>Name:</strong> {formData.organizationName}</Typography>
-                <Typography><strong>Type:</strong> {formData.organizationType}</Typography>
-                <Typography><strong>Domain:</strong> {formData.domain}</Typography>
-                <Typography><strong>Industry:</strong> {formData.industry}</Typography>
-                {formData.organizationType === 'mssp' && (
-                  <>
-                    <Typography><strong>Service Tier:</strong> {formData.serviceTier}</Typography>
-                    <Typography><strong>Plan:</strong> {formData.subscriptionPlan}</Typography>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-          
-          <Grid item xs={12} md={6}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography variant="h6" gutterBottom>Admin Account</Typography>
-                <Typography><strong>Name:</strong> {formData.firstName} {formData.lastName}</Typography>
-                <Typography><strong>Email:</strong> {formData.email}</Typography>
-                <Typography><strong>Username:</strong> {formData.username}</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-      </Box>
-    );
-  };
-
-  const getStepContent = (step) => {
-    switch (step) {
-      case 0:
-        return renderOrganizationStep();
-      case 1:
-        return renderAdminStep();
-      case 2:
-        return renderServiceStep();
-      case 3:
-        return renderReviewStep();
-      default:
-        return 'Unknown step';
-    }
-  };
-
   return (
     <Box
       sx={{
@@ -685,10 +140,10 @@ const Register = () => {
         padding: 2
       }}
     >
-      <Paper elevation={10} sx={{ maxWidth: 800, width: '100%' }}>
+      <Paper elevation={10} sx={{ maxWidth: 600, width: '100%' }}>
         <Card>
           <CardContent sx={{ p: 4 }}>
-            <Box sx={{ textAlign: 'center', mb: 3 }}>
+            <Box sx={{ textAlign: 'center', mb: 4 }}>
               <Typography variant="h4" component="h1" gutterBottom color="primary">
                 MAES Platform
               </Typography>
@@ -696,8 +151,24 @@ const Register = () => {
                 M365 Analyzer & Extractor Suite
               </Typography>
               <Typography variant="h6" color="primary" gutterBottom>
-                Organization Registration
+                Create Your Account
               </Typography>
+              
+              {/* Debug info */}
+              {process.env.NODE_ENV === 'development' && (
+                <Box sx={{ mt: 2, p: 1, bgcolor: 'grey.100', borderRadius: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Debug: URL = {location.search} | Consent Status = {consentStatus || 'none'}
+                  </Typography>
+                  <br />
+                  <Button 
+                    size="small" 
+                    onClick={() => window.location.href = '/register?consent=success&tenant=test-tenant-123&token=test-token-456'}
+                  >
+                    Test Consent Success
+                  </Button>
+                </Box>
+              )}
               <Box sx={{ 
                 display: 'flex', 
                 alignItems: 'center',
@@ -737,49 +208,321 @@ const Register = () => {
               </Alert>
             )}
 
-            <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
-              {steps.map((label) => (
-                <Step key={label}>
-                  <StepLabel>{label}</StepLabel>
-                </Step>
-              ))}
-            </Stepper>
+            {/* Consent Status Display */}
+            {consentStatus && (
+              <Alert 
+                severity={consentStatus === 'success' ? 'success' : 'error'} 
+                sx={{ mb: 2 }}
+                icon={consentStatus === 'success' ? <CheckCircleIcon /> : <ErrorIcon />}
+              >
+                {consentStatus === 'success' && consentData && (
+                  <Box>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                      Microsoft 365 Tenant Consent Completed
+                    </Typography>
+                    <Typography variant="caption">
+                      Tenant ID: {consentData.tenant}
+                    </Typography>
+                  </Box>
+                )}
+                {consentStatus !== 'success' && (
+                  <Typography variant="body2">
+                    Please complete the Microsoft 365 tenant consent process below before registering.
+                  </Typography>
+                )}
+              </Alert>
+            )}
+
+            {tenantInfo && (
+              <Accordion sx={{ mb: 3 }} defaultExpanded={!consentStatus || consentStatus !== 'success'}>
+                <AccordionSummary
+                  expandIcon={<ExpandMoreIcon />}
+                  aria-controls="tenant-content"
+                  id="tenant-header"
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CloudIcon color="primary" />
+                    <Typography>Microsoft 365 Tenant App Setup</Typography>
+                    {consentStatus === 'success' && (
+                      <Chip 
+                        label="Completed" 
+                        color="success" 
+                        size="small" 
+                        icon={<CheckCircleIcon />}
+                      />
+                    )}
+                  </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    To use MAES with your Microsoft 365 tenant, you need to install our app in your tenant first.
+                  </Alert>
+                  <Typography variant="body2" paragraph>
+                    <strong>Display Name:</strong> {tenantInfo.displayName}
+                  </Typography>
+                  <Typography variant="body2" paragraph>
+                    <strong>Application (Client) ID:</strong>
+                  </Typography>
+                  <Box sx={{ 
+                    p: 2, 
+                    bgcolor: 'grey.100', 
+                    borderRadius: 1,
+                    fontFamily: 'monospace',
+                    fontSize: '0.875rem',
+                    wordBreak: 'break-all',
+                    mb: 2
+                  }}>
+                    {tenantInfo.applicationId}
+                  </Box>
+                  <Typography variant="body2" paragraph>
+                    {tenantInfo.instructions}
+                  </Typography>
+                  <Box sx={{ textAlign: 'center', mt: 3 }}>
+                    <Button
+                      variant="contained"
+                      size="large"
+                      href={tenantInfo.adminConsentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        backgroundColor: '#0078D4',
+                        color: 'white',
+                        padding: '12px 24px',
+                        '&:hover': {
+                          backgroundColor: '#106EBE',
+                        },
+                        textTransform: 'none',
+                        fontWeight: 500
+                      }}
+                      startIcon={<CloudIcon />}
+                    >
+                      Install MAES in Your Tenant
+                    </Button>
+                  </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block', textAlign: 'center' }}>
+                    You will be redirected to Microsoft to grant admin consent for the required permissions.
+                  </Typography>
+                </AccordionDetails>
+              </Accordion>
+            )}
 
             <form onSubmit={handleSubmit(onSubmit)}>
-              {getStepContent(activeStep)}
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <Controller
+                    name="firstName"
+                    control={control}
+                    rules={{ required: 'First name is required' }}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        fullWidth
+                        label="First Name"
+                        variant="outlined"
+                        error={!!errors.firstName}
+                        helperText={errors.firstName?.message}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <PersonIcon color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Grid>
 
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
-                <Button
-                  disabled={activeStep === 0}
-                  onClick={handleBack}
-                >
-                  Back
-                </Button>
-                
-                <Box>
-                  {activeStep === steps.length - 1 ? (
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      disabled={isLoading}
-                      sx={{ minWidth: 120 }}
-                    >
-                      {isLoading ? (
-                        <CircularProgress size={24} color="inherit" />
-                      ) : (
-                        'Complete Registration'
-                      )}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="contained"
-                      onClick={handleNext}
-                    >
-                      Next
-                    </Button>
-                  )}
-                </Box>
-              </Box>
+                <Grid item xs={12} sm={6}>
+                  <Controller
+                    name="lastName"
+                    control={control}
+                    rules={{ required: 'Last name is required' }}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        fullWidth
+                        label="Last Name"
+                        variant="outlined"
+                        error={!!errors.lastName}
+                        helperText={errors.lastName?.message}
+                      />
+                    )}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Controller
+                    name="email"
+                    control={control}
+                    rules={{ 
+                      required: 'Email is required',
+                      pattern: {
+                        value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+                        message: 'Invalid email address'
+                      }
+                    }}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        fullWidth
+                        label="Email Address"
+                        variant="outlined"
+                        type="email"
+                        error={!!errors.email}
+                        helperText={errors.email?.message}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <EmailIcon color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Controller
+                    name="username"
+                    control={control}
+                    rules={{ 
+                      required: 'Username is required',
+                      minLength: { value: 3, message: 'Username must be at least 3 characters' }
+                    }}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        fullWidth
+                        label="Username"
+                        variant="outlined"
+                        error={!!errors.username}
+                        helperText={errors.username?.message}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <PersonIcon color="action" />
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Controller
+                    name="password"
+                    control={control}
+                    rules={{ 
+                      required: 'Password is required',
+                      minLength: { value: 6, message: 'Password must be at least 6 characters' }
+                    }}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        fullWidth
+                        label="Password"
+                        variant="outlined"
+                        type={showPassword ? 'text' : 'password'}
+                        error={!!errors.password}
+                        helperText={errors.password?.message}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <LockIcon color="action" />
+                            </InputAdornment>
+                          ),
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                onClick={() => setShowPassword(!showPassword)}
+                                edge="end"
+                              >
+                                {showPassword ? <VisibilityOff /> : <Visibility />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Controller
+                    name="confirmPassword"
+                    control={control}
+                    rules={{ 
+                      required: 'Please confirm your password',
+                      validate: value => value === password || 'Passwords do not match'
+                    }}
+                    render={({ field }) => (
+                      <TextField
+                        {...field}
+                        fullWidth
+                        label="Confirm Password"
+                        variant="outlined"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        error={!!errors.confirmPassword}
+                        helperText={errors.confirmPassword?.message}
+                        InputProps={{
+                          startAdornment: (
+                            <InputAdornment position="start">
+                              <LockIcon color="action" />
+                            </InputAdornment>
+                          ),
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <IconButton
+                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                edge="end"
+                              >
+                                {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
+                              </IconButton>
+                            </InputAdornment>
+                          ),
+                        }}
+                      />
+                    )}
+                  />
+                </Grid>
+              </Grid>
+
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                disabled={isLoading || !consentStatus || consentStatus !== 'success'}
+                sx={{ 
+                  mt: 3, 
+                  mb: 2, 
+                  py: 1.5,
+                  ...((!consentStatus || consentStatus !== 'success') && {
+                    bgcolor: 'grey.400',
+                    '&:hover': { bgcolor: 'grey.400' }
+                  })
+                }}
+              >
+                {isLoading ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : (
+                  <>
+                    {(!consentStatus || consentStatus !== 'success') ? (
+                      '🔒 Complete Tenant Consent First'
+                    ) : (
+                      '✅ Create Account'
+                    )}
+                  </>
+                )}
+              </Button>
+              
+              {(!consentStatus || consentStatus !== 'success') && (
+                <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mb: 2 }}>
+                  You must complete Microsoft 365 tenant consent before creating an account
+                </Typography>
+              )}
             </form>
 
             <Box sx={{ mt: 3, textAlign: 'center' }}>
@@ -801,4 +544,4 @@ const Register = () => {
   );
 };
 
-export default Register; 
+export default Register;
