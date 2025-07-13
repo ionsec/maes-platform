@@ -249,7 +249,7 @@ const Settings = () => {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        Organization Settings
+        {organization?.id === 'individual' ? 'User Settings' : 'Organization Settings'}
       </Typography>
 
       <Paper sx={{ mb: 3 }}>
@@ -268,21 +268,22 @@ const Settings = () => {
           <Grid container spacing={3}>
             <Grid item xs={12} md={8}>
               <Card>
-                <CardHeader title="Organization Information" />
+                <CardHeader title={organization?.id === 'individual' ? 'User Information' : 'Organization Information'} />
                 <CardContent>
                   <Grid container spacing={3}>
                     <Grid item xs={12}>
                       <Controller
                         name="organizationName"
                         control={control}
-                        rules={{ required: 'Organization name is required' }}
+                        rules={{ required: organization?.id === 'individual' ? 'Display name is required' : 'Organization name is required' }}
                         render={({ field, fieldState }) => (
                           <TextField
                             {...field}
                             fullWidth
-                            label="Organization Name"
+                            label={organization?.id === 'individual' ? 'Display Name' : 'Organization Name'}
                             error={fieldState.invalid}
                             helperText={fieldState.error?.message}
+                            disabled={organization?.id === 'individual'}
                           />
                         )}
                       />
@@ -539,16 +540,27 @@ const Settings = () => {
                   startIcon={<AddIcon />}
                   onClick={() => {
                     setCredentialsDialogOpen(true);
-                    // Pre-populate the tenant ID and FQDN fields
+                    // Pre-populate fields based on organization type and existing data
                     setTimeout(() => {
                       if (organization) {
-                        resetCredentials({
-                          credentialsTenantId: organization.tenantId || '',
-                          fqdn: organization.fqdn || '',
-                          applicationId: '',
-                          clientSecret: '',
-                          certificateThumbprint: ''
-                        });
+                        if (organization.id === 'individual') {
+                          // For individual users, try to populate from user preferences if available
+                          resetCredentials({
+                            credentialsTenantId: organization.tenantId || '',
+                            fqdn: organization.fqdn || '',
+                            applicationId: '574cfe92-60a1-4271-9c80-8aba00070e67', // Default MAES app ID
+                            clientSecret: '',
+                            certificateThumbprint: ''
+                          });
+                        } else {
+                          resetCredentials({
+                            credentialsTenantId: organization.tenantId || '',
+                            fqdn: organization.fqdn || '',
+                            applicationId: '',
+                            clientSecret: '',
+                            certificateThumbprint: ''
+                          });
+                        }
                       }
                     }, 100);
                   }}
@@ -607,8 +619,11 @@ const Settings = () => {
                 </List>
               ) : (
                 <Alert severity="warning">
-                  No credentials configured. You need to configure Microsoft 365 and Azure credentials 
-                  to enable data extraction.
+                  {organization?.id === 'individual' ? (
+                    <>No credentials configured. Configure Microsoft 365 and Azure credentials to enable data extraction from your tenant.</>
+                  ) : (
+                    <>No credentials configured. You need to configure Microsoft 365 and Azure credentials to enable data extraction.</>
+                  )}
                 </Alert>
               )}
             </CardContent>

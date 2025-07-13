@@ -36,10 +36,8 @@ router.post('/user', async (req, res) => {
       return res.status(400).json({ error: 'Email, username, and password are required' });
     }
     
-    // Validate consent completion
-    if (!tenantId || !consentToken) {
-      return res.status(400).json({ error: 'Microsoft 365 tenant consent must be completed before registration' });
-    }
+    // Tenant consent is now optional
+    const hasTenantConsent = tenantId && consentToken;
     
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -68,11 +66,13 @@ router.post('/user', async (req, res) => {
       'viewer',
       JSON.stringify(['canViewDashboard', 'canCreateExtraction', 'canViewExtractions']),
       true,
-      JSON.stringify({
+      JSON.stringify(hasTenantConsent ? {
         tenantId: tenantId,
         consentToken: consentToken,
         consentedAt: new Date().toISOString(),
         registrationSource: 'individual_with_consent'
+      } : {
+        registrationSource: 'individual_without_consent'
       })
     ];
     
@@ -82,7 +82,7 @@ router.post('/user', async (req, res) => {
     // Commit transaction
     await client.query('COMMIT');
     
-    logger.info(`Created individual user with tenant consent: ${newUser.id}, tenant: ${tenantId}`);
+    logger.info(`Created individual user: ${newUser.id}${hasTenantConsent ? `, tenant: ${tenantId}` : ' (no tenant consent)'}`);
     
     res.status(201).json({
       success: true,
@@ -91,7 +91,7 @@ router.post('/user', async (req, res) => {
         email: newUser.email,
         username: newUser.username,
         role: newUser.role,
-        tenantId: tenantId
+        ...(hasTenantConsent && { tenantId: tenantId })
       }
     });
     
