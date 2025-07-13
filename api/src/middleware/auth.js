@@ -342,7 +342,8 @@ const authenticateToken = async (req, res, next) => {
         return res.status(403).json({ error: 'User not found or inactive' });
       }
 
-      if (!user.org_active) {
+      // Check organization status only if user has an organization
+      if (user.organization_id && !user.org_active) {
         return res.status(403).json({ error: 'Organization is inactive' });
       }
 
