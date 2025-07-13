@@ -96,11 +96,7 @@ const Register = () => {
   }, [location]);
 
   const onSubmit = async (data) => {
-    // Check if consent is required and completed
-    if (!consentStatus || consentStatus !== 'success') {
-      setError('❌ Please complete Microsoft 365 tenant consent before registering.');
-      return;
-    }
+    // Consent is now optional, users can register without it
 
     setIsLoading(true);
     setError('');
@@ -117,10 +113,19 @@ const Register = () => {
         consentToken: consentData?.token
       });
 
-      setSuccess('Registration successful! Redirecting to login...');
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
+      const hasConsent = consentStatus === 'success';
+      
+      if (hasConsent) {
+        setSuccess('Registration successful! Redirecting to login...');
+        setTimeout(() => {
+          navigate('/login');
+        }, 2000);
+      } else {
+        setSuccess('Registration successful! Redirecting to complete setup...');
+        setTimeout(() => {
+          navigate('/onboarding');
+        }, 2000);
+      }
 
     } catch (error) {
       setError(error.response?.data?.error || 'Registration failed. Please try again.');
@@ -494,34 +499,27 @@ const Register = () => {
                 type="submit"
                 fullWidth
                 variant="contained"
-                disabled={isLoading || !consentStatus || consentStatus !== 'success'}
+                disabled={isLoading}
                 sx={{ 
                   mt: 3, 
                   mb: 2, 
-                  py: 1.5,
-                  ...((!consentStatus || consentStatus !== 'success') && {
-                    bgcolor: 'grey.400',
-                    '&:hover': { bgcolor: 'grey.400' }
-                  })
+                  py: 1.5
                 }}
               >
                 {isLoading ? (
                   <CircularProgress size={24} color="inherit" />
                 ) : (
-                  <>
-                    {(!consentStatus || consentStatus !== 'success') ? (
-                      '🔒 Complete Tenant Consent First'
-                    ) : (
-                      '✅ Create Account'
-                    )}
-                  </>
+                  consentStatus === 'success' ? '✅ Create Account' : '📝 Create Account'
                 )}
               </Button>
               
-              {(!consentStatus || consentStatus !== 'success') && (
-                <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'center', display: 'block', mb: 2 }}>
-                  You must complete Microsoft 365 tenant consent before creating an account
-                </Typography>
+              {consentStatus !== 'success' && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  <Typography variant="body2">
+                    <strong>Note:</strong> You can register without completing tenant consent. 
+                    You can always configure Microsoft 365 credentials later in the Settings page.
+                  </Typography>
+                </Alert>
               )}
             </form>
 

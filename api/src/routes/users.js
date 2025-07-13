@@ -341,7 +341,7 @@ router.get('/profile/me', authenticateToken, async (req, res) => {
 });
 
 // Update current user profile
-router.put('/profile/me', authenticateToken, async (req, res) => {
+router.put('/profile', authenticateToken, async (req, res) => {
   try {
     const { firstName, lastName, preferences } = req.body;
 
@@ -353,7 +353,11 @@ router.put('/profile/me', authenticateToken, async (req, res) => {
     const updateData = {};
     if (firstName !== undefined) updateData.firstName = firstName;
     if (lastName !== undefined) updateData.lastName = lastName;
-    if (preferences !== undefined) updateData.preferences = preferences;
+    if (preferences !== undefined) {
+      // Merge new preferences with existing ones
+      const existingPreferences = user.preferences || {};
+      updateData.preferences = { ...existingPreferences, ...preferences };
+    }
 
     await user.update(updateData);
 

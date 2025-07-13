@@ -76,15 +76,32 @@ const Onboarding = () => {
   })
 
   useEffect(() => {
-    // Check if user needs onboarding
-    // Only redirect if user has a properly configured organization (not the default one)
-    if (user?.organization?.name && user.organization.name !== 'MAES Default Organization') {
-      // User already has organization setup, redirect to dashboard
+    // For individual users or users with default organization, allow onboarding
+    // Only redirect if user has a properly configured organization and completed onboarding
+    if (user?.organization?.name && 
+        user.organization.name !== 'MAES Default Organization' &&
+        !user.needsOnboarding) {
+      // User already has organization setup and completed onboarding, redirect to dashboard
       navigate('/dashboard')
     }
   }, [user, navigate])
 
-  const steps = [
+  const isIndividualUser = !user?.organization || user?.organization?.name === 'MAES Default Organization';
+  
+  const steps = isIndividualUser ? [
+    {
+      label: 'Welcome to MAES',
+      description: 'Get started with your individual MAES account'
+    },
+    {
+      label: 'Microsoft 365 Setup (Optional)',
+      description: 'Configure Microsoft 365 credentials for data extraction'
+    },
+    {
+      label: 'Complete Setup',
+      description: 'Finalize configuration and start using MAES'
+    }
+  ] : [
     {
       label: 'Welcome & Security',
       description: 'Change default password and learn about MAES'
@@ -309,6 +326,251 @@ const Onboarding = () => {
   }
 
   const renderStepContent = (step) => {
+    if (isIndividualUser) {
+      switch (step) {
+        case 0:
+          return (
+            <Box>
+              <Card sx={{ mb: 3 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom color="primary.main">
+                    Welcome to MAES Platform
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" paragraph>
+                    The M365 Analyzer & Extractor Suite - A comprehensive platform for Microsoft 365 forensic analysis and incident response.
+                  </Typography>
+                  
+                  <Box sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    mt: 2, mb: 2
+                  }}>
+                    <Chip 
+                      label="Powered by IONSEC.IO" 
+                      color="primary" 
+                      variant="outlined"
+                      sx={{ fontWeight: 'bold' }}
+                    />
+                  </Box>
+
+                  <Alert severity="info" sx={{ mt: 2 }}>
+                    <Typography variant="body2">
+                      As an individual user, you can use MAES for analysis and reporting. 
+                      You can optionally configure Microsoft 365 credentials later to enable data extraction.
+                    </Typography>
+                  </Alert>
+                </CardContent>
+              </Card>
+
+              <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  onClick={handleNext}
+                  startIcon={<CheckCircle />}
+                >
+                  Continue Setup
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={handleCompleteOnboarding}
+                  startIcon={<SkipNext />}
+                  color="secondary"
+                >
+                  Skip to Dashboard
+                </Button>
+              </Box>
+            </Box>
+          )
+
+        case 1:
+          return (
+            <Box>
+              <Alert severity="info" sx={{ mb: 3 }}>
+                <Typography variant="body2">
+                  <strong>Optional:</strong> Configure Microsoft 365 credentials to enable data extraction. 
+                  You can always set this up later in the Settings page.
+                </Typography>
+              </Alert>
+
+              <Typography variant="h6" gutterBottom>Authentication Method</Typography>
+              <Box sx={{ mb: 2 }}>
+                <Button
+                  variant={credentialsData.authMethod === 'client_secret' ? 'contained' : 'outlined'}
+                  onClick={() => setCredentialsData({...credentialsData, authMethod: 'client_secret'})}
+                  sx={{ mr: 1 }}
+                >
+                  Client Secret
+                </Button>
+                <Button
+                  variant={credentialsData.authMethod === 'certificate' ? 'contained' : 'outlined'}
+                  onClick={() => setCredentialsData({...credentialsData, authMethod: 'certificate'})}
+                >
+                  Certificate
+                </Button>
+              </Box>
+
+              <TextField
+                label="Application (Client) ID"
+                fullWidth
+                margin="normal"
+                value={credentialsData.applicationId}
+                onChange={(e) => setCredentialsData({...credentialsData, applicationId: e.target.value})}
+                placeholder="574cfe92-60a1-4271-9c80-8aba00070e67 (Default MAES App ID)"
+                helperText="Leave empty to use default MAES application ID"
+              />
+
+              <TextField
+                label="Tenant ID"
+                fullWidth
+                margin="normal"
+                value={organizationData.tenantId}
+                onChange={(e) => setOrganizationData({...organizationData, tenantId: e.target.value})}
+                placeholder="Your Microsoft 365 Tenant ID"
+                helperText="Your Azure AD Tenant ID (GUID)"
+              />
+
+              <TextField
+                label="Tenant FQDN"
+                fullWidth
+                margin="normal"
+                value={organizationData.fqdn}
+                onChange={(e) => setOrganizationData({...organizationData, fqdn: e.target.value})}
+                placeholder="yourcompany.onmicrosoft.com"
+                helperText="Your Microsoft 365 tenant domain"
+              />
+
+              {credentialsData.authMethod === 'client_secret' && (
+                <TextField
+                  label="Client Secret"
+                  type="password"
+                  fullWidth
+                  margin="normal"
+                  value={credentialsData.clientSecret}
+                  onChange={(e) => setCredentialsData({...credentialsData, clientSecret: e.target.value})}
+                  placeholder="Your client secret value"
+                />
+              )}
+
+              {credentialsData.authMethod === 'certificate' && (
+                <TextField
+                  label="Certificate Thumbprint (Optional)"
+                  fullWidth
+                  margin="normal"
+                  value={credentialsData.certificateThumbprint}
+                  onChange={(e) => setCredentialsData({...credentialsData, certificateThumbprint: e.target.value})}
+                  placeholder="Leave empty to use default certificate"
+                  helperText="Optional: Only provide if using a custom certificate"
+                />
+              )}
+
+              <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  onClick={async () => {
+                    if (credentialsData.applicationId || organizationData.tenantId || organizationData.fqdn) {
+                      // Save credentials to user preferences
+                      try {
+                        setLoading(true)
+                        const preferences = {
+                          tenantId: organizationData.tenantId,
+                          fqdn: organizationData.fqdn,
+                          applicationId: credentialsData.applicationId || '574cfe92-60a1-4271-9c80-8aba00070e67',
+                          ...(credentialsData.clientSecret && { clientSecret: credentialsData.clientSecret }),
+                          ...(credentialsData.certificateThumbprint && { certificateThumbprint: credentialsData.certificateThumbprint }),
+                          credentialsConfiguredAt: new Date().toISOString()
+                        }
+                        
+                        await axios.put('/api/users/profile', { preferences })
+                        setSuccess('Credentials saved successfully!')
+                        setTimeout(() => handleNext(), 1500)
+                      } catch (error) {
+                        setError('Failed to save credentials')
+                      } finally {
+                        setLoading(false)
+                      }
+                    } else {
+                      handleNext()
+                    }
+                  }}
+                  disabled={loading}
+                  startIcon={loading ? <CircularProgress size={20} /> : <VpnKey />}
+                >
+                  {loading ? 'Saving...' : 'Save & Continue'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={handleNext}
+                  disabled={loading}
+                  startIcon={<SkipNext />}
+                  color="secondary"
+                >
+                  Skip for Now
+                </Button>
+              </Box>
+            </Box>
+          )
+
+        case 2:
+          return (
+            <Box>
+              <Alert severity="success" sx={{ mb: 3 }}>
+                <Typography variant="h6" gutterBottom>🎉 Setup Complete!</Typography>
+                <Typography variant="body2">
+                  Your MAES individual account is now ready to use. You can start analyzing data and configure additional settings as needed.
+                </Typography>
+              </Alert>
+
+              <Card sx={{ mb: 3 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>What you can do now:</Typography>
+                  <List>
+                    <ListItem>
+                      <ListItemIcon><Settings /></ListItemIcon>
+                      <ListItemText 
+                        primary="Configure Settings" 
+                        secondary="Set up Microsoft 365 credentials and preferences in Settings"
+                      />
+                    </ListItem>
+                    <ListItem>
+                      <ListItemIcon><CloudUpload /></ListItemIcon>
+                      <ListItemText 
+                        primary="Data Analysis" 
+                        secondary="Upload and analyze Microsoft 365 data files"
+                      />
+                    </ListItem>
+                    <ListItem>
+                      <ListItemIcon><Security /></ListItemIcon>
+                      <ListItemText 
+                        primary="Security Reports" 
+                        secondary="Generate security analysis reports"
+                      />
+                    </ListItem>
+                  </List>
+                </CardContent>
+              </Card>
+
+              <Box sx={{ mt: 2 }}>
+                <Button
+                  variant="contained"
+                  onClick={handleCompleteOnboarding}
+                  size="large"
+                  fullWidth
+                  disabled={loading}
+                  startIcon={loading ? <CircularProgress size={20} /> : <CheckCircle />}
+                >
+                  {loading ? 'Completing Setup...' : 'Go to Dashboard'}
+                </Button>
+              </Box>
+            </Box>
+          )
+
+        default:
+          return 'Unknown step'
+      }
+    }
+    
+    // Original organization-based flow
     switch (step) {
       case 0:
         return (
