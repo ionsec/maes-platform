@@ -21,6 +21,7 @@ import {
   Description
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { getApiUrl } from '../config/api'
 
 const drawerWidth = 240
 
@@ -70,7 +71,7 @@ const Sidebar = ({ open, onClose }) => {
       <List>
         <ListItem disablePadding>
           <ListItemButton
-            onClick={() => handleNavigation('http://localhost:3000/api/docs')}
+            onClick={() => handleNavigation(`${getApiUrl()}/api/docs`)}
           >
             <ListItemIcon><Description /></ListItemIcon>
             <ListItemText primary="API Documentation" />
