@@ -173,9 +173,9 @@ router.post('/login',
         user.preferences || {};
       
       // User needs onboarding if:
-      // 1. Organization is still the default AND
+      // 1. User has no organization (individual user) OR organization is still the default AND
       // 2. User hasn't completed onboarding before
-      const needsOnboarding = user.organization_name === 'MAES Default Organization' && 
+      const needsOnboarding = (!user.organization_name || user.organization_name === 'MAES Default Organization') && 
                               !preferences.onboardingCompleted;
 
       // Return user data (without password)
