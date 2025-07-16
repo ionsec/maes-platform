@@ -141,7 +141,7 @@ const Extractions = () => {
 
   useEffect(() => {
     fetchExtractions();
-    const interval = setInterval(fetchExtractions, 5000); // Refresh every 5 seconds
+    const interval = setInterval(fetchExtractions, 15000); // Refresh every 15 seconds (further reduced frequency)
     return () => clearInterval(interval);
   }, []);
 
@@ -612,12 +612,65 @@ const Extractions = () => {
           >
             <DialogTitle>Extraction Logs</DialogTitle>
             <DialogContent>
-              <Box sx={{ bgcolor: 'grey.100', p: 2, borderRadius: 1, fontFamily: 'monospace' }}>
-                {selectedExtraction.logs?.map((log, index) => (
-                  <Typography key={index} variant="body2" component="div">
-                    [{dayjs(log.timestamp).format('HH:mm:ss')}] {log.level.toUpperCase()}: {log.message}
+              <Box 
+                sx={{ 
+                  bgcolor: '#1e1e1e', 
+                  color: '#d4d4d4',
+                  p: 2, 
+                  borderRadius: 1, 
+                  fontFamily: 'monospace',
+                  fontSize: '0.875rem',
+                  maxHeight: '500px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap'
+                }}
+              >
+                {selectedExtraction.logs?.length > 0 ? (
+                  selectedExtraction.logs.map((log, index) => {
+                    let color = '#d4d4d4';
+                    let icon = '';
+                    
+                    switch(log.level) {
+                      case 'error':
+                        color = '#f48771';
+                        icon = '✗';
+                        break;
+                      case 'warn':
+                        color = '#dcdcaa';
+                        icon = '⚠';
+                        break;
+                      case 'success':
+                        color = '#4fc1ff';
+                        icon = '✓';
+                        break;
+                      case 'info':
+                      default:
+                        color = '#9cdcfe';
+                        icon = 'ℹ';
+                        break;
+                    }
+                    
+                    return (
+                      <Box key={index} sx={{ mb: 0.5 }}>
+                        <span style={{ color: '#608b4e' }}>
+                          [{dayjs(log.timestamp).format('YYYY-MM-DD HH:mm:ss')}]
+                        </span>
+                        {' '}
+                        <span style={{ color, fontWeight: 'bold' }}>
+                          {icon} {log.level.toUpperCase()}:
+                        </span>
+                        {' '}
+                        <span style={{ color: '#d4d4d4' }}>
+                          {log.message}
+                        </span>
+                      </Box>
+                    );
+                  })
+                ) : (
+                  <Typography sx={{ color: '#808080', fontStyle: 'italic' }}>
+                    No logs available yet. Logs will appear here once the extraction starts processing.
                   </Typography>
-                )) || 'No logs available'}
+                )}
               </Box>
             </DialogContent>
             <DialogActions>

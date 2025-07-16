@@ -38,7 +38,8 @@ import {
   Launch,
   Close,
   SkipNext,
-  Download
+  Download,
+  AdminPanelSettings
 } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import axios from '../utils/axios'
@@ -113,6 +114,10 @@ const Onboarding = () => {
     {
       label: 'Azure App Registration',
       description: 'Set up authentication credentials for M365 access'
+    },
+    {
+      label: 'Tenant Consent',
+      description: 'Grant admin consent for application permissions'
     },
     {
       label: 'Test Connection',
@@ -874,6 +879,113 @@ const Onboarding = () => {
       case 3:
         return (
           <Box>
+            <Alert severity="warning" sx={{ mb: 3 }}>
+              <Typography variant="body2">
+                <strong>Admin Consent Required:</strong> The application needs admin consent to access your Microsoft 365 tenant. 
+                This step grants the necessary permissions for MAES to extract audit logs and security data.
+              </Typography>
+            </Alert>
+
+            <Card sx={{ mb: 3 }}>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  <AdminPanelSettings sx={{ mr: 1, verticalAlign: 'middle' }} />
+                  Tenant Consent Process
+                </Typography>
+                <Typography variant="body2" paragraph>
+                  Click the button below to open the Microsoft Azure consent page. You'll need to:
+                </Typography>
+                <List dense>
+                  <ListItem>
+                    <ListItemIcon><CheckCircle fontSize="small" /></ListItemIcon>
+                    <ListItemText primary="Sign in with a Global Administrator account" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon><CheckCircle fontSize="small" /></ListItemIcon>
+                    <ListItemText primary="Review the requested permissions" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon><CheckCircle fontSize="small" /></ListItemIcon>
+                    <ListItemText primary="Click 'Accept' to grant consent" />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon><CheckCircle fontSize="small" /></ListItemIcon>
+                    <ListItemText primary="Return to this page to continue" />
+                  </ListItem>
+                </List>
+                
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                  <strong>Required Permissions:</strong> Directory.Read.All, AuditLog.Read.All, Exchange.ManageAsApp
+                </Typography>
+              </CardContent>
+            </Card>
+
+            <Box sx={{ mb: 3 }}>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={async () => {
+                  try {
+                    // Get the current organization data to construct the consent URL
+                    const orgResponse = await axios.get('/api/organizations/current?showCredentials=true')
+                    const org = orgResponse.data.organization
+                    
+                    if (!org.credentials?.applicationId) {
+                      setError('Application ID not found. Please complete the previous step first.')
+                      return
+                    }
+                    
+                    // Construct the admin consent URL
+                    const consentUrl = `https://login.microsoftonline.com/${org.tenantId || 'common'}/adminconsent?client_id=${org.credentials.applicationId}&redirect_uri=${encodeURIComponent(window.location.origin + '/onboarding')}`
+                    
+                    // Open in new tab
+                    window.open(consentUrl, '_blank', 'width=600,height=600')
+                    
+                    setSuccess('Consent page opened in new tab. Please complete the consent process and return here.')
+                  } catch (error) {
+                    setError('Failed to open consent page. Please ensure you have completed the previous steps.')
+                  }
+                }}
+                startIcon={<AdminPanelSettings />}
+                fullWidth
+              >
+                Open Azure Admin Consent Page
+              </Button>
+            </Box>
+
+            <Alert severity="info" sx={{ mb: 3 }}>
+              <Typography variant="body2">
+                <strong>Note:</strong> This step opens a new tab. After granting consent, you can return here and continue with the setup.
+                The consent process is required only once per tenant.
+              </Typography>
+            </Alert>
+
+            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+              <Button
+                variant="outlined"
+                onClick={handleNext}
+                startIcon={<CheckCircle />}
+                size="large"
+              >
+                I've Completed Consent
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={handleNext}
+                disabled={loading}
+                startIcon={<SkipNext />}
+                color="secondary"
+                size="large"
+              >
+                Skip for Now
+              </Button>
+            </Box>
+          </Box>
+        )
+
+      case 4:
+        return (
+          <Box>
             <Alert severity="info" sx={{ mb: 3 }}>
               <Typography variant="body2">
                 Let's test the connection to Microsoft 365 to ensure everything is configured correctly.
@@ -932,7 +1044,7 @@ const Onboarding = () => {
           </Box>
         )
 
-      case 4:
+      case 5:
         return (
           <Box>
             <Alert severity="success" sx={{ mb: 3 }}>

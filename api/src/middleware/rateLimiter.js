@@ -7,7 +7,7 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 // General rate limiter
 const rateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isDevelopment ? 1000 : 100, // Higher limit in development
+  max: isDevelopment ? 10000 : 1000, // Much higher limit for real-time operations
   message: {
     error: 'Too many requests from this IP, please try again later'
   },
@@ -50,7 +50,7 @@ const authRateLimiter = rateLimit({
 // API rate limiter for extraction/analysis operations
 const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: isDevelopment ? 1000 : 100, // Higher limit in development
+  max: isDevelopment ? 10000 : 1000, // Much higher limit for real-time polling
   message: {
     error: 'API rate limit exceeded, please slow down'
   },

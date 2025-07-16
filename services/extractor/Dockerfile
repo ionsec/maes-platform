@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:24-alpine
 
 # Install required packages including OpenSSL and dependencies for PowerShell
 RUN apk add --no-cache \

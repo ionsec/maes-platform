@@ -342,13 +342,13 @@ router.patch('/:id/status', async (req, res) => {
 // Get extraction logs
 router.get('/:id/logs', async (req, res) => {
   try {
-          const extraction = await Extraction.findById(req.params.id, req.organizationId);
+    const extraction = await Extraction.findById(req.params.id, req.organizationId);
 
-      if (!extraction) {
-        return res.status(404).json({
-          error: 'Extraction not found'
-        });
-      }
+    if (!extraction) {
+      return res.status(404).json({
+        error: 'Extraction not found'
+      });
+    }
 
     // Check if this is an uploaded extraction
     if (extraction.parameters?.isUpload) {
@@ -382,16 +382,64 @@ router.get('/:id/logs', async (req, res) => {
       });
     }
 
-    // TODO: Implement log retrieval from job system for regular extractions
-    const logs = [
-      { timestamp: new Date(), level: 'info', message: 'Extraction started' },
-      { timestamp: new Date(), level: 'info', message: 'Connecting to Microsoft 365...' }
-    ];
-
-    res.json({
-      success: true,
-      logs
+    // Fetch logs from Redis for regular extractions
+    const redisClient = require('redis').createClient({
+      url: process.env.REDIS_URL
     });
+
+    try {
+      await redisClient.connect();
+      
+      // Get logs from Redis
+      const logKey = `extraction:logs:${extraction.id}`;
+      const rawLogs = await redisClient.lRange(logKey, 0, -1);
+      
+      // Parse logs
+      const logs = rawLogs.map(log => {
+        try {
+          return JSON.parse(log);
+        } catch (e) {
+          return { timestamp: new Date(), level: 'info', message: log };
+        }
+      });
+
+      // If no logs found in Redis, return default logs
+      if (logs.length === 0) {
+        logs.push({ timestamp: extraction.createdAt, level: 'info', message: 'Extraction job created' });
+        
+        if (extraction.status === 'running') {
+          logs.push({ timestamp: new Date(), level: 'info', message: 'Extraction is currently running...' });
+        } else if (extraction.status === 'completed') {
+          logs.push({ timestamp: extraction.completedAt || extraction.updatedAt, level: 'success', message: 'Extraction completed' });
+        } else if (extraction.status === 'failed') {
+          logs.push({ timestamp: extraction.updatedAt, level: 'error', message: extraction.errorMessage || 'Extraction failed' });
+        }
+      }
+
+      await redisClient.disconnect();
+
+      res.json({
+        success: true,
+        logs
+      });
+
+    } catch (redisError) {
+      logger.error('Redis error while fetching logs:', redisError);
+      
+      // Fallback to basic logs if Redis fails
+      const fallbackLogs = [
+        { timestamp: extraction.createdAt, level: 'info', message: 'Extraction job created' }
+      ];
+      
+      if (extraction.status === 'failed' && extraction.errorMessage) {
+        fallbackLogs.push({ timestamp: extraction.updatedAt, level: 'error', message: extraction.errorMessage });
+      }
+
+      res.json({
+        success: true,
+        logs: fallbackLogs
+      });
+    }
 
   } catch (error) {
     logger.error('Get extraction logs error:', error);

@@ -11,7 +11,6 @@ const { logger } = require('./utils/logger');
 const { rateLimiter } = require('./middleware/rateLimiter');
 const { redirectHandler } = require('./middleware/redirectHandler');
 const swaggerSpecs = require('./swagger');
-const elasticsearchService = require('./services/elasticsearch');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -24,7 +23,6 @@ const reportRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const registrationRoutes = require('./routes/registration');
 const siemRoutes = require('./routes/siem');
-const elasticsearchRoutes = require('./routes/elasticsearch');
 
 const app = express();
 
@@ -181,7 +179,6 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/registration', registrationRoutes);
 app.use('/api/siem', siemRoutes);
-app.use('/api/elasticsearch', elasticsearchRoutes);
 
 // Certificate download endpoint
 app.get('/api/certificates/app.crt', (req, res) => {
@@ -269,9 +266,6 @@ async function startServer() {
     await pool.query('SELECT NOW()');
     logger.info('Database connection established successfully');
 
-    // Initialize Elasticsearch service
-    await elasticsearchService.initialize();
-    logger.info('Elasticsearch service initialized successfully');
 
     // Start server
     httpServer.listen(PORT, () => {

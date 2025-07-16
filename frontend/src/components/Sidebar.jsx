@@ -18,7 +18,16 @@ import {
   Assessment,
   Settings,
   Security,
-  Description
+  Description,
+  Search,
+  Shield,
+  Computer,
+  Fingerprint,
+  Timeline,
+  BugReport,
+  Visibility,
+  Storage,
+  ConnectedTv
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getApiUrl } from '../config/api'
@@ -26,12 +35,48 @@ import { getApiUrl } from '../config/api'
 const drawerWidth = 240
 
 const menuItems = [
-  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-  { text: 'Extractions', icon: <CloudDownload />, path: '/extractions' },
-  { text: 'Analysis', icon: <Analytics />, path: '/analysis' },
-  { text: 'Alerts', icon: <Warning />, path: '/alerts' },
-  { text: 'Reports', icon: <Assessment />, path: '/reports' },
-  { text: 'Settings', icon: <Settings />, path: '/settings' }
+  { 
+    text: 'Command Center', 
+    icon: <Shield />, 
+    path: '/dashboard',
+    description: 'Security Operations Dashboard'
+  },
+  { 
+    text: 'Data Extraction', 
+    icon: <Storage />, 
+    path: '/extractions',
+    description: 'M365 Evidence Collection'
+  },
+  { 
+    text: 'Forensic Analysis', 
+    icon: <Search />, 
+    path: '/analysis',
+    description: 'Threat Detection & Investigation'
+  },
+  { 
+    text: 'Security Alerts', 
+    icon: <Warning />, 
+    path: '/alerts',
+    description: 'Threat Intelligence & IOCs'
+  },
+  { 
+    text: 'Investigation Reports', 
+    icon: <Assessment />, 
+    path: '/reports',
+    description: 'DFIR Documentation'
+  },
+  { 
+    text: 'SIEM Integration', 
+    icon: <ConnectedTv />, 
+    path: '/siem',
+    description: 'External Security Systems'
+  },
+  { 
+    text: 'System Configuration', 
+    icon: <Settings />, 
+    path: '/settings',
+    description: 'Platform Settings'
+  }
 ]
 
 const Sidebar = ({ open, onClose }) => {
@@ -60,9 +105,41 @@ const Sidebar = ({ open, onClose }) => {
             <ListItemButton
               selected={location.pathname === item.path}
               onClick={() => handleNavigation(item.path)}
+              sx={{
+                minHeight: 56,
+                px: 2.5,
+                '&.Mui-selected': {
+                  backgroundColor: 'rgba(0, 229, 255, 0.12)',
+                  borderRight: '3px solid',
+                  borderRightColor: 'primary.main',
+                  '&:hover': {
+                    backgroundColor: 'rgba(0, 229, 255, 0.16)',
+                  },
+                },
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 229, 255, 0.08)',
+                },
+              }}
             >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.text} />
+              <ListItemIcon sx={{ 
+                color: location.pathname === item.path ? 'primary.main' : 'inherit',
+                minWidth: 40 
+              }}>
+                {item.icon}
+              </ListItemIcon>
+              <ListItemText 
+                primary={item.text}
+                secondary={item.description}
+                primaryTypographyProps={{
+                  fontSize: '0.875rem',
+                  fontWeight: location.pathname === item.path ? 600 : 500,
+                  color: location.pathname === item.path ? 'primary.main' : 'inherit',
+                }}
+                secondaryTypographyProps={{
+                  fontSize: '0.75rem',
+                  color: 'text.secondary',
+                }}
+              />
             </ListItemButton>
           </ListItem>
         ))}
