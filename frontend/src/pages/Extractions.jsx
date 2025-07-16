@@ -206,6 +206,40 @@ const Extractions = () => {
     setStatsDialogOpen(true);
   };
 
+  const downloadResults = async (extractionId) => {
+    try {
+      const response = await axios.get(`/api/extractions/${extractionId}/download`, {
+        responseType: 'blob'
+      });
+      
+      // Create blob URL and trigger download
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Extract filename from response headers
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `extraction_${extractionId}.zip`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      enqueueSnackbar('Download started successfully', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('Failed to download results', { variant: 'error' });
+    }
+  };
+
   const startLogRefresh = (id) => {
     if (logRefreshInterval) {
       clearInterval(logRefreshInterval);
@@ -512,6 +546,7 @@ const Extractions = () => {
                       <IconButton 
                         size="small" 
                         title="Download Results"
+                        onClick={() => downloadResults(extraction.id)}
                       >
                         <DownloadIcon />
                       </IconButton>

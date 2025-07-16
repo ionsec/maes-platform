@@ -456,4 +456,111 @@ router.get('/:id/logs', async (req, res) => {
   }
 });
 
+// Download extraction results as ZIP
+router.get('/:id/download', async (req, res) => {
+  try {
+    const extraction = await Extraction.findById(req.params.id, req.organizationId);
+
+    if (!extraction) {
+      return res.status(404).json({
+        error: 'Extraction not found'
+      });
+    }
+
+    if (extraction.status !== 'completed') {
+      return res.status(400).json({
+        error: 'Extraction not completed yet'
+      });
+    }
+
+    if (!extraction.outputFiles || extraction.outputFiles.length === 0) {
+      return res.status(404).json({
+        error: 'No output files found for this extraction'
+      });
+    }
+
+    const archiver = require('archiver');
+    const fs = require('fs');
+    const path = require('path');
+
+    // Create ZIP archive
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Maximum compression
+    });
+
+    // Set appropriate headers
+    const extractionType = extraction.type || 'extraction';
+    const timestamp = new Date().toISOString().split('T')[0];
+    const zipFilename = `${extractionType}_${extraction.id}_${timestamp}.zip`;
+    
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+
+    archive.pipe(res);
+
+    // Add each output file to the archive
+    let filesAdded = 0;
+    for (const file of extraction.outputFiles) {
+      try {
+        const filePath = file.path;
+        
+        // Check if file exists
+        if (fs.existsSync(filePath)) {
+          const stats = fs.statSync(filePath);
+          if (stats.isFile()) {
+            archive.file(filePath, { name: file.filename });
+            filesAdded++;
+            logger.info(`Added file to archive: ${file.filename}`);
+          }
+        } else {
+          logger.warn(`File not found: ${filePath}`);
+        }
+      } catch (fileError) {
+        logger.error(`Error adding file to archive: ${file.filename}`, fileError);
+      }
+    }
+
+    if (filesAdded === 0) {
+      archive.destroy();
+      return res.status(404).json({
+        error: 'No accessible output files found'
+      });
+    }
+
+    // Add extraction metadata as JSON file
+    const metadata = {
+      extractionId: extraction.id,
+      type: extraction.type,
+      status: extraction.status,
+      startDate: extraction.startDate,
+      endDate: extraction.endDate,
+      createdAt: extraction.createdAt,
+      completedAt: extraction.completedAt,
+      duration: extraction.duration,
+      statistics: extraction.statistics,
+      itemsExtracted: extraction.itemsExtracted,
+      outputFiles: extraction.outputFiles.map(f => ({
+        filename: f.filename,
+        size: f.size,
+        createdAt: f.createdAt
+      })),
+      parameters: extraction.parameters
+    };
+
+    archive.append(JSON.stringify(metadata, null, 2), { name: 'extraction_metadata.json' });
+
+    // Finalize the archive
+    archive.finalize();
+
+    logger.info(`ZIP download initiated for extraction ${extraction.id} with ${filesAdded} files`);
+
+  } catch (error) {
+    logger.error('Download extraction error:', error);
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
 module.exports = router;

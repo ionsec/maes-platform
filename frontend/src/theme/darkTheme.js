@@ -330,6 +330,40 @@ const darkTheme = createTheme({
         },
       },
     },
+    MuiDialogContent: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#1A1A1A',
+          color: '#FFFFFF',
+          '& .MuiTypography-root': {
+            color: '#FFFFFF',
+          },
+          '& .MuiTypography-body1': {
+            color: '#FFFFFF',
+          },
+          '& .MuiTypography-body2': {
+            color: '#B0B0B0',
+          },
+        },
+      },
+    },
+    MuiDialogTitle: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#1A1A1A',
+          color: '#FFFFFF',
+          borderBottom: '1px solid #333333',
+        },
+      },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: {
+          backgroundColor: '#1A1A1A',
+          borderTop: '1px solid #333333',
+        },
+      },
+    },
     MuiAlert: {
       styleOverrides: {
         standardError: {
