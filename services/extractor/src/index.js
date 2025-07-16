@@ -741,6 +741,11 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
     
     // Create analysis job via API to ensure proper database record creation
     const apiUrl = process.env.API_URL || 'http://api:3000';
+    const serviceToken = process.env.SERVICE_AUTH_TOKEN;
+    
+    if (!serviceToken) {
+      throw new Error('SERVICE_AUTH_TOKEN environment variable is not set');
+    }
     
     try {
       const response = await axios.post(
@@ -760,7 +765,7 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
         },
         {
           headers: {
-            'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+            'x-service-token': serviceToken,
             'Content-Type': 'application/json'
           },
           timeout: 10000
@@ -774,7 +779,13 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
       }
       
     } catch (apiError) {
-      logger.error('Failed to create analysis job via API, falling back to direct queue method:', apiError.message);
+      logger.error('Failed to create analysis job via API, falling back to direct queue method:', {
+        error: apiError.message,
+        status: apiError.response?.status,
+        statusText: apiError.response?.statusText,
+        data: apiError.response?.data,
+        url: `${apiUrl}/api/analysis/internal`
+      });
       
       // Fallback to direct queue method - but also try to create database record
       const analysisId = crypto.randomUUID();
