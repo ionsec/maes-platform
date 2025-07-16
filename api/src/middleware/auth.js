@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const { pool, getRow } = require('../services/database');
 const { logger } = require('../utils/logger');
 
@@ -424,7 +425,7 @@ const auditLog = async (userId, organizationId, action, details = {}) => {
         resource, resource_id, details, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
       [
-        require('uuid').v4(),
+        crypto.randomUUID(),
         userId,
         organizationId,
         action,
