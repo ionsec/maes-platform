@@ -66,7 +66,8 @@ function createExtractionLogger(extractionId) {
     info: (message, meta = {}) => logger.info(message, { ...meta, extractionId }),
     error: (message, meta = {}) => logger.error(message, { ...meta, extractionId }),
     warn: (message, meta = {}) => logger.warn(message, { ...meta, extractionId }),
-    debug: (message, meta = {}) => logger.debug(message, { ...meta, extractionId })
+    debug: (message, meta = {}) => logger.debug(message, { ...meta, extractionId }),
+    success: (message, meta = {}) => logger.info(message, { ...meta, extractionId, level: 'success' })
   };
 }
 
