@@ -132,11 +132,32 @@ VITE_API_URL=https://yourdomain.com
 ### M365 Data Extraction
 1. **Register an Organization**: Set up Azure AD app registration
 2. **Configure Credentials**: Add tenant ID, client ID, and certificate
-3. **Grant Required Permissions**: 
+3. **Assign API Permissions**:
+   - Navigate to the **API Permissions** section of the application
+   - Click **Add a permission** and assign the following **Graph API permissions** (Application permissions):
+
+   | Permission | Description |
+   |------------|-------------|
+   | `Application.Read.All` | Read all applications |
+   | `AuditLog.Read.All` | Read all audit log data |
+   | `AuditLogsQuery.Read.All` | Read audit logs data from all services |
+   | `Directory.Read.All` | Read directory data |
+   | `IdentityRiskEvent.Read.All` | Read all identity risk event information |
+   | `IdentityRiskyUser.Read.All` | Read all identity risky user information |
+   | `Mail.ReadBasic.All` | Read metadata of mail in all mailboxes |
+   | `Policy.Read.All` | Read your organization's policies |
+   | `UserAuthenticationMethod.Read.All` | Read all users authentication methods |
+   | `Policy.Read.All` | Read the conditional access policies |
+   | `User.Read.All` | Read all users full profiles |
+   | `Group.Read.All` | Allows the app to list groups |
+   | `Device.Read.All` | Read all device information |
+   | `Mail.ReadWrite` (optional) | Read the content of emails in all mailboxes. This method requires write permissions. Alternatively, emails can be acquired by other means. |
+
+4. **Grant Required Permissions**: 
    - **Compliance Administrator** role is required for UAL (Unified Audit Log) extraction
    - The user or service principal must be assigned this role in Microsoft 365
-4. **Run Extractions**: Choose data types (UAL, Azure logs, etc.)
-5. **Monitor Progress**: Real-time extraction status
+5. **Run Extractions**: Choose data types (UAL, Azure logs, etc.)
+6. **Monitor Progress**: Real-time extraction status
 
 ### Analysis & Upload Options
 
