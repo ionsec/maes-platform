@@ -140,8 +140,8 @@ router.post('/internal/direct',
       const { id, extractionId, organizationId, type, priority = 'medium', parameters = {} } = req.body;
 
       // Create analysis job record with specific ID
-      const { execute } = require('../services/database');
-      await execute(
+      const { query } = require('../services/database');
+      await query(
         `INSERT INTO maes.analysis_jobs (id, extraction_id, organization_id, type, priority, parameters, status, created_at, updated_at) 
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
         [id, extractionId, organizationId, type, priority, JSON.stringify({...parameters, autoTriggered: true}), 'pending']

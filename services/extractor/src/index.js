@@ -86,12 +86,16 @@ extractionQueue.process('extract-data', async (job) => {
       // Don't fail the extraction job if analysis trigger fails
     }
     
+    // Set progress to 100% before completing
+    await job.progress(100);
+    
     // Update extraction status to completed via API
     try {
       await updateExtractionStatus(extractionId, 'completed', {
         outputFiles,
         statistics: result.statistics,
-        completedAt: new Date()
+        completedAt: new Date(),
+        progress: 100
       });
     } catch (updateError) {
       logger.error(`Failed to update extraction status for ${extractionId}:`, updateError);
@@ -514,7 +518,7 @@ function parseStatistics(output) {
   };
   
   // Parse statistics from output
-  const totalMatch = output.match(/Total Events: (\d+)/);
+  const totalMatch = output.match(/Total number of events during the acquisition period: (\d+)/);
   if (totalMatch) statistics.totalEvents = parseInt(totalMatch[1]);
   
   const usersMatch = output.match(/Unique Users: (\d+)/);
