@@ -48,7 +48,9 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
       JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-character-secret-key-here!}
@@ -81,7 +83,9 @@ services:
     image: maes-extractor:latest
     container_name: maes-extractor
     environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -111,7 +115,9 @@ services:
     image: maes-analyzer:latest
     container_name: maes-analyzer
     environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
     volumes:
