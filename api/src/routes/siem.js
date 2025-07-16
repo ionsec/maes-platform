@@ -24,7 +24,7 @@ router.use(apiRateLimiter);
  *         name: format
  *         schema:
  *           type: string
- *           enum: [splunk, qradar, elasticsearch, cef, json]
+ *           enum: [splunk, qradar, cef, json]
  *         description: SIEM format
  *       - in: query
  *         name: startDate
@@ -85,7 +85,7 @@ router.use(apiRateLimiter);
 router.get('/events',
   requirePermission('canExportData'),
   [
-    query('format').isIn(['splunk', 'qradar', 'elasticsearch', 'cef', 'json']).withMessage('Invalid format'),
+    query('format').isIn(['splunk', 'qradar', 'cef', 'json']).withMessage('Invalid format'),
     query('startDate').optional().isISO8601().withMessage('Invalid start date'),
     query('endDate').optional().isISO8601().withMessage('Invalid end date'),
     query('eventTypes').optional().isString().withMessage('Event types must be string'),
@@ -162,9 +162,6 @@ router.get('/events',
           break;
         case 'qradar':
           formattedEvents = formatForQRadar(events);
-          break;
-        case 'elasticsearch':
-          formattedEvents = formatForElasticsearch(events);
           break;
         case 'cef':
           formattedEvents = formatForCEF(events);
@@ -387,22 +384,6 @@ function formatForQRadar(events) {
   }));
 }
 
-function formatForElasticsearch(events) {
-  return events.map(event => ({
-    '@timestamp': event.created_at,
-    '@version': '1',
-    'message': event.description,
-    'fields': {
-      'event_id': event.id,
-      'event_title': event.title,
-      'event_severity': event.severity,
-      'event_category': event.category,
-      'mitre_techniques': event.mitre_techniques,
-      'affected_entities': event.affected_entities,
-      'source': 'maes-platform'
-    }
-  }));
-}
 
 function formatForCEF(events) {
   return events.map(event => {

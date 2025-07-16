@@ -8,15 +8,17 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "bull": "^4.11.4",
-    "redis": "^4.6.10",
-    "winston": "^3.11.0",
-    "dotenv": "^16.3.1",
-    "pg": "^8.11.3",
-    "axios": "^1.5.1",
+    "bull": "^4.16.5",
+    "redis": "^5.6.0",
+    "ioredis": "^5.6.1",
+    "winston": "^3.17.0",
+    "winston-transport": "^4.9.0",
+    "dotenv": "^17.2.0",
+    "pg": "^8.16.3",
+    "axios": "^1.10.0",
     "node-schedule": "^2.1.1"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.1.10"
   }
 }

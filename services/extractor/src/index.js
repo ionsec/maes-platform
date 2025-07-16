@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
-const { logger } = require('./logger');
+const { logger, createExtractionLogger } = require('./logger');
 const { updateExtractionProgress } = require('./progressMonitor');
 const axios = require('axios');
 require('dotenv').config();
@@ -41,14 +41,20 @@ const OUTPUT_PATH = '/output';
 extractionQueue.process('extract-data', async (job) => {
   const { extractionId, type, parameters, credentials } = job.data;
   
+  // Create extraction-specific logger
+  const extractionLogger = createExtractionLogger(extractionId);
+  
   logger.info(`Starting extraction job ${extractionId} of type ${type}`);
+  extractionLogger.info(`Starting extraction job of type ${type}`);
+  
+  let progressMonitor = null;
   
   try {
     // Update job progress
     await job.progress(10);
     
     // Start monitoring LogFile.txt for progress updates
-    const progressMonitor = updateExtractionProgress(extractionId, job);
+    progressMonitor = updateExtractionProgress(extractionId, job);
     
     // Prepare PowerShell command based on extraction type
     const psCommand = buildPowerShellCommand(type, parameters, credentials);
@@ -56,9 +62,10 @@ extractionQueue.process('extract-data', async (job) => {
     // Log the command for debugging (sanitize sensitive data)
     const sanitizedCommand = psCommand.replace(/ConvertTo-SecureString\s+'[^']+'/g, 'ConvertTo-SecureString ***');
     logger.debug(`Executing PowerShell command for extraction ${extractionId}: ${sanitizedCommand.substring(0, 500)}...`);
+    extractionLogger.info('Connecting to Microsoft 365...');
     
     // Execute PowerShell script
-    const result = await executePowerShell(psCommand, job);
+    const result = await executePowerShell(psCommand, job, extractionLogger);
     
     // Stop progress monitoring
     if (progressMonitor && progressMonitor.stop) {
@@ -69,6 +76,7 @@ extractionQueue.process('extract-data', async (job) => {
     const outputFiles = await processOutput(extractionId, type);
     
     logger.info(`Extraction job ${extractionId} completed successfully`);
+    extractionLogger.info('Extraction completed successfully');
     
     // Trigger analysis for the extracted data
     try {
@@ -98,6 +106,7 @@ extractionQueue.process('extract-data', async (job) => {
     
   } catch (error) {
     logger.error(`Extraction job ${extractionId} failed:`, error);
+    extractionLogger.error(`Extraction failed: ${error.message}`);
     
     // Stop progress monitoring on error
     if (progressMonitor && progressMonitor.stop) {
@@ -338,7 +347,7 @@ function buildTestConnectionCommand(parameters) {
 }
 
 // Execute PowerShell command with timeout and better error handling
-async function executePowerShell(command, job) {
+async function executePowerShell(command, job, extractionLogger) {
   return new Promise((resolve, reject) => {
     // Set timeout to prevent hanging jobs - configurable via environment variable
     const timeoutMs = parseInt(process.env.POWERShell_TIMEOUT) || 30 * 60 * 1000; // Default 30 minutes
@@ -361,6 +370,52 @@ async function executePowerShell(command, job) {
       const output = data.toString();
       logger.info(`PowerShell output: ${output}`);
       
+      // Log to extraction-specific logger if available
+      if (extractionLogger) {
+        // Parse and clean up PowerShell output for extraction logs
+        const lines = output.split('\n').filter(line => line.trim());
+        lines.forEach(line => {
+          // Skip banner lines
+          if (line.includes('+-+-+-+-+-+-+-+-+-+') || 
+              line.includes('|M|i|c|r|o|s|o|f|t|') ||
+              line.includes('Copyright') ||
+              line.includes('Created by')) {
+            return;
+          }
+          
+          // Log meaningful messages
+          if (line.includes('Loading Microsoft-Extractor-Suite module')) {
+            extractionLogger.info('Loading Microsoft Extractor Suite module...');
+          } else if (line.includes('Module loaded successfully')) {
+            extractionLogger.info('Module loaded successfully');
+          } else if (line.includes('Connecting to Microsoft 365')) {
+            extractionLogger.info('Connecting to Microsoft 365...');
+          } else if (line.includes('Using mounted certificate')) {
+            extractionLogger.info('Using certificate authentication');
+          } else if (line.includes('Certificate:')) {
+            extractionLogger.info(`Certificate thumbprint: ${line.split('Certificate:')[1].trim()}`);
+          } else if (line.includes('Connect-M365 completed successfully')) {
+            extractionLogger.info('Successfully connected to Microsoft 365');
+          } else if (line.includes('UAL_STATUS:ENABLED')) {
+            extractionLogger.info('✓ Unified Audit Log is enabled');
+          } else if (line.includes('UAL_STATUS:DISABLED')) {
+            extractionLogger.warn('⚠ Unified Audit Log is disabled - extraction may fail');
+          } else if (line.includes('Starting Unified Audit Log extraction')) {
+            extractionLogger.info('Starting Unified Audit Log extraction...');
+          } else if (line.includes('UAL extraction completed successfully')) {
+            extractionLogger.info('UAL extraction completed successfully');
+          } else if (line.includes('Get-UAL')) {
+            extractionLogger.info('Executing UAL extraction command...');
+          } else if (line.includes('Verifying Exchange Online connection')) {
+            extractionLogger.info('Verifying Exchange Online connection...');
+          } else if (line.includes('Active sessions found')) {
+            extractionLogger.info('Exchange Online session established');
+          } else if (line.includes('Search-UnifiedAuditLog cmdlet is available')) {
+            extractionLogger.info('Unified Audit Log cmdlet verified');
+          }
+        });
+      }
+      
       // Update progress based on output
       const progressMatch = output.match(/Progress: (\d+)%/);
       if (progressMatch) {
@@ -371,6 +426,40 @@ async function executePowerShell(command, job) {
     ps.stderr.on('data', (data) => {
       stderr += data.toString();
       logger.error(`PowerShell error: ${data.toString()}`);
+      
+      // Log errors to extraction-specific logger if available
+      if (extractionLogger) {
+        const errorMessage = data.toString().trim();
+        if (errorMessage) {
+          // Parse specific error types
+          if (errorMessage.includes('isn\'t supported in this scenario')) {
+            extractionLogger.error('Authentication failed: Missing required Exchange Online permissions');
+            extractionLogger.error('Please ensure the Azure AD application has the "Exchange.ManageAsApp" permission');
+          } else if (errorMessage.includes('AADSTS700016') || errorMessage.includes('Application with identifier')) {
+            extractionLogger.error('Authentication failed: Invalid Azure AD Application ID');
+            extractionLogger.error('Please verify the App ID and ensure proper permissions are granted');
+          } else if (errorMessage.includes('Organization') && errorMessage.includes('not found')) {
+            extractionLogger.error('Authentication failed: Organization not found');
+            extractionLogger.error('Please use the FQDN (e.g., contoso.onmicrosoft.com) instead of Tenant ID');
+          } else if (errorMessage.includes('certificate') && (errorMessage.includes('not found') || errorMessage.includes('invalid'))) {
+            extractionLogger.error('Authentication failed: Certificate error');
+            extractionLogger.error('Please verify the certificate file path and password');
+          } else if (errorMessage.includes('Unified Audit Log is not enabled')) {
+            extractionLogger.error('Extraction failed: Unified Audit Log is not enabled');
+            extractionLogger.error('Please enable auditing in the Microsoft 365 compliance center');
+          } else if (errorMessage.includes('Write-Error')) {
+            // Extract the actual error message from Write-Error
+            const errorMatch = errorMessage.match(/Write-Error:.*?([^[]+)/);;
+            if (errorMatch) {
+              extractionLogger.error(errorMatch[1].trim());
+            } else {
+              extractionLogger.error(errorMessage);
+            }
+          } else {
+            extractionLogger.error(errorMessage);
+          }
+        }
+      }
       
       // Check for common errors
       if (stderr.includes('AADSTS700016') || stderr.includes('Application with identifier')) {

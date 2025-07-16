@@ -13,6 +13,7 @@ import Analysis from './pages/Analysis'
 import Alerts from './pages/Alerts'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
+import SIEMConfiguration from './pages/SIEMConfiguration'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
@@ -107,6 +108,7 @@ function App() {
               <Route path="/alerts" element={<Alerts />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/siem" element={<SIEMConfiguration />} />
             </Routes>
           </Box>
           <Footer />

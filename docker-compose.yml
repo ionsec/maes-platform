@@ -40,41 +40,6 @@ services:
       timeout: 5s
       retries: 5
 
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
-    container_name: maes-elasticsearch
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
-      - cluster.name=maes-cluster
-      - node.name=maes-node
-      - bootstrap.memory_lock=true
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    ports:
-      - "9200:9200"
-      - "9300:9300"
-    volumes:
-      - es_data:/usr/share/elasticsearch/data
-      - ./elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
-    networks:
-      - maes-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-        reservations:
-          memory: 512m
-
 
   api:
     build: ./api
@@ -84,7 +49,6 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
-      ELASTICSEARCH_URL: http://elasticsearch:9200
       JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-character-secret-key-here!}
@@ -106,8 +70,6 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      elasticsearch:
         condition: service_healthy
     networks:
       - maes-network
@@ -151,7 +113,6 @@ services:
     environment:
       REDIS_URL: redis://:${REDIS_PASSWORD:-redis_secure_password}@redis:6379
       DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
-      ELASTICSEARCH_URL: http://elasticsearch:9200
       SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
     volumes:
       - extractor_output:/output:ro
@@ -160,8 +121,6 @@ services:
       redis:
         condition: service_healthy
       postgres:
-        condition: service_healthy
-      elasticsearch:
         condition: service_healthy
     networks:
       - maes-network
@@ -190,7 +149,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  es_data:
   extractor_output:
   analyzer_output:
 

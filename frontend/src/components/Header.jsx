@@ -8,14 +8,22 @@ import {
   Menu,
   MenuItem,
   Box,
-  Tooltip
+  Tooltip,
+  Chip,
+  Badge
 } from '@mui/material'
 import {
   Menu as MenuIcon,
   AccountCircle,
   Notifications,
   Settings,
-  ExitToApp
+  ExitToApp,
+  Security,
+  Shield,
+  Search,
+  Computer,
+  Warning,
+  CheckCircle
 } from '@mui/icons-material'
 import { useAuthStore } from '../stores/authStore'
 
@@ -50,22 +58,63 @@ const Header = ({ onMenuClick }) => {
         </IconButton>
 
         <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-          <Typography variant="h6" component="div" sx={{ mr: 2 }}>
-            MAES: M365 Analyzer & Extractor Suite
-          </Typography>
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            padding: '4px 12px',
-            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-            borderRadius: 1,
-            border: '1px solid rgba(25, 118, 210, 0.3)'
-          }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
+            <Shield sx={{ color: 'primary.main', mr: 1, fontSize: '1.75rem' }} />
+            <Box>
+              <Typography variant="h6" component="div" sx={{ 
+                fontWeight: 700,
+                letterSpacing: '-0.5px',
+                color: 'primary.main'
+              }}>
+                MAES
+              </Typography>
+              <Typography variant="caption" sx={{ 
+                color: 'text.secondary',
+                fontSize: '0.65rem',
+                lineHeight: 1,
+                display: 'block',
+                mt: -0.5
+              }}>
+                M365 Analyzer & Extractor Suite
+              </Typography>
+            </Box>
+          </Box>
+          
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip
+              icon={<Security />}
+              label="DFIR"
+              size="small"
+              variant="outlined"
+              sx={{
+                borderColor: 'primary.main',
+                color: 'primary.main',
+                backgroundColor: 'rgba(0, 229, 255, 0.1)',
+                fontWeight: 600,
+                fontSize: '0.75rem'
+              }}
+            />
+            <Chip
+              icon={<Computer />}
+              label="M365"
+              size="small"
+              variant="outlined"
+              sx={{
+                borderColor: 'success.main',
+                color: 'success.main',
+                backgroundColor: 'rgba(0, 230, 118, 0.1)',
+                fontWeight: 600,
+                fontSize: '0.75rem'
+              }}
+            />
             <Typography variant="caption" sx={{ 
-              color: 'primary.main',
-              fontWeight: 'bold',
-              letterSpacing: 0.5,
-              fontSize: '0.75rem'
+              color: 'text.secondary',
+              fontWeight: 'medium',
+              px: 1,
+              py: 0.5,
+              backgroundColor: 'rgba(0, 229, 255, 0.05)',
+              borderRadius: 1,
+              border: '1px solid rgba(0, 229, 255, 0.2)'
             }}>
               Powered by IONSEC.IO
             </Typography>
@@ -73,14 +122,22 @@ const Header = ({ onMenuClick }) => {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <Tooltip title="Notifications">
-            <IconButton color="inherit">
-              <Notifications />
+          <Tooltip title="Security Alerts">
+            <IconButton color="inherit" sx={{ mr: 1 }}>
+              <Badge badgeContent={3} color="error">
+                <Warning />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+
+          <Tooltip title="System Status">
+            <IconButton color="inherit" sx={{ mr: 1 }}>
+              <CheckCircle sx={{ color: 'success.main' }} />
             </IconButton>
           </Tooltip>
 
           <Tooltip title="Settings">
-            <IconButton color="inherit">
+            <IconButton color="inherit" sx={{ mr: 1 }}>
               <Settings />
             </IconButton>
           </Tooltip>
