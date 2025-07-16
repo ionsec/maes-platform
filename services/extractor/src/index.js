@@ -78,6 +78,21 @@ extractionQueue.process('extract-data', async (job) => {
     logger.info(`Extraction job ${extractionId} completed successfully`);
     extractionLogger.info('Extraction completed successfully');
     
+    // Log completion statistics
+    extractionLogger.info(`Job ${extractionId} completed successfully:`);
+    extractionLogger.success(`Total Events: ${result.statistics.totalEvents || 0}`);
+    extractionLogger.success(`Unique Users: ${result.statistics.uniqueUsers || 0}`);
+    extractionLogger.success(`Unique Operations: ${result.statistics.uniqueOperations || 0}`);
+    extractionLogger.success(`Output Files: ${outputFiles.length}`);
+    
+    // Log output files details
+    if (outputFiles.length > 0) {
+      extractionLogger.info('Generated output files:');
+      outputFiles.forEach(file => {
+        extractionLogger.info(`  - ${file.filename} (${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+      });
+    }
+    
     // Trigger analysis for the extracted data
     try {
       await triggerAnalysis(extractionId, type, job.data.organizationId, outputFiles);

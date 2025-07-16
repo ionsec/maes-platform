@@ -7,7 +7,14 @@ import {
   Card,
   CardContent,
   Chip,
-  LinearProgress
+  LinearProgress,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button
 } from '@mui/material'
 import {
   CloudDownload,
@@ -15,9 +22,10 @@ import {
   Warning,
   TrendingUp,
   Security,
-  Assessment
+  Assessment,
+  Info as InfoIcon
 } from '@mui/icons-material'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
 import axios from '../utils/axios'
 import dayjs from 'dayjs'
 
@@ -29,6 +37,7 @@ const Dashboard = () => {
     coverage: { services: 0, users: 0, devices: 0 }
   })
   const [loading, setLoading] = useState(true)
+  const [infoDialog, setInfoDialog] = useState({ open: false, title: '', content: '' })
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -105,46 +114,117 @@ const Dashboard = () => {
     { name: 'Low', value: stats.alerts.low, color: '#4caf50' }
   ].filter(item => item.value > 0)
 
-  const StatCard = ({ title, value, icon, color, subtitle }) => (
-    <Card className="hoverable-card">
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Box>
-            <Typography variant="h4" component="div" color={color}>
+  const StatCard = ({ title, value, icon, color, subtitle, info }) => (
+    <Tooltip title={info || title} placement="top" enterDelay={500}>
+      <Card className="hoverable-card" sx={{ 
+        height: '100%', 
+        minHeight: { xs: '140px', sm: '160px' },
+        display: 'flex', 
+        flexDirection: 'column',
+        transition: 'all 0.2s ease-in-out',
+        '&:hover': {
+          transform: 'translateY(-2px)',
+          boxShadow: 3
+        }
+      }}>
+      <CardContent sx={{ 
+        flexGrow: 1, 
+        display: 'flex', 
+        flexDirection: 'column', 
+        justifyContent: 'space-between',
+        p: { xs: 2, sm: 3 },
+        '&:last-child': { pb: { xs: 2, sm: 3 } }
+      }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Typography 
+              variant="h4" 
+              component="div" 
+              color={color}
+              sx={{ 
+                fontSize: { xs: '1.8rem', sm: '2.125rem' },
+                lineHeight: 1.2,
+                mb: 0.5
+              }}
+            >
               {value}
             </Typography>
-            <Typography variant="body2" color="text.secondary">
+            <Typography 
+              variant="body2" 
+              color="text.secondary"
+              sx={{ 
+                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                fontWeight: 500,
+                mb: 0.5
+              }}
+            >
               {title}
             </Typography>
             {subtitle && (
-              <Typography variant="caption" color="text.secondary">
+              <Typography 
+                variant="caption" 
+                color="text.secondary"
+                sx={{ 
+                  fontSize: { xs: '0.65rem', sm: '0.75rem' },
+                  display: 'block'
+                }}
+              >
                 {subtitle}
               </Typography>
             )}
           </Box>
-          <Box sx={{ color: color, opacity: 0.7 }}>
-            {icon}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 1 }}>
+            <Box sx={{ 
+              color: color, 
+              opacity: 0.7,
+              display: 'flex',
+              alignItems: 'center'
+            }}>
+              {React.cloneElement(icon, { sx: { fontSize: { xs: 32, sm: 40 } } })}
+            </Box>
+            {info && (
+              <Tooltip title="Click for more information">
+                <IconButton
+                  size="small"
+                  onClick={() => setInfoDialog({ open: true, title: title, content: info })}
+                  sx={{ opacity: 0.7 }}
+                >
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
           </Box>
         </Box>
       </CardContent>
     </Card>
+    </Tooltip>
   )
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" sx={{ flexGrow: 1 }}>
+    <Box sx={{ p: { xs: 2, sm: 3 } }}>
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: { xs: 'flex-start', sm: 'center' },
+        flexDirection: { xs: 'column', sm: 'row' },
+        mb: 3,
+        gap: { xs: 2, sm: 0 }
+      }}>
+        <Typography variant="h4" sx={{ 
+          flexGrow: 1,
+          fontSize: { xs: '1.5rem', sm: '2.125rem' }
+        }}>
           MAES Dashboard
         </Typography>
         <Box sx={{ 
           display: 'flex', 
           alignItems: 'center',
-          gap: 2
+          gap: { xs: 1, sm: 2 },
+          flexWrap: { xs: 'wrap', sm: 'nowrap' }
         }}>
           <Box sx={{ 
             display: 'flex', 
             alignItems: 'center',
-            padding: '8px 16px',
+            padding: { xs: '6px 12px', sm: '8px 16px' },
             backgroundColor: 'rgba(25, 118, 210, 0.1)',
             borderRadius: 1,
             border: '1px solid rgba(25, 118, 210, 0.3)'
@@ -152,7 +232,8 @@ const Dashboard = () => {
             <Typography variant="h6" sx={{ 
               color: 'primary.main',
               fontWeight: 'bold',
-              letterSpacing: 1
+              letterSpacing: 1,
+              fontSize: { xs: '0.9rem', sm: '1.25rem' }
             }}>
               IONSEC.IO
             </Typography>
@@ -160,7 +241,7 @@ const Dashboard = () => {
           <Box sx={{ 
             display: 'flex', 
             alignItems: 'center',
-            padding: '6px 12px',
+            padding: { xs: '4px 8px', sm: '6px 12px' },
             backgroundColor: 'rgba(211, 47, 47, 0.1)',
             borderRadius: 1,
             border: '1px solid rgba(211, 47, 47, 0.3)'
@@ -168,7 +249,7 @@ const Dashboard = () => {
             <Typography variant="caption" sx={{ 
               color: 'error.main',
               fontWeight: 'bold',
-              fontSize: '0.75rem'
+              fontSize: { xs: '0.65rem', sm: '0.75rem' }
             }}>
               24/7 Incident Response
             </Typography>
@@ -178,118 +259,211 @@ const Dashboard = () => {
       
       <Grid container spacing={3}>
         {/* Stats Cards */}
-        <Grid item xs={12} md={6} lg={3}>
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Total Extractions"
             value={stats.extractions.total}
             icon={<CloudDownload sx={{ fontSize: 40 }} />}
             color="primary.main"
             subtitle={`${stats.extractions.active} active`}
+            info="Data extraction jobs that collect evidence from Microsoft 365 services including Unified Audit Logs, Azure AD logs, Exchange, SharePoint, and Teams. This includes both scheduled and on-demand extractions."
           />
         </Grid>
         
-        <Grid item xs={12} md={6} lg={3}>
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Analyses Complete"
             value={stats.analyses.total}
             icon={<Analytics sx={{ fontSize: 40 }} />}
             color="success.main"
             subtitle={`${stats.analyses.running} running`}
+            info="Analysis jobs that process extracted data using advanced algorithms to detect threats, anomalies, and suspicious activities. Each analysis generates detailed findings and security alerts based on MITRE ATT&CK framework."
           />
         </Grid>
         
-        <Grid item xs={12} md={6} lg={3}>
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Active Alerts"
             value={stats.alerts.total}
             icon={<Warning sx={{ fontSize: 40 }} />}
             color="warning.main"
             subtitle={`${stats.alerts.critical} critical`}
+            info="Security alerts generated from analysis results. Alerts are categorized by severity (Critical, High, Medium, Low) and include detailed information about detected threats, IOCs, and recommended response actions."
           />
         </Grid>
         
-        <Grid item xs={12} md={6} lg={3}>
+        <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Monitored Users"
             value={stats.coverage.users.toLocaleString()}
             icon={<Security sx={{ fontSize: 40 }} />}
             color="info.main"
             subtitle={`${stats.coverage.devices} devices`}
+            info="Total number of unique users and devices being monitored across your Microsoft 365 environment. This includes user accounts, service principals, and registered devices that appear in audit logs and security events."
           />
         </Grid>
 
         {/* Activity Chart */}
         <Grid item xs={12} lg={8}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Weekly Activity
-            </Typography>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={activityData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Line type="monotone" dataKey="extractions" stroke="#8884d8" strokeWidth={2} />
-                <Line type="monotone" dataKey="analyses" stroke="#82ca9d" strokeWidth={2} />
-                <Line type="monotone" dataKey="alerts" stroke="#ffc658" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
+          <Tooltip title="Weekly activity trends showing extractions, analyses, and alerts over the past 7 days" placement="top" enterDelay={500}>
+            <Paper sx={{ 
+              p: { xs: 2, sm: 3 }, 
+              height: { xs: '350px', sm: '400px', lg: '400px' }, 
+              display: 'flex', 
+              flexDirection: 'column',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: 2
+              }
+            }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                Weekly Activity
+              </Typography>
+              <Tooltip title="Click for more information">
+                <IconButton
+                  size="small"
+                  onClick={() => setInfoDialog({ 
+                    open: true, 
+                    title: 'Weekly Activity Chart', 
+                    content: 'This chart shows the daily activity trends for extractions, analyses, and alerts over the past week. It helps you understand platform usage patterns and identify peak activity periods for better resource planning.' 
+                  })}
+                  sx={{ opacity: 0.7 }}
+                >
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+            <Box sx={{ flexGrow: 1, minHeight: { xs: 250, sm: 300 } }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={activityData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="name" 
+                    fontSize={12}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis 
+                    fontSize={12}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <RechartsTooltip />
+                  <Line type="monotone" dataKey="extractions" stroke="#8884d8" strokeWidth={2} />
+                  <Line type="monotone" dataKey="analyses" stroke="#82ca9d" strokeWidth={2} />
+                  <Line type="monotone" dataKey="alerts" stroke="#ffc658" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            </Box>
           </Paper>
+          </Tooltip>
         </Grid>
 
         {/* Alert Distribution */}
         <Grid item xs={12} lg={4}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Alert Distribution
-            </Typography>
-            {alertDistribution.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={alertDistribution}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {alertDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <Box sx={{ 
-                height: 300, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                flexDirection: 'column'
-              }}>
-                <Security sx={{ fontSize: 60, color: 'text.disabled', mb: 2 }} />
-                <Typography variant="body2" color="text.secondary" align="center">
-                  No alerts generated yet.
-                </Typography>
-                <Typography variant="caption" color="text.secondary" align="center" sx={{ mt: 1 }}>
-                  Alerts will appear here after analysis completes.
-                </Typography>
-              </Box>
-            )}
+          <Tooltip title="Distribution of security alerts by severity level - Critical, High, Medium, and Low" placement="top" enterDelay={500}>
+            <Paper sx={{ 
+              p: { xs: 2, sm: 3 }, 
+              height: { xs: '350px', sm: '400px', lg: '400px' }, 
+              display: 'flex', 
+              flexDirection: 'column',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: 2
+              }
+            }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                Alert Distribution
+              </Typography>
+              <Tooltip title="Click for more information">
+                <IconButton
+                  size="small"
+                  onClick={() => setInfoDialog({ 
+                    open: true, 
+                    title: 'Alert Distribution', 
+                    content: 'This pie chart shows the distribution of security alerts by severity level. Critical alerts require immediate attention, High alerts need prompt investigation, Medium alerts should be reviewed within 24 hours, and Low alerts are informational.' 
+                  })}
+                  sx={{ opacity: 0.7 }}
+                >
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+            <Box sx={{ flexGrow: 1, minHeight: { xs: 250, sm: 300 } }}>
+              {alertDistribution.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={alertDistribution}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value }) => `${name}: ${value}`}
+                      outerRadius={window.innerWidth < 600 ? 60 : 80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {alertDistribution.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <Box sx={{ 
+                  height: '100%', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  flexDirection: 'column'
+                }}>
+                  <Security sx={{ fontSize: { xs: 48, sm: 60 }, color: 'text.disabled', mb: 2 }} />
+                  <Typography variant="body2" color="text.secondary" align="center">
+                    No alerts generated yet.
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" align="center" sx={{ mt: 1 }}>
+                    Alerts will appear here after analysis completes.
+                  </Typography>
+                </Box>
+              )}
+            </Box>
           </Paper>
+          </Tooltip>
         </Grid>
 
         {/* IONSEC.IO Services */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              IONSEC.IO Services
-            </Typography>
+          <Tooltip title="Professional cybersecurity services including incident response, digital forensics, and security consulting" placement="top" enterDelay={500}>
+            <Paper sx={{ 
+              p: { xs: 2, sm: 3 }, 
+              height: '100%', 
+              minHeight: { xs: '300px', sm: '350px' },
+              display: 'flex', 
+              flexDirection: 'column',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: 2
+              }
+            }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                IONSEC.IO Services
+              </Typography>
+              <Tooltip title="Click for more information">
+                <IconButton
+                  size="small"
+                  onClick={() => setInfoDialog({ 
+                    open: true, 
+                    title: 'IONSEC.IO Professional Services', 
+                    content: 'IONSEC.IO provides comprehensive cybersecurity services including 24/7 incident response, digital forensics, threat hunting, and security consulting. Our expert team helps organizations investigate security incidents, recover from breaches, and strengthen their security posture.' 
+                  })}
+                  sx={{ opacity: 0.7 }}
+                >
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
             <Box sx={{ mt: 2 }}>
               <Typography variant="body2" color="text.secondary" paragraph>
                 Professional cybersecurity incident response and digital forensics services.
@@ -318,14 +492,41 @@ const Dashboard = () => {
               </Box>
             </Box>
           </Paper>
+          </Tooltip>
         </Grid>
 
         {/* Recent Activities */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>
-              Recent Activities
-            </Typography>
+          <Tooltip title="Real-time platform activities including extraction jobs, analysis progress, and system events" placement="top" enterDelay={500}>
+            <Paper sx={{ 
+              p: { xs: 2, sm: 3 }, 
+              height: '100%', 
+              minHeight: { xs: '300px', sm: '350px' },
+              display: 'flex', 
+              flexDirection: 'column',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                boxShadow: 2
+              }
+            }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                Recent Activities
+              </Typography>
+              <Tooltip title="Click for more information">
+                <IconButton
+                  size="small"
+                  onClick={() => setInfoDialog({ 
+                    open: true, 
+                    title: 'Recent Activities', 
+                    content: 'This section shows real-time platform activities including extraction jobs, analysis progress, security monitoring status, and system events. It provides a quick overview of what the platform is currently doing.' 
+                  })}
+                  sx={{ opacity: 0.7 }}
+                >
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
             <Box sx={{ mt: 2 }}>
               {loading ? (
                 <Typography variant="body2" color="text.secondary">
@@ -363,8 +564,32 @@ const Dashboard = () => {
               )}
             </Box>
           </Paper>
+          </Tooltip>
         </Grid>
       </Grid>
+      
+      {/* Info Dialog */}
+      <Dialog
+        open={infoDialog.open}
+        onClose={() => setInfoDialog({ open: false, title: '', content: '' })}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <InfoIcon color="primary" />
+          {infoDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ lineHeight: 1.6 }}>
+            {infoDialog.content}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInfoDialog({ open: false, title: '', content: '' })}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
