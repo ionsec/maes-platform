@@ -82,6 +82,9 @@ const Extractions = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedExtraction, setSelectedExtraction] = useState(null);
   const [progressData, setProgressData] = useState({});
+  const [logsDialogOpen, setLogsDialogOpen] = useState(false);
+  const [logRefreshInterval, setLogRefreshInterval] = useState(null);
+  const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
   const { control, handleSubmit, reset, watch } = useForm({
     defaultValues: {
       type: 'unified_audit_log',
@@ -184,10 +187,65 @@ const Extractions = () => {
     try {
       const response = await axios.get(`/api/extractions/${id}/logs`);
       setSelectedExtraction({ id, logs: response.data.logs });
+      setLogsDialogOpen(true);
+      
+      // Start auto-refresh for running extractions
+      const extraction = extractions.find(e => e.id === id);
+      if (extraction && ['pending', 'running'].includes(extraction.status)) {
+        startLogRefresh(id);
+      }
     } catch (error) {
       enqueueSnackbar('Failed to fetch logs', { variant: 'error' });
     }
   };
+
+  const startLogRefresh = (id) => {
+    if (logRefreshInterval) {
+      clearInterval(logRefreshInterval);
+    }
+    
+    const interval = setInterval(async () => {
+      if (autoRefreshLogs && selectedExtraction && selectedExtraction.id === id) {
+        try {
+          const response = await axios.get(`/api/extractions/${id}/logs`);
+          setSelectedExtraction(prev => ({ ...prev, logs: response.data.logs }));
+          
+          // Check if extraction is still running
+          const extraction = extractions.find(e => e.id === id);
+          if (extraction && !['pending', 'running'].includes(extraction.status)) {
+            clearInterval(interval);
+            setLogRefreshInterval(null);
+          }
+        } catch (error) {
+          console.error('Failed to refresh logs:', error);
+        }
+      }
+    }, 2000); // Refresh every 2 seconds for real-time experience
+    
+    setLogRefreshInterval(interval);
+  };
+
+  const stopLogRefresh = () => {
+    if (logRefreshInterval) {
+      clearInterval(logRefreshInterval);
+      setLogRefreshInterval(null);
+    }
+  };
+
+  const closeLogsDialog = () => {
+    setLogsDialogOpen(false);
+    setSelectedExtraction(null);
+    stopLogRefresh();
+  };
+
+  // Cleanup interval on component unmount
+  useEffect(() => {
+    return () => {
+      if (logRefreshInterval) {
+        clearInterval(logRefreshInterval);
+      }
+    };
+  }, [logRefreshInterval]);
 
   const formatDuration = (seconds) => {
     if (!seconds) return '-';
@@ -605,24 +663,51 @@ const Extractions = () => {
         {/* Logs Dialog */}
         {selectedExtraction && (
           <Dialog 
-            open={Boolean(selectedExtraction)} 
-            onClose={() => setSelectedExtraction(null)}
-            maxWidth="md" 
+            open={logsDialogOpen} 
+            onClose={closeLogsDialog}
+            maxWidth="lg" 
             fullWidth
           >
-            <DialogTitle>Extraction Logs</DialogTitle>
+            <DialogTitle>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6">Extraction Logs - Real Time</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Chip 
+                    label={autoRefreshLogs ? 'Auto-refresh ON' : 'Auto-refresh OFF'}
+                    color={autoRefreshLogs ? 'success' : 'default'}
+                    size="small"
+                    onClick={() => setAutoRefreshLogs(!autoRefreshLogs)}
+                    sx={{ cursor: 'pointer' }}
+                  />
+                  <IconButton 
+                    size="small" 
+                    onClick={() => viewLogs(selectedExtraction.id)}
+                    title="Manual Refresh"
+                  >
+                    <RefreshIcon />
+                  </IconButton>
+                </Box>
+              </Box>
+            </DialogTitle>
             <DialogContent>
               <Box 
                 sx={{ 
-                  bgcolor: '#1e1e1e', 
-                  color: '#d4d4d4',
+                  bgcolor: '#0d1117', 
+                  color: '#c9d1d9',
                   p: 2, 
                   borderRadius: 1, 
                   fontFamily: 'monospace',
                   fontSize: '0.875rem',
-                  maxHeight: '500px',
+                  maxHeight: '600px',
                   overflowY: 'auto',
-                  whiteSpace: 'pre-wrap'
+                  whiteSpace: 'pre-wrap',
+                  border: '1px solid #30363d'
+                }}
+                ref={(el) => {
+                  // Auto-scroll to bottom for new logs
+                  if (el && autoRefreshLogs) {
+                    el.scrollTop = el.scrollHeight;
+                  }
                 }}
               >
                 {selectedExtraction.logs?.length > 0 ? (
@@ -632,49 +717,62 @@ const Extractions = () => {
                     
                     switch(log.level) {
                       case 'error':
-                        color = '#f48771';
-                        icon = '✗';
+                        color = '#f85149';
+                        icon = '❌';
                         break;
                       case 'warn':
-                        color = '#dcdcaa';
-                        icon = '⚠';
+                        color = '#d29922';
+                        icon = '⚠️';
                         break;
                       case 'success':
-                        color = '#4fc1ff';
-                        icon = '✓';
+                        color = '#3fb950';
+                        icon = '✅';
                         break;
                       case 'info':
                       default:
-                        color = '#9cdcfe';
-                        icon = 'ℹ';
+                        color = '#79c0ff';
+                        icon = 'ℹ️';
                         break;
                     }
                     
                     return (
-                      <Box key={index} sx={{ mb: 0.5 }}>
-                        <span style={{ color: '#608b4e' }}>
+                      <Box key={index} sx={{ mb: 0.5, p: 0.5, '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } }}>
+                        <span style={{ color: '#7c3aed', fontWeight: 'bold' }}>
                           [{dayjs(log.timestamp).format('YYYY-MM-DD HH:mm:ss')}]
                         </span>
                         {' '}
                         <span style={{ color, fontWeight: 'bold' }}>
-                          {icon} {log.level.toUpperCase()}:
+                          {icon} [{log.level.toUpperCase()}]
                         </span>
                         {' '}
-                        <span style={{ color: '#d4d4d4' }}>
+                        <span style={{ color: '#c9d1d9' }}>
                           {log.message}
                         </span>
                       </Box>
                     );
                   })
                 ) : (
-                  <Typography sx={{ color: '#808080', fontStyle: 'italic' }}>
-                    No logs available yet. Logs will appear here once the extraction starts processing.
-                  </Typography>
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ color: '#7d8590', fontStyle: 'italic', mb: 2 }}>
+                      No logs available yet. Logs will appear here once the extraction starts processing.
+                    </Typography>
+                    <Typography sx={{ color: '#7d8590', fontSize: '0.75rem' }}>
+                      🔄 Real-time monitoring is {autoRefreshLogs ? 'enabled' : 'disabled'}
+                    </Typography>
+                  </Box>
                 )}
               </Box>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setSelectedExtraction(null)}>Close</Button>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  {selectedExtraction?.logs?.length || 0} log entries
+                  {autoRefreshLogs && logRefreshInterval && (
+                    <> • Auto-refreshing every 2 seconds</>
+                  )}
+                </Typography>
+                <Button onClick={closeLogsDialog} variant="contained">Close</Button>
+              </Box>
             </DialogActions>
           </Dialog>
         )}
