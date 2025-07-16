@@ -132,8 +132,11 @@ VITE_API_URL=https://yourdomain.com
 ### M365 Data Extraction
 1. **Register an Organization**: Set up Azure AD app registration
 2. **Configure Credentials**: Add tenant ID, client ID, and certificate
-3. **Run Extractions**: Choose data types (UAL, Azure logs, etc.)
-4. **Monitor Progress**: Real-time extraction status
+3. **Grant Required Permissions**: 
+   - **Compliance Administrator** role is required for UAL (Unified Audit Log) extraction
+   - The user or service principal must be assigned this role in Microsoft 365
+4. **Run Extractions**: Choose data types (UAL, Azure logs, etc.)
+5. **Monitor Progress**: Real-time extraction status
 
 ### Analysis & Upload Options
 
@@ -219,6 +222,16 @@ docker push your-registry/maes-analyzer:latest
 - Ensure database migrations have been applied
 - Check API logs for specific errors
 - Verify Azure AD app registration permissions
+
+### UAL (Unified Audit Log) Extraction Issues
+- **Error**: "The role assigned to application isn't supported"
+- **Solution**: Assign **Compliance Administrator** role to the user or service principal
+- **Steps**:
+  1. Go to Microsoft 365 Admin Center
+  2. Navigate to **Roles** > **Role assignments**
+  3. Select **Compliance Administrator**
+  4. Add the user or service principal to this role
+- **Alternative**: Use Global Administrator role (not recommended for production)
 
 ### Analysis Not Showing Progress
 - Check that analysis jobs are created in database
