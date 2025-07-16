@@ -289,7 +289,7 @@ router.patch('/:id/status', async (req, res) => {
       });
     }
 
-    const { status, outputFiles, statistics, completedAt, errorMessage } = req.body;
+    const { status, outputFiles, statistics, completedAt, errorMessage, progress } = req.body;
 
     // Validate status
     if (!['pending', 'running', 'completed', 'failed', 'cancelled'].includes(status)) {
@@ -301,9 +301,16 @@ router.patch('/:id/status', async (req, res) => {
     // Update extraction record
     const updateData = { status };
     if (outputFiles) updateData.outputFiles = outputFiles;
-    if (statistics) updateData.statistics = statistics;
+    if (statistics) {
+      updateData.statistics = statistics;
+      // Update items_extracted from statistics.totalEvents
+      if (statistics.totalEvents !== undefined) {
+        updateData.itemsExtracted = statistics.totalEvents;
+      }
+    }
     if (completedAt) updateData.completedAt = new Date(completedAt);
     if (errorMessage) updateData.errorMessage = errorMessage;
+    if (progress !== undefined) updateData.progress = progress;
 
     const extraction = await Extraction.update(req.params.id, updateData);
 
