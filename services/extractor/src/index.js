@@ -29,16 +29,6 @@ const analysisQueue = new Queue('analysis-jobs', {
 const EXTRACTOR_SUITE_PATH = '/extractor-suite';
 const OUTPUT_PATH = '/output';
 
-// Create worker for extraction jobs
-const extractionWorker = new Worker('extraction-jobs', async (job) => {
-  // Handle different job types
-  if (job.name === 'extract-data') {
-    return await processExtractionJob(job);
-  } else if (job.name === 'test-connection') {
-    return await processTestConnectionJob(job);
-  }
-}, { connection: redisConnection });
-
 // Process extraction jobs with proper error handling
 const processExtractionJob = async (job) => {
   const { extractionId, type, parameters, credentials } = job.data;
@@ -136,7 +126,7 @@ const processExtractionJob = async (job) => {
     
     throw error;
   }
-});
+};
 
 // Process connection test jobs with proper error handling
 const processTestConnectionJob = async (job) => {
@@ -178,7 +168,17 @@ const processTestConnectionJob = async (job) => {
     logger.error(`Connection test ${testId} failed:`, error);
     throw error;
   }
-});
+};
+
+// Create worker for extraction jobs
+const extractionWorker = new Worker('extraction-jobs', async (job) => {
+  // Handle different job types
+  if (job.name === 'extract-data') {
+    return await processExtractionJob(job);
+  } else if (job.name === 'test-connection') {
+    return await processTestConnectionJob(job);
+  }
+}, { connection: redisConnection });
 
 // Build PowerShell command based on extraction type
 function buildPowerShellCommand(type, parameters, credentials) {
