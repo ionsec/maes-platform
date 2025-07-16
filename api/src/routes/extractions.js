@@ -391,7 +391,9 @@ router.get('/:id/logs', async (req, res) => {
 
     // Fetch logs from Redis for regular extractions
     const redisClient = require('redis').createClient({
-      url: process.env.REDIS_URL
+      host: process.env.REDIS_HOST || 'redis',
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD
     });
 
     try {
