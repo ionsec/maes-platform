@@ -34,7 +34,6 @@
     "winston": "^3.17.0",
     "compression": "^1.8.0",
     "express-rate-limit": "^8.0.0",
-    "uuid": "^11.1.0",
     "axios": "^1.10.0",
     "multer": "^2.0.1",
     "socket.io": "^4.8.1",
