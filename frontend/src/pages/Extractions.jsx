@@ -85,6 +85,8 @@ const Extractions = () => {
   const [logsDialogOpen, setLogsDialogOpen] = useState(false);
   const [logRefreshInterval, setLogRefreshInterval] = useState(null);
   const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
+  const [statsDialogOpen, setStatsDialogOpen] = useState(false);
+  const [selectedStats, setSelectedStats] = useState(null);
   const { control, handleSubmit, reset, watch } = useForm({
     defaultValues: {
       type: 'unified_audit_log',
@@ -199,6 +201,11 @@ const Extractions = () => {
     }
   };
 
+  const viewStats = (extraction) => {
+    setSelectedStats(extraction);
+    setStatsDialogOpen(true);
+  };
+
   const startLogRefresh = (id) => {
     if (logRefreshInterval) {
       clearInterval(logRefreshInterval);
@@ -210,11 +217,14 @@ const Extractions = () => {
           const response = await axios.get(`/api/extractions/${id}/logs`);
           setSelectedExtraction(prev => ({ ...prev, logs: response.data.logs }));
           
-          // Check if extraction is still running
+          // Check if extraction is still running or recently completed
           const extraction = extractions.find(e => e.id === id);
           if (extraction && !['pending', 'running'].includes(extraction.status)) {
-            clearInterval(interval);
-            setLogRefreshInterval(null);
+            // Continue refreshing for a few more seconds after completion to get final logs
+            setTimeout(() => {
+              clearInterval(interval);
+              setLogRefreshInterval(null);
+            }, 5000); // Wait 5 seconds after completion before stopping refresh
           }
         } catch (error) {
           console.error('Failed to refresh logs:', error);
@@ -451,7 +461,32 @@ const Extractions = () => {
                     </Box>
                   </TableCell>
                   <TableCell>
-                    {extraction.itemsExtracted?.toLocaleString() || 0}
+                    <Box 
+                      sx={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        alignItems: 'flex-start',
+                        cursor: extraction.status === 'completed' ? 'pointer' : 'default',
+                        '&:hover': extraction.status === 'completed' ? { 
+                          bgcolor: 'action.hover' 
+                        } : {}
+                      }}
+                      onClick={() => extraction.status === 'completed' && viewStats(extraction)}
+                    >
+                      <Typography variant="body2" fontWeight="bold">
+                        {extraction.itemsExtracted?.toLocaleString() || 0}
+                      </Typography>
+                      {extraction.statistics?.totalEvents && extraction.statistics.totalEvents > 0 && (
+                        <Typography variant="caption" color="text.secondary">
+                          {extraction.statistics.totalEvents.toLocaleString()} total events
+                        </Typography>
+                      )}
+                      {extraction.status === 'completed' && (
+                        <Typography variant="caption" color="primary.main" sx={{ fontSize: '0.65rem' }}>
+                          Click for details
+                        </Typography>
+                      )}
+                    </Box>
                   </TableCell>
                   <TableCell>
                     {formatDuration(extraction.duration)}
@@ -773,6 +808,112 @@ const Extractions = () => {
                 </Typography>
                 <Button onClick={closeLogsDialog} variant="contained">Close</Button>
               </Box>
+            </DialogActions>
+          </Dialog>
+        )}
+
+        {/* Statistics Dialog */}
+        {selectedStats && (
+          <Dialog 
+            open={statsDialogOpen} 
+            onClose={() => setStatsDialogOpen(false)}
+            maxWidth="md" 
+            fullWidth
+          >
+            <DialogTitle>
+              <Typography variant="h6">Extraction Statistics</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {extractionTypes.find(t => t.value === selectedStats.type)?.label || selectedStats.type}
+              </Typography>
+            </DialogTitle>
+            <DialogContent>
+              <Grid container spacing={3}>
+                {/* Main Statistics */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" gutterBottom>Data Statistics</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Total Events:</Typography>
+                      <Typography fontWeight="bold">
+                        {selectedStats.statistics?.totalEvents?.toLocaleString() || 0}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Items Extracted:</Typography>
+                      <Typography fontWeight="bold">
+                        {selectedStats.itemsExtracted?.toLocaleString() || 0}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Unique Users:</Typography>
+                      <Typography fontWeight="bold">
+                        {selectedStats.statistics?.uniqueUsers?.toLocaleString() || 0}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Unique Operations:</Typography>
+                      <Typography fontWeight="bold">
+                        {selectedStats.statistics?.uniqueOperations?.toLocaleString() || 0}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+
+                {/* Output Files */}
+                <Grid item xs={12} md={6}>
+                  <Typography variant="h6" gutterBottom>Output Files</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Total Files:</Typography>
+                      <Typography fontWeight="bold">
+                        {selectedStats.outputFiles?.length || 0}
+                      </Typography>
+                    </Box>
+                    {selectedStats.outputFiles?.map((file, index) => (
+                      <Box key={index} sx={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        bgcolor: 'grey.50',
+                        p: 1,
+                        borderRadius: 1
+                      }}>
+                        <Typography variant="body2">{file.filename}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {(file.size / 1024 / 1024).toFixed(2)} MB
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </Grid>
+
+                {/* Timing Information */}
+                <Grid item xs={12}>
+                  <Typography variant="h6" gutterBottom>Timing Information</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Started:</Typography>
+                      <Typography>
+                        {selectedStats.startedAt ? dayjs(selectedStats.startedAt).format('MMM DD, YYYY HH:mm:ss') : 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Completed:</Typography>
+                      <Typography>
+                        {selectedStats.completedAt ? dayjs(selectedStats.completedAt).format('MMM DD, YYYY HH:mm:ss') : 'N/A'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography>Duration:</Typography>
+                      <Typography fontWeight="bold">
+                        {formatDuration(selectedStats.duration)}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Grid>
+              </Grid>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setStatsDialogOpen(false)}>Close</Button>
             </DialogActions>
           </Dialog>
         )}
