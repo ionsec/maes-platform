@@ -214,8 +214,8 @@ function updateExtractionProgress(extractionId, job) {
 
   async function updateProgress(progress, status, message) {
     try {
-      // Update Bull job progress
-      await job.progress(progress);
+      // Update BullMQ job progress
+      await job.updateProgress(progress);
       
       // Update database extraction record
       await updateExtractionRecord(extractionId, progress, status, message);
