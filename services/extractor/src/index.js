@@ -266,7 +266,7 @@ function buildPowerShellCommand(type, parameters, credentials) {
       Write-Host "Starting Unified Audit Log extraction...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
       try {
-        Get-UAL -OutputDir '${OUTPUT_PATH}';
+        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
         Write-Host "UAL extraction completed successfully.";
       } catch {
         Write-Error "UAL extraction failed: $_";
@@ -282,7 +282,7 @@ function buildPowerShellCommand(type, parameters, credentials) {
     'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
     'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
     'devices': `Get-Devices -OutputDir '${OUTPUT_PATH}'`,
-    'full_extraction': `Start-EvidenceCollection -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`
+    'full_extraction': `Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${OUTPUT_PATH}'`
   };
   
   command += extractionCommands[type] || '';
