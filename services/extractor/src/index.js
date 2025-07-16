@@ -1,4 +1,4 @@
-const Queue = require('bull');
+const { Worker, Queue } = require('bullmq');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
@@ -8,37 +8,39 @@ const { updateExtractionProgress } = require('./progressMonitor');
 const axios = require('axios');
 require('dotenv').config();
 
-// Initialize Redis queues with proper configuration
-const extractionQueue = new Queue('extraction-jobs', process.env.REDIS_URL, {
-  // Stall detection settings
-  stalledInterval: parseInt(process.env.QUEUE_STALLED_INTERVAL) || 30000, // Check for stalled jobs every 30 seconds
-  maxStalledCount: parseInt(process.env.QUEUE_MAX_STALLED_COUNT) || 1, // Allow only 1 stall before marking as failed
-  
-  // Job processing settings
-  removeOnComplete: 100, // Keep last 100 completed jobs
-  removeOnFail: 50, // Keep last 50 failed jobs
-  
-  // Default job settings
-  defaultJobOptions: {
-    attempts: 3, // Retry failed jobs up to 3 times
-    backoff: {
-      type: 'exponential',
-      delay: 2000 // Start with 2 second delay
-    },
-    removeOnComplete: true,
-    removeOnFail: false
-  }
+// Redis connection configuration
+const redisConnection = {
+  host: process.env.REDIS_HOST || 'redis',
+  port: parseInt(process.env.REDIS_PORT) || 6379,
+  password: process.env.REDIS_PASSWORD
+};
+
+// Initialize Redis queues with BullMQ
+const extractionQueue = new Queue('extraction-jobs', {
+  connection: redisConnection
 });
 
 // Analysis queue for triggering analyzer service
-const analysisQueue = new Queue('analysis-jobs', process.env.REDIS_URL);
+const analysisQueue = new Queue('analysis-jobs', {
+  connection: redisConnection
+});
 
 // PowerShell script paths
 const EXTRACTOR_SUITE_PATH = '/extractor-suite';
 const OUTPUT_PATH = '/output';
 
+// Create worker for extraction jobs
+const extractionWorker = new Worker('extraction-jobs', async (job) => {
+  // Handle different job types
+  if (job.name === 'extract-data') {
+    return await processExtractionJob(job);
+  } else if (job.name === 'test-connection') {
+    return await processTestConnectionJob(job);
+  }
+}, { connection: redisConnection });
+
 // Process extraction jobs with proper error handling
-extractionQueue.process('extract-data', async (job) => {
+const processExtractionJob = async (job) => {
   const { extractionId, type, parameters, credentials } = job.data;
   
   // Create extraction-specific logger
@@ -137,7 +139,7 @@ extractionQueue.process('extract-data', async (job) => {
 });
 
 // Process connection test jobs with proper error handling
-extractionQueue.process('test-connection', async (job) => {
+const processTestConnectionJob = async (job) => {
   const { testId, parameters } = job.data;
   
   logger.info(`Starting connection test ${testId}`);
@@ -597,12 +599,12 @@ async function processOutput(extractionId, type) {
   return outputFiles;
 }
 
-// Queue event handlers with better error handling
-extractionQueue.on('completed', (job, result) => {
+// Worker event handlers with better error handling
+extractionWorker.on('completed', (job, result) => {
   logger.info(`Job ${job.id} completed successfully:`, result);
 });
 
-extractionQueue.on('failed', (job, err) => {
+extractionWorker.on('failed', (job, err) => {
   logger.error(`Job ${job.id} failed after ${job.attemptsMade} attempts:`, err);
   
   // If job has exceeded max attempts, mark it as permanently failed
@@ -611,14 +613,15 @@ extractionQueue.on('failed', (job, err) => {
   }
 });
 
-extractionQueue.on('stalled', (job) => {
-  logger.warn(`Job ${job.id} stalled, will be retried`);
+extractionWorker.on('stalled', (jobId) => {
+  logger.warn(`Job ${jobId} stalled, will be retried`);
 });
 
-extractionQueue.on('error', (error) => {
-  logger.error('Queue error:', error);
+extractionWorker.on('error', (error) => {
+  logger.error('Worker error:', error);
 });
 
+// Queue event handlers
 extractionQueue.on('waiting', (jobId) => {
   logger.info(`Job ${jobId} waiting to be processed`);
 });
@@ -629,23 +632,25 @@ extractionQueue.on('active', (job) => {
 
 // Graceful shutdown with proper cleanup
 process.on('SIGTERM', async () => {
-  logger.info('SIGTERM received, closing queue...');
+  logger.info('SIGTERM received, closing worker and queue...');
   try {
+    await extractionWorker.close();
     await extractionQueue.close();
-    logger.info('Queue closed successfully');
+    logger.info('Worker and queue closed successfully');
   } catch (error) {
-    logger.error('Error closing queue:', error);
+    logger.error('Error closing worker and queue:', error);
   }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  logger.info('SIGINT received, closing queue...');
+  logger.info('SIGINT received, closing worker and queue...');
   try {
+    await extractionWorker.close();
     await extractionQueue.close();
-    logger.info('Queue closed successfully');
+    logger.info('Worker and queue closed successfully');
   } catch (error) {
-    logger.error('Error closing queue:', error);
+    logger.error('Error closing worker and queue:', error);
   }
   process.exit(0);
 });
@@ -653,20 +658,19 @@ process.on('SIGINT', async () => {
 // Health check function to monitor queue status
 async function healthCheck() {
   try {
-    const waiting = await extractionQueue.getWaiting();
-    const active = await extractionQueue.getActive();
-    const completed = await extractionQueue.getCompleted();
-    const failed = await extractionQueue.getFailed();
+    const counts = await extractionQueue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
     
-    logger.info(`Queue health check - Waiting: ${waiting.length}, Active: ${active.length}, Completed: ${completed.length}, Failed: ${failed.length}`);
+    logger.info(`Queue health check - Waiting: ${counts.waiting || 0}, Active: ${counts.active || 0}, Completed: ${counts.completed || 0}, Failed: ${counts.failed || 0}, Delayed: ${counts.delayed || 0}`);
     
-    // Log details of active jobs
-    if (active.length > 0) {
+    // Get details of active jobs if any
+    if (counts.active > 0) {
+      const active = await extractionQueue.getJobs(['active']);
       logger.info(`Active jobs: ${active.map(job => `${job.id} (${job.data.extractionId || job.data.testId})`).join(', ')}`);
     }
     
-    // Log details of failed jobs
-    if (failed.length > 0) {
+    // Get details of failed jobs if any
+    if (counts.failed > 0) {
+      const failed = await extractionQueue.getJobs(['failed']);
       logger.warn(`Failed jobs: ${failed.map(job => `${job.id} (${job.data.extractionId || job.data.testId})`).join(', ')}`);
     }
     
@@ -678,9 +682,9 @@ async function healthCheck() {
 // Clean up stalled jobs function
 async function cleanupStalledJobs() {
   try {
-    // Get failed jobs instead of stalled (Bull queue doesn't have getStalled method)
-    const failed = await extractionQueue.getFailed();
-    const active = await extractionQueue.getActive();
+    // Get failed and active jobs using BullMQ's getJobs method
+    const failed = await extractionQueue.getJobs(['failed']);
+    const active = await extractionQueue.getJobs(['active']);
     
     if (failed.length > 0) {
       logger.warn(`Found ${failed.length} failed jobs, cleaning up old ones...`);

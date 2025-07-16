@@ -109,6 +109,18 @@ const Extractions = () => {
       const response = await axios.get('/api/extractions');
       setExtractions(response.data.extractions);
       
+      // Debug logging for download button visibility
+      console.log('Extractions fetched:', response.data.extractions.length);
+      response.data.extractions.forEach((ext, index) => {
+        console.log(`Extraction ${index + 1}:`, {
+          id: ext.id,
+          status: ext.status,
+          outputFiles: ext.outputFiles,
+          outputFilesLength: ext.outputFiles?.length || 0,
+          canDownload: ext.status === 'completed' && ext.outputFiles?.length > 0
+        });
+      });
+      
       // Fetch progress for running extractions
       const runningExtractions = response.data.extractions.filter(e => e.status === 'running');
       await fetchProgressForExtractions(runningExtractions);
@@ -550,6 +562,18 @@ const Extractions = () => {
                       >
                         <DownloadIcon />
                       </IconButton>
+                    )}
+                    {/* Debug info for download button visibility */}
+                    {extraction.status === 'completed' && (!extraction.outputFiles || extraction.outputFiles.length === 0) && (
+                      <Tooltip title={`No output files available. Status: ${extraction.status}, OutputFiles: ${extraction.outputFiles?.length || 0}`}>
+                        <IconButton 
+                          size="small" 
+                          disabled
+                          title="No output files"
+                        >
+                          <DownloadIcon sx={{ color: 'text.disabled' }} />
+                        </IconButton>
+                      </Tooltip>
                     )}
                   </TableCell>
                 </TableRow>
