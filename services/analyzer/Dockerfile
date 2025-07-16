@@ -1,7 +1,7 @@
 FROM node:24-alpine
 
-# Install required packages
-RUN apk add --no-cache \
+# Update package index and install required packages
+RUN apk update && apk add --no-cache \
     git \
     ca-certificates \
     curl \
