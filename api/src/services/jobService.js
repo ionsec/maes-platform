@@ -127,15 +127,15 @@ const createAnalysisJob = async (analysisJob) => {
   }
 };
 
-// Convert priority to Bull queue priority
+// Convert priority to BullMQ queue priority (lower number = higher priority)
 const getPriority = (priority) => {
   const priorities = {
-    'low': 1,
-    'medium': 5,
-    'high': 10,
-    'critical': 15
+    'critical': 1,
+    'high': 2,
+    'medium': 3,
+    'low': 4
   };
-  return priorities[priority] || 5;
+  return priorities[priority] || 3;
 };
 
 // Get queue statistics
@@ -192,10 +192,10 @@ const cancelJob = async (jobId, queueType = 'extraction') => {
 const cleanupJobs = async () => {
   try {
     await Promise.all([
-      extractionQueue.clean(24 * 60 * 60 * 1000, 'completed'), // 24 hours
-      extractionQueue.clean(24 * 60 * 60 * 1000, 'failed'),
-      analysisQueue.clean(24 * 60 * 60 * 1000, 'completed'),
-      analysisQueue.clean(24 * 60 * 60 * 1000, 'failed')
+      extractionQueue.clean(24 * 60 * 60 * 1000, 10, 'completed'), // 24 hours, keep 10
+      extractionQueue.clean(24 * 60 * 60 * 1000, 5, 'failed'),
+      analysisQueue.clean(24 * 60 * 60 * 1000, 10, 'completed'),
+      analysisQueue.clean(24 * 60 * 60 * 1000, 5, 'failed')
     ]);
     
     logger.info('Job cleanup completed');
