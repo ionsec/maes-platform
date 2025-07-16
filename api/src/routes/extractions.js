@@ -246,7 +246,7 @@ router.get('/:id/progress', async (req, res) => {
         const extractionJob = activeJobs.find(job => job.data.extractionId === extraction.id);
         
         if (extractionJob) {
-          progressData.progress = extractionJob.progress();
+          progressData.progress = extractionJob.progress;
           
           // Get progress update from job data if available
           if (extractionJob.data.progressUpdate) {

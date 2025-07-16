@@ -43,7 +43,7 @@ const processExtractionJob = async (job) => {
   
   try {
     // Update job progress
-    await job.progress(10);
+    await job.updateProgress(10);
     
     // Start monitoring LogFile.txt for progress updates
     progressMonitor = updateExtractionProgress(extractionId, job);
@@ -94,7 +94,7 @@ const processExtractionJob = async (job) => {
     }
     
     // Set progress to 100% before completing
-    await job.progress(100);
+    await job.updateProgress(100);
     
     // Update extraction status to completed via API
     try {
@@ -136,7 +136,7 @@ const processTestConnectionJob = async (job) => {
   
   try {
     // Update job progress
-    await job.progress(50);
+    await job.updateProgress(50);
     
     // Build test connection command
     const testCommand = buildTestConnectionCommand(parameters);
@@ -440,7 +440,7 @@ async function executePowerShell(command, job, extractionLogger) {
       // Update progress based on output
       const progressMatch = output.match(/Progress: (\d+)%/);
       if (progressMatch) {
-        job.progress(parseInt(progressMatch[1]));
+        job.updateProgress(parseInt(progressMatch[1]));
       }
     });
     
@@ -577,19 +577,20 @@ async function processOutput(extractionId, type) {
         
         logger.info(`Processing data file: ${file} (size: ${stats.size} bytes)`);
         
-        outputFiles.push({
-          filename: file,
-          path: filePath,
-          size: stats.size,
-          createdAt: stats.birthtime
-        });
-        
-        // Move file to extraction-specific directory
+        // Move file to extraction-specific directory first
         const extractionDir = path.join(OUTPUT_PATH, extractionId);
         await fs.mkdir(extractionDir, { recursive: true });
         const newPath = path.join(extractionDir, file);
         await fs.rename(filePath, newPath);
         logger.info(`Moved ${file} to ${newPath}`);
+        
+        // Add to output files with correct path
+        outputFiles.push({
+          filename: file,
+          path: newPath,
+          size: stats.size,
+          createdAt: stats.birthtime
+        });
       }
     }
   } catch (error) {
