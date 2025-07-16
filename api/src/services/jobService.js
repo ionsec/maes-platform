@@ -1,10 +1,22 @@
-const Queue = require('bull');
+const { Queue } = require('bullmq');
 const { logger } = require('../utils/logger');
 const { Organization } = require('./models');
 
-// Initialize job queues
-const extractionQueue = new Queue('extraction-jobs', process.env.REDIS_URL);
-const analysisQueue = new Queue('analysis-jobs', process.env.REDIS_URL);
+// Initialize job queues with BullMQ
+const extractionQueue = new Queue('extraction-jobs', {
+  connection: {
+    host: process.env.REDIS_HOST || 'redis',
+    port: process.env.REDIS_PORT || 6379,
+    password: process.env.REDIS_PASSWORD
+  }
+});
+const analysisQueue = new Queue('analysis-jobs', {
+  connection: {
+    host: process.env.REDIS_HOST || 'redis',
+    port: process.env.REDIS_PORT || 6379,
+    password: process.env.REDIS_PASSWORD
+  }
+});
 
 // Create extraction job
 const createExtractionJob = async (extraction) => {
@@ -146,20 +158,14 @@ const getQueueStats = async () => {
 
 // Get statistics for a specific queue
 const getQueueStatistics = async (queue) => {
-  const [waiting, active, completed, failed, delayed] = await Promise.all([
-    queue.getWaiting(),
-    queue.getActive(),
-    queue.getCompleted(),
-    queue.getFailed(),
-    queue.getDelayed()
-  ]);
+  const counts = await queue.getJobCounts('waiting', 'active', 'completed', 'failed', 'delayed');
 
   return {
-    waiting: waiting.length,
-    active: active.length,
-    completed: completed.length,
-    failed: failed.length,
-    delayed: delayed.length
+    waiting: counts.waiting || 0,
+    active: counts.active || 0,
+    completed: counts.completed || 0,
+    failed: counts.failed || 0,
+    delayed: counts.delayed || 0
   };
 };
 

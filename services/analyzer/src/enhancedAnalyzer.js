@@ -1,14 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
-const { Client } = require('@elastic/elasticsearch');
 const { logger } = require('./logger');
 
 class EnhancedAnalyzer {
   constructor() {
     this.blacklists = {};
     this.config = {};
-    this.elasticsearchClient = null;
     this.initialized = false;
   }
 
@@ -18,7 +16,6 @@ class EnhancedAnalyzer {
     try {
       await this.loadBlacklists();
       await this.loadConfig();
-      await this.initializeElasticsearch();
       this.initialized = true;
       logger.info('Enhanced analyzer initialized successfully');
     } catch (error) {
@@ -27,25 +24,6 @@ class EnhancedAnalyzer {
     }
   }
 
-  async initializeElasticsearch() {
-    try {
-      const elasticsearchUrl = process.env.ELASTICSEARCH_URL || 'http://localhost:9200';
-      
-      this.elasticsearchClient = new Client({
-        node: elasticsearchUrl,
-        maxRetries: 3,
-        requestTimeout: 10000,
-        sniffOnStart: false
-      });
-
-      // Test connection
-      await this.elasticsearchClient.ping();
-      logger.info('Elasticsearch connection established in analyzer');
-    } catch (error) {
-      logger.error('Failed to initialize Elasticsearch in analyzer:', error);
-      // Don't throw error - Elasticsearch is optional for analyzer
-    }
-  }
 
   async loadBlacklists() {
     const blacklistDir = path.join(__dirname, '../config/Blacklists');
@@ -187,40 +165,6 @@ class EnhancedAnalyzer {
     };
   }
 
-  async indexAnalysisResults(extractionId, analysisResults) {
-    if (!this.elasticsearchClient) return;
-
-    try {
-      const documents = [];
-      
-      // Index findings
-      for (const finding of analysisResults.findings) {
-        documents.push({
-          index: { _index: 'maes-analysis-results' }
-        });
-        documents.push({
-          '@timestamp': new Date(),
-          extraction_id: extractionId,
-          finding_id: finding.id,
-          severity: finding.severity,
-          type: finding.type,
-          title: finding.title,
-          description: finding.description,
-          evidence: finding.evidence,
-          mitre_techniques: finding.mitreTechniques,
-          recommendations: finding.recommendations,
-          metadata: finding.metadata
-        });
-      }
-
-      if (documents.length > 0) {
-        await this.elasticsearchClient.bulk({ body: documents });
-        logger.info(`Indexed ${analysisResults.findings.length} analysis results to Elasticsearch`);
-      }
-    } catch (error) {
-      logger.error('Failed to index analysis results to Elasticsearch:', error);
-    }
-  }
 
   normalizeAuditEvent(event) {
     // Handle different audit log formats (Graph API, PowerShell, etc.)
