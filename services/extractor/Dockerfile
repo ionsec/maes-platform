@@ -1,7 +1,7 @@
 FROM node:24-alpine
 
-# Install required packages including OpenSSL and dependencies for PowerShell
-RUN apk add --no-cache \
+# Update package index and install required packages including OpenSSL and dependencies for PowerShell
+RUN apk update && apk add --no-cache \
     git \
     ca-certificates \
     curl \
