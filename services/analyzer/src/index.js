@@ -1,17 +1,30 @@
-const Queue = require('bull');
+const { Worker, Queue } = require('bullmq');
 const { logger } = require('./logger');
 const { sequelize, Extraction, AnalysisJob, Alert, Organization, User } = require('./models');
 const JobProcessor = require('./jobProcessor');
 const EnhancedAnalyzer = require('./enhancedAnalyzer');
 
-// Initialize Redis connection
-const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-const analysisQueue = new Queue('analysis-jobs', redisUrl);
-const extractionQueue = new Queue('extraction', redisUrl);
+// Redis connection configuration
+const redisConnection = {
+  host: process.env.REDIS_HOST || 'redis',
+  port: parseInt(process.env.REDIS_PORT) || 6379,
+  password: process.env.REDIS_PASSWORD
+};
+
+// Initialize Redis queues with BullMQ
+const analysisQueue = new Queue('analysis-jobs', {
+  connection: redisConnection
+});
+const extractionQueue = new Queue('extraction', {
+  connection: redisConnection
+});
 
 // Initialize job processor and enhanced analyzer
 const jobProcessor = new JobProcessor();
 const enhancedAnalyzer = new EnhancedAnalyzer();
+
+// Workers will be initialized in setupQueueProcessors
+let analysisWorker, extractionWorker;
 
 // Initialize the analyzer service
 async function initialize() {
@@ -43,8 +56,8 @@ async function initialize() {
 
 // Set up queue processors
 function setupQueueProcessors() {
-  // Analysis queue processor
-  analysisQueue.process('analyze-data', async (job) => {
+  // Analysis queue worker
+  analysisWorker = new Worker('analysis-jobs', async (job) => {
     try {
       logger.info(`Processing analysis job: ${job.id}`);
       
@@ -76,10 +89,10 @@ function setupQueueProcessors() {
       logger.error(`Analysis job ${job.id} failed:`, error);
       throw error;
     }
-  });
+  }, { connection: redisConnection });
 
-  // Extraction queue processor
-  extractionQueue.process(async (job) => {
+  // Extraction queue worker
+  extractionWorker = new Worker('extraction', async (job) => {
     try {
       logger.info(`Processing extraction job: ${job.id}`);
       
@@ -101,22 +114,22 @@ function setupQueueProcessors() {
       logger.error(`Extraction job ${job.id} failed:`, error);
       throw error;
     }
-  });
+  }, { connection: redisConnection });
 
-  // Handle queue events
-  analysisQueue.on('completed', (job, result) => {
+  // Handle worker events
+  analysisWorker.on('completed', (job, result) => {
     logger.info(`Analysis job ${job.id} completed:`, result);
   });
 
-  analysisQueue.on('failed', (job, err) => {
+  analysisWorker.on('failed', (job, err) => {
     logger.error(`Analysis job ${job.id} failed:`, err);
   });
 
-  extractionQueue.on('completed', (job, result) => {
+  extractionWorker.on('completed', (job, result) => {
     logger.info(`Extraction job ${job.id} completed:`, result);
   });
 
-  extractionQueue.on('failed', (job, err) => {
+  extractionWorker.on('failed', (job, err) => {
     logger.error(`Extraction job ${job.id} failed:`, err);
   });
 
@@ -510,6 +523,27 @@ process.on('SIGTERM', async () => {
   
   try {
     await jobProcessor.shutdown();
+    await analysisWorker.close();
+    await extractionWorker.close();
+    await analysisQueue.close();
+    await extractionQueue.close();
+    await sequelize.close();
+    
+    logger.info('Analyzer service shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+});
+
+process.on('SIGINT', async () => {
+  logger.info('SIGINT received, shutting down gracefully...');
+  
+  try {
+    await jobProcessor.shutdown();
+    await analysisWorker.close();
+    await extractionWorker.close();
     await analysisQueue.close();
     await extractionQueue.close();
     await sequelize.close();

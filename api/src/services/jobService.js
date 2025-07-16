@@ -77,7 +77,7 @@ const createTestConnectionJob = async (testData) => {
     };
 
     const jobOptions = {
-      priority: 15, // High priority for testing
+      priority: 1, // High priority for testing (BullMQ uses lower numbers for higher priority)
       attempts: 1, // Don't retry connection tests
       removeOnComplete: 5,
       removeOnFail: 5
