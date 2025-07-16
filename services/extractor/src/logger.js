@@ -6,7 +6,11 @@ const Redis = require('ioredis');
 class RedisTransport extends Transport {
   constructor(opts) {
     super(opts);
-    this.redis = new Redis(process.env.REDIS_URL);
+    this.redis = new Redis({
+      host: process.env.REDIS_HOST || 'redis',
+      port: parseInt(process.env.REDIS_PORT) || 6379,
+      password: process.env.REDIS_PASSWORD
+    });
     this.ttl = opts.ttl || 86400; // 24 hours default
   }
 
