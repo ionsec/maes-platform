@@ -918,12 +918,58 @@ if (!isMainThread && workerData.type === 'job_processor') {
         data: { progress: 40, message: 'Analyzing audit logs' }
       });
 
-      // Analyze the audit data using the enhanced analyzer
-      const analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
-        analysisId,
-        extractionId,
-        organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
-      });
+      // Analyze the data using the appropriate analyzer based on analysis type
+      let analysisResult;
+      
+      // Determine which analyzer to use based on the analysis type
+      switch (data.analysisType || 'ual_analysis') {
+        case 'mfa_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeMfaData(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+        case 'device_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeDeviceData(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+        case 'risky_user_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeUserData(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+        case 'comprehensive_analysis':
+          // For comprehensive analysis, check if this is license data
+          if (auditData.length > 0 && (auditData[0].skuPartNumber || auditData[0].SkuPartNumber)) {
+            analysisResult = await EnhancedAnalyzer.analyzeLicenseData(auditData, {
+              analysisId,
+              extractionId,
+              organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+            });
+          } else {
+            // Default to audit log analysis for comprehensive analysis
+            analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
+              analysisId,
+              extractionId,
+              organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+            });
+          }
+          break;
+        default:
+          // Default to audit log analysis for UAL and other types
+          analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+      }
       
       parentPort.postMessage({
         type: 'job_progress',

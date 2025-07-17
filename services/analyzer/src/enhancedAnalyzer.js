@@ -944,6 +944,511 @@ class EnhancedAnalyzer {
 
     return Math.min(100, Math.round(score));
   }
+
+  // Analyze MFA data from Microsoft Graph
+  async analyzeMfaData(mfaData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalUsers: mfaData.length,
+      mfaEnabled: 0,
+      mfaDisabled: 0,
+      strongAuthMethods: 0,
+      weakAuthMethods: 0,
+      suspiciousActivities: 0
+    };
+
+    for (const user of mfaData) {
+      const userPrincipalName = user.userPrincipalName || user.UserPrincipalName || 'Unknown';
+      const mfaStatus = user.mfaStatus || user.MfaStatus || 'Unknown';
+      const authMethods = user.authMethods || user.AuthMethods || [];
+
+      if (mfaStatus === 'Enabled') {
+        statistics.mfaEnabled++;
+      } else {
+        statistics.mfaDisabled++;
+        
+        // Create finding for disabled MFA
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'MFA Disabled for User',
+          severity: 'high',
+          description: `User ${userPrincipalName} has MFA disabled`,
+          timestamp: new Date(),
+          source: 'mfa_graph_data',
+          type: 'mfa_disabled',
+          category: 'security',
+          affectedEntities: {
+            users: [userPrincipalName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            userPrincipalName,
+            mfaStatus,
+            authMethods
+          },
+          mitreAttack: {
+            tactics: ['Defense Evasion', 'Credential Access'],
+            techniques: ['T1556', 'T1110'],
+            subTechniques: ['T1556.001', 'T1110.001']
+          },
+          recommendations: [
+            'Enable MFA for this user immediately',
+            'Review MFA policy compliance',
+            'Investigate why MFA was disabled'
+          ]
+        });
+      }
+
+      // Check for weak authentication methods
+      if (authMethods.length > 0) {
+        const weakMethods = authMethods.filter(method => 
+          method.toLowerCase().includes('sms') || 
+          method.toLowerCase().includes('voice') ||
+          method.toLowerCase().includes('email')
+        );
+        
+        if (weakMethods.length > 0) {
+          statistics.weakAuthMethods++;
+          findings.push({
+            id: `finding_${findings.length + 1}`,
+            title: 'Weak MFA Method Detected',
+            severity: 'medium',
+            description: `User ${userPrincipalName} is using weak MFA methods: ${weakMethods.join(', ')}`,
+            timestamp: new Date(),
+            source: 'mfa_graph_data',
+            type: 'weak_mfa_method',
+            category: 'security',
+            affectedEntities: {
+              users: [userPrincipalName],
+              resources: [],
+              applications: []
+            },
+            evidence: {
+              userPrincipalName,
+              weakMethods,
+              allMethods: authMethods
+            },
+            mitreAttack: {
+              tactics: ['Defense Evasion'],
+              techniques: ['T1556'],
+              subTechniques: ['T1556.001']
+            },
+            recommendations: [
+              'Upgrade to stronger MFA methods (authenticator app, hardware token)',
+              'Disable SMS/voice-based MFA',
+              'Review organizational MFA policy'
+            ]
+          });
+        } else {
+          statistics.strongAuthMethods++;
+        }
+      }
+    }
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
+
+  // Analyze Device data from Microsoft Graph
+  async analyzeDeviceData(deviceData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalDevices: deviceData.length,
+      compliantDevices: 0,
+      nonCompliantDevices: 0,
+      managedDevices: 0,
+      unmanagedDevices: 0,
+      suspiciousDevices: 0
+    };
+
+    for (const device of deviceData) {
+      const deviceName = device.displayName || device.DeviceName || 'Unknown';
+      const isCompliant = device.isCompliant || device.IsCompliant || false;
+      const isManaged = device.isManaged || device.IsManaged || false;
+      const operatingSystem = device.operatingSystem || device.OperatingSystem || 'Unknown';
+      const lastSeenDateTime = device.lastSeenDateTime || device.LastSeenDateTime;
+
+      if (isCompliant) {
+        statistics.compliantDevices++;
+      } else {
+        statistics.nonCompliantDevices++;
+        
+        // Create finding for non-compliant device
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Non-Compliant Device Detected',
+          severity: 'medium',
+          description: `Device ${deviceName} is not compliant with organizational policies`,
+          timestamp: new Date(),
+          source: 'device_graph_data',
+          type: 'non_compliant_device',
+          category: 'security',
+          affectedEntities: {
+            devices: [deviceName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            deviceName,
+            isCompliant,
+            isManaged,
+            operatingSystem,
+            lastSeenDateTime
+          },
+          mitreAttack: {
+            tactics: ['Initial Access', 'Persistence'],
+            techniques: ['T1078', 'T1566'],
+            subTechniques: ['T1078.004', 'T1566.001']
+          },
+          recommendations: [
+            'Review device compliance policies',
+            'Remediate compliance issues',
+            'Consider blocking non-compliant devices'
+          ]
+        });
+      }
+
+      if (isManaged) {
+        statistics.managedDevices++;
+      } else {
+        statistics.unmanagedDevices++;
+        
+        // Create finding for unmanaged device
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Unmanaged Device Detected',
+          severity: 'high',
+          description: `Device ${deviceName} is not managed by the organization`,
+          timestamp: new Date(),
+          source: 'device_graph_data',
+          type: 'unmanaged_device',
+          category: 'security',
+          affectedEntities: {
+            devices: [deviceName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            deviceName,
+            isCompliant,
+            isManaged,
+            operatingSystem,
+            lastSeenDateTime
+          },
+          mitreAttack: {
+            tactics: ['Initial Access', 'Persistence'],
+            techniques: ['T1078', 'T1566'],
+            subTechniques: ['T1078.004', 'T1566.001']
+          },
+          recommendations: [
+            'Enroll device in management system',
+            'Apply security policies to device',
+            'Monitor unmanaged device access'
+          ]
+        });
+      }
+
+      // Check for old operating systems
+      if (operatingSystem.toLowerCase().includes('windows 7') || 
+          operatingSystem.toLowerCase().includes('windows 8') ||
+          operatingSystem.toLowerCase().includes('windows xp')) {
+        statistics.suspiciousDevices++;
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Legacy Operating System Detected',
+          severity: 'high',
+          description: `Device ${deviceName} is running legacy OS: ${operatingSystem}`,
+          timestamp: new Date(),
+          source: 'device_graph_data',
+          type: 'legacy_os',
+          category: 'security',
+          affectedEntities: {
+            devices: [deviceName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            deviceName,
+            operatingSystem,
+            lastSeenDateTime
+          },
+          mitreAttack: {
+            tactics: ['Initial Access', 'Privilege Escalation'],
+            techniques: ['T1068', 'T1078'],
+            subTechniques: ['T1068.001', 'T1078.004']
+          },
+          recommendations: [
+            'Upgrade to supported operating system',
+            'Apply security patches',
+            'Consider blocking legacy devices'
+          ]
+        });
+      }
+    }
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
+
+  // Analyze User data from Microsoft Graph
+  async analyzeUserData(userData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalUsers: userData.length,
+      enabledUsers: 0,
+      disabledUsers: 0,
+      adminUsers: 0,
+      guestUsers: 0,
+      suspiciousUsers: 0
+    };
+
+    for (const user of userData) {
+      const userPrincipalName = user.userPrincipalName || user.UserPrincipalName || 'Unknown';
+      const accountEnabled = user.accountEnabled || user.AccountEnabled || false;
+      const userType = user.userType || user.UserType || 'Member';
+      const createdDateTime = user.createdDateTime || user.CreatedDateTime;
+      const lastSignInDateTime = user.lastSignInDateTime || user.LastSignInDateTime;
+
+      if (accountEnabled) {
+        statistics.enabledUsers++;
+      } else {
+        statistics.disabledUsers++;
+      }
+
+      if (userType === 'Guest') {
+        statistics.guestUsers++;
+        
+        // Create finding for guest users
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Guest User Detected',
+          severity: 'low',
+          description: `Guest user detected: ${userPrincipalName}`,
+          timestamp: new Date(),
+          source: 'user_graph_data',
+          type: 'guest_user',
+          category: 'security',
+          affectedEntities: {
+            users: [userPrincipalName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            userPrincipalName,
+            userType,
+            accountEnabled,
+            createdDateTime,
+            lastSignInDateTime
+          },
+          mitreAttack: {
+            tactics: ['Initial Access', 'Persistence'],
+            techniques: ['T1078', 'T1136'],
+            subTechniques: ['T1078.004', 'T1136.003']
+          },
+          recommendations: [
+            'Review guest user access permissions',
+            'Verify business justification for guest access',
+            'Monitor guest user activities'
+          ]
+        });
+      }
+
+      // Check for inactive users
+      if (lastSignInDateTime) {
+        const lastSignIn = new Date(lastSignInDateTime);
+        const daysSinceLastSignIn = (Date.now() - lastSignIn.getTime()) / (1000 * 60 * 60 * 24);
+        
+        if (daysSinceLastSignIn > 90 && accountEnabled) {
+          statistics.suspiciousUsers++;
+          findings.push({
+            id: `finding_${findings.length + 1}`,
+            title: 'Inactive User Account',
+            severity: 'medium',
+            description: `User ${userPrincipalName} has not signed in for ${Math.round(daysSinceLastSignIn)} days`,
+            timestamp: new Date(),
+            source: 'user_graph_data',
+            type: 'inactive_user',
+            category: 'security',
+            affectedEntities: {
+              users: [userPrincipalName],
+              resources: [],
+              applications: []
+            },
+            evidence: {
+              userPrincipalName,
+              lastSignInDateTime,
+              daysSinceLastSignIn: Math.round(daysSinceLastSignIn),
+              accountEnabled
+            },
+            mitreAttack: {
+              tactics: ['Defense Evasion', 'Persistence'],
+              techniques: ['T1078', 'T1136'],
+              subTechniques: ['T1078.004', 'T1136.001']
+            },
+            recommendations: [
+              'Disable inactive user accounts',
+              'Review account necessity',
+              'Implement automated account lifecycle management'
+            ]
+          });
+        }
+      }
+    }
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
+
+  // Analyze License data from Microsoft Graph
+  async analyzeLicenseData(licenseData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalLicenses: licenseData.length,
+      activeLicenses: 0,
+      expiredLicenses: 0,
+      underutilizedLicenses: 0,
+      suspiciousLicenses: 0
+    };
+
+    for (const license of licenseData) {
+      const skuName = license.skuPartNumber || license.SkuPartNumber || 'Unknown';
+      const consumedUnits = license.consumedUnits || license.ConsumedUnits || 0;
+      const prepaidUnits = license.prepaidUnits || license.PrepaidUnits || {};
+      const enabled = prepaidUnits.enabled || prepaidUnits.Enabled || 0;
+      const expired = prepaidUnits.expired || prepaidUnits.Expired || 0;
+      const suspended = prepaidUnits.suspended || prepaidUnits.Suspended || 0;
+
+      if (enabled > 0) {
+        statistics.activeLicenses++;
+      }
+
+      if (expired > 0) {
+        statistics.expiredLicenses++;
+        
+        // Create finding for expired licenses
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Expired Licenses Detected',
+          severity: 'medium',
+          description: `License ${skuName} has ${expired} expired units`,
+          timestamp: new Date(),
+          source: 'license_graph_data',
+          type: 'expired_license',
+          category: 'compliance',
+          affectedEntities: {
+            licenses: [skuName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            skuName,
+            consumedUnits,
+            enabledUnits: enabled,
+            expiredUnits: expired,
+            suspendedUnits: suspended
+          },
+          mitreAttack: {
+            tactics: ['Resource Development'],
+            techniques: ['T1583'],
+            subTechniques: ['T1583.001']
+          },
+          recommendations: [
+            'Renew expired licenses',
+            'Review license usage patterns',
+            'Implement license monitoring'
+          ]
+        });
+      }
+
+      // Check for underutilized licenses
+      if (enabled > 0 && consumedUnits < enabled * 0.5) {
+        statistics.underutilizedLicenses++;
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Underutilized License Detected',
+          severity: 'low',
+          description: `License ${skuName} is underutilized: ${consumedUnits}/${enabled} units used`,
+          timestamp: new Date(),
+          source: 'license_graph_data',
+          type: 'underutilized_license',
+          category: 'optimization',
+          affectedEntities: {
+            licenses: [skuName],
+            resources: [],
+            applications: []
+          },
+          evidence: {
+            skuName,
+            consumedUnits,
+            enabledUnits: enabled,
+            utilizationRate: (consumedUnits / enabled) * 100
+          },
+          mitreAttack: {
+            tactics: ['Resource Development'],
+            techniques: ['T1583'],
+            subTechniques: ['T1583.001']
+          },
+          recommendations: [
+            'Optimize license allocation',
+            'Consider reducing license count',
+            'Review user license assignments'
+          ]
+        });
+      }
+    }
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
 }
 
 module.exports = EnhancedAnalyzer;

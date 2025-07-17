@@ -216,9 +216,17 @@ router.post('/test-connection',
       // Create a test job for the extractor service to handle
       const { createTestConnectionJob } = require('../services/jobService');
       
+      // Get organization data to include tenant ID
+      const { getRow } = require('../services/database');
+      const organization = await getRow(
+        'SELECT tenant_id FROM maes.organizations WHERE id = $1',
+        [req.organizationId]
+      );
+
       const testData = {
         applicationId,
         fqdn,
+        tenantId: organization.tenant_id,
         certificateThumbprint,
         clientSecret,
         organizationId: req.organizationId,
@@ -241,11 +249,14 @@ router.post('/test-connection',
           message: jobResult.connectionStatus === 'success' ? 'Connection test successful' : 'Connection test failed',
           jobId: job.id,
           ualStatus: jobResult.ualStatus,
+          graphStatus: jobResult.graphStatus,
           details: {
             applicationId,
             fqdn,
+            tenantId: organization.tenant_id,
             authMethod: certificateThumbprint ? 'certificate' : 'clientSecret',
             connectionStatus: jobResult.connectionStatus,
+            graphConnectionStatus: jobResult.graphStatus,
             testResult: jobResult.result
           }
         });

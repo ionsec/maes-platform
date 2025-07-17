@@ -104,6 +104,8 @@ router.post('/',
       'risky_users',
       'risky_detections',
       'devices',
+      'ual_graph',
+      'licenses',
       'full_extraction'
     ]).withMessage('Invalid extraction type'),
     body('startDate').isISO8601().withMessage('Start date must be a valid ISO date'),

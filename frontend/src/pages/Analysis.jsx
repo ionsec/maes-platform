@@ -49,15 +49,17 @@ import axios from '../utils/axios';
 
 const extractionTypes = [
   { value: 'unified_audit_log', label: 'Unified Audit Log' },
-  { value: 'azure_signin_logs', label: 'Azure Sign-in Logs' },
-  { value: 'azure_audit_logs', label: 'Azure Audit Logs' },
-  { value: 'mfa_status', label: 'MFA Status' },
+  { value: 'azure_signin_logs', label: 'Azure Sign-in Logs (Graph)' },
+  { value: 'azure_audit_logs', label: 'Azure Audit Logs (Graph)' },
+  { value: 'mfa_status', label: 'MFA Status (Graph)' },
   { value: 'oauth_permissions', label: 'OAuth Permissions' },
-  { value: 'risky_users', label: 'Risky Users' },
+  { value: 'risky_users', label: 'Users (Graph)' },
   { value: 'risky_detections', label: 'Risky Detections' },
   { value: 'mailbox_audit', label: 'Mailbox Audit' },
   { value: 'message_trace', label: 'Message Trace' },
-  { value: 'devices', label: 'Devices' }
+  { value: 'devices', label: 'Devices (Graph)' },
+  { value: 'ual_graph', label: 'UAL via Graph' },
+  { value: 'licenses', label: 'Licenses (Graph)' }
 ];
 
 const analysisTypes = [

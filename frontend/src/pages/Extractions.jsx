@@ -55,16 +55,18 @@ import dayjs from 'dayjs';
 import axios from '../utils/axios';
 
 const extractionTypes = [
-  { value: 'unified_audit_log', label: 'Unified Audit Log', description: 'Microsoft 365 audit events' },
-  { value: 'azure_signin_logs', label: 'Azure Sign-in Logs', description: 'Azure AD authentication events' },
-  { value: 'azure_audit_logs', label: 'Azure Audit Logs', description: 'Azure AD configuration changes' },
-  { value: 'mfa_status', label: 'MFA Status', description: 'Multi-factor authentication configuration' },
+  { value: 'unified_audit_log', label: 'Unified Audit Log', description: 'Microsoft 365 audit events (Exchange Online)' },
+  { value: 'azure_signin_logs', label: 'Azure Sign-in Logs (Graph)', description: 'Azure AD authentication events via Microsoft Graph' },
+  { value: 'azure_audit_logs', label: 'Azure Audit Logs (Graph)', description: 'Azure AD configuration changes via Microsoft Graph' },
+  { value: 'mfa_status', label: 'MFA Status (Graph)', description: 'Multi-factor authentication status via Microsoft Graph' },
   { value: 'oauth_permissions', label: 'OAuth Permissions', description: 'Application permissions and consents' },
-  { value: 'risky_users', label: 'Risky Users', description: 'Azure AD risky user detections' },
+  { value: 'risky_users', label: 'Users (Graph)', description: 'User accounts and properties via Microsoft Graph' },
   { value: 'risky_detections', label: 'Risky Detections', description: 'Azure AD risk events' },
   { value: 'mailbox_audit', label: 'Mailbox Audit', description: 'Exchange Online mailbox activity' },
   { value: 'message_trace', label: 'Message Trace', description: 'Email message tracking' },
-  { value: 'devices', label: 'Devices', description: 'Device registration and compliance' },
+  { value: 'devices', label: 'Devices (Graph)', description: 'Device registration and compliance via Microsoft Graph' },
+  { value: 'ual_graph', label: 'UAL via Graph', description: 'Unified Audit Log via Microsoft Graph API' },
+  { value: 'licenses', label: 'Licenses (Graph)', description: 'License usage and allocation via Microsoft Graph' },
   { value: 'full_extraction', label: 'Full Extraction', description: 'Complete evidence collection' }
 ];
 
