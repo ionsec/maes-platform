@@ -40,9 +40,10 @@ router.get('/',
 
       const result = await Extraction.findAll(req.organizationId, filters, page, limit);
 
-      // Mark uploaded extractions
+      // Transform database column names to camelCase and mark uploaded extractions
       const extractionsWithUploadFlag = result.extractions.map(extraction => ({
         ...extraction,
+        outputFiles: extraction.output_files || [],  // Transform snake_case to camelCase
         isUpload: extraction.parameters?.isUpload === true
       }));
 
@@ -72,8 +73,11 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    const extractionData = { ...extraction };
-    extractionData.isUpload = extraction.parameters?.isUpload === true;
+    const extractionData = { 
+      ...extraction,
+      outputFiles: extraction.output_files || [],  // Transform snake_case to camelCase
+      isUpload: extraction.parameters?.isUpload === true
+    };
 
     res.json({
       success: true,
@@ -393,9 +397,7 @@ router.get('/:id/logs', async (req, res) => {
 
     // Fetch logs from Redis for regular extractions
     const redisClient = require('redis').createClient({
-      host: process.env.REDIS_HOST || 'redis',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD
+      url: `redis://:${process.env.REDIS_PASSWORD}@${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}`
     });
 
     try {
@@ -477,7 +479,7 @@ router.get('/:id/download', async (req, res) => {
       });
     }
 
-    if (!extraction.outputFiles || extraction.outputFiles.length === 0) {
+    if (!extraction.output_files || extraction.output_files.length === 0) {
       return res.status(404).json({
         error: 'No output files found for this extraction'
       });
@@ -505,7 +507,7 @@ router.get('/:id/download', async (req, res) => {
 
     // Add each output file to the archive
     let filesAdded = 0;
-    for (const file of extraction.outputFiles) {
+    for (const file of extraction.output_files) {
       try {
         const filePath = file.path;
         
@@ -544,7 +546,7 @@ router.get('/:id/download', async (req, res) => {
       duration: extraction.duration,
       statistics: extraction.statistics,
       itemsExtracted: extraction.itemsExtracted,
-      outputFiles: extraction.outputFiles.map(f => ({
+      outputFiles: extraction.output_files.map(f => ({
         filename: f.filename,
         size: f.size,
         createdAt: f.createdAt
