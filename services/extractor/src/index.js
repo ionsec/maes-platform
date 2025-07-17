@@ -196,12 +196,41 @@ function buildPowerShellCommand(type, parameters, credentials) {
     Import-Module Microsoft-Extractor-Suite -Force;
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Module loaded successfully";
     
-    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft.Graph module...";
-    Import-Module Microsoft.Graph -Force;
-    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Microsoft.Graph module loaded successfully";
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft.Graph authentication module...";
+    Import-Module Microsoft.Graph.Authentication -Force;
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Microsoft.Graph.Authentication module loaded successfully";
   `;
   
-  let command = baseCommand;
+  // Load additional Graph modules based on extraction type
+  const graphModuleMap = {
+    'azure_signin_logs': ['Microsoft.Graph.Identity.SignIns'],
+    'azure_audit_logs': ['Microsoft.Graph.Identity.DirectoryManagement'], 
+    'mfa_status': ['Microsoft.Graph.Users', 'Microsoft.Graph.Identity.SignIns'],
+    'risky_users': ['Microsoft.Graph.Users'],
+    'risky_detections': ['Microsoft.Graph.Identity.SignIns'],
+    'devices': ['Microsoft.Graph.DeviceManagement'],
+    'ual_graph': ['Microsoft.Graph.Identity.SignIns'],
+    'licenses': ['Microsoft.Graph.Users']
+  };
+  
+  let moduleLoadCommand = baseCommand;
+  
+  // Add specific Graph modules for the extraction type
+  const requiredModules = graphModuleMap[type] || [];
+  if (requiredModules.length > 0) {
+    moduleLoadCommand += `
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading additional Graph modules for ${type}...";`;
+    
+    requiredModules.forEach(moduleName => {
+      moduleLoadCommand += `
+    Import-Module ${moduleName} -Force;`;
+    });
+    
+    moduleLoadCommand += `
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Additional Graph modules loaded successfully";`;
+  }
+  
+  let command = moduleLoadCommand;
   
   // Always use certificate file authentication (PFX) - thumbprint is optional
   if (credentials.applicationId) {
@@ -525,12 +554,12 @@ async function executePowerShell(command, job, extractionLogger) {
           // Log meaningful messages
           if (line.includes('Loading Microsoft-Extractor-Suite module')) {
             extractionLogger.info('Loading Microsoft Extractor Suite module...');
-          } else if (line.includes('Loading Microsoft.Graph module')) {
-            extractionLogger.info('Loading Microsoft Graph module...');
+          } else if (line.includes('Loading Microsoft.Graph authentication module')) {
+            extractionLogger.info('Loading Microsoft Graph authentication module...');
           } else if (line.includes('Module loaded successfully')) {
             extractionLogger.info('Module loaded successfully');
-          } else if (line.includes('Microsoft.Graph module loaded successfully')) {
-            extractionLogger.info('Microsoft Graph module loaded successfully');
+          } else if (line.includes('Microsoft.Graph.Authentication module loaded successfully')) {
+            extractionLogger.info('Microsoft Graph authentication module loaded successfully');
           } else if (line.includes('Connecting to Microsoft 365')) {
             extractionLogger.info('Connecting to Microsoft 365...');
           } else if (line.includes('Connecting to Microsoft Graph')) {

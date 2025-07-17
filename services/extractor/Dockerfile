@@ -42,9 +42,21 @@ RUN pwsh -Command "Set-PSRepository -Name PSGallery -InstallationPolicy Trusted"
     pwsh -Command "Install-Module -Name ExchangeOnlineManagement -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name AzureAD -Force -AllowClobber -Scope AllUsers" && \
     pwsh -Command "Install-Module -Name Az -Force -AllowClobber -Scope AllUsers" && \
-    pwsh -Command "Install-Module -Name Microsoft.Graph -Force -AllowClobber -Scope AllUsers" && \
-    pwsh -Command "Install-Module -Name MSOnline -Force -AllowClobber -Scope AllUsers" && \
-    pwsh -Command "Import-Module Microsoft-Extractor-Suite"
+    pwsh -Command "Install-Module -Name Microsoft.Graph.Authentication -Force -AllowClobber -Scope AllUsers" && \
+    pwsh -Command "Install-Module -Name Microsoft.Graph.Users -Force -AllowClobber -Scope AllUsers" && \
+    pwsh -Command "Install-Module -Name Microsoft.Graph.Identity.SignIns -Force -AllowClobber -Scope AllUsers" && \
+    pwsh -Command "Install-Module -Name Microsoft.Graph.DeviceManagement -Force -AllowClobber -Scope AllUsers" && \
+    pwsh -Command "Install-Module -Name Microsoft.Graph.Identity.DirectoryManagement -Force -AllowClobber -Scope AllUsers" && \
+    pwsh -Command "Install-Module -Name MSOnline -Force -AllowClobber -Scope AllUsers"
+
+# Pre-import frequently used modules to reduce runtime loading time
+RUN pwsh -Command "Import-Module Microsoft-Extractor-Suite -Force" && \
+    pwsh -Command "Import-Module Microsoft.Graph.Authentication -Force" && \
+    pwsh -Command "Import-Module Microsoft.Graph.Users -Force" && \
+    pwsh -Command "Import-Module Microsoft.Graph.Identity.SignIns -Force" && \
+    pwsh -Command "Import-Module Microsoft.Graph.DeviceManagement -Force" && \
+    pwsh -Command "Import-Module Microsoft.Graph.Identity.DirectoryManagement -Force" && \
+    echo "PowerShell modules pre-imported successfully"
 
 # Set timezone
 ENV TZ=UTC
