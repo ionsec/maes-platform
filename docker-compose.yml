@@ -68,6 +68,7 @@ services:
     #   - "3000:3000"
     volumes:
       - ./certs:/app/certs:ro
+      - extractor_output:/output:ro
     depends_on:
       postgres:
         condition: service_healthy
