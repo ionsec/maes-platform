@@ -107,6 +107,19 @@ const Analysis = () => {
   });
   const { enqueueSnackbar } = useSnackbar();
 
+  // Helper function to safely render values that might be objects
+  const safeRenderValue = (value, fallback = 'N/A') => {
+    if (value === null || value === undefined) return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return value.toString();
+    if (typeof value === 'boolean') return value.toString();
+    try {
+      return JSON.stringify(value);
+    } catch (error) {
+      return fallback;
+    }
+  };
+
   const fetchAnalysisJobs = async () => {
     setLoading(true);
     try {
@@ -176,11 +189,33 @@ const Analysis = () => {
   const viewResults = async (id) => {
     try {
       const response = await axios.get(`/api/analysis/${id}/results`);
-      setResults({
+      
+      // Safely process the response data to prevent rendering errors
+      const processedData = {
         id,
         ...response.data
-      });
+      };
+      
+      // Ensure findings array exists and has safe data
+      if (processedData.results?.findings) {
+        processedData.results.findings = processedData.results.findings.map(finding => ({
+          ...finding,
+          title: safeRenderValue(finding.title, 'Unknown Finding'),
+          description: safeRenderValue(finding.description, 'No description available'),
+          severity: finding.severity || 'info'
+        }));
+      }
+      
+      // Ensure recommendations array exists and has safe data
+      if (processedData.results?.recommendations) {
+        processedData.results.recommendations = processedData.results.recommendations.map(rec => 
+          safeRenderValue(rec, 'No recommendation details')
+        );
+      }
+      
+      setResults(processedData);
     } catch (error) {
+      console.error('Error fetching results:', error);
       enqueueSnackbar('Failed to fetch results', { variant: 'error' });
     }
   };
@@ -584,85 +619,119 @@ const Analysis = () => {
         >
           <DialogTitle>Analysis Results</DialogTitle>
           <DialogContent>
-            <Grid container spacing={3}>
-              <Grid item xs={12} md={4}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" color="primary">
-                      {results.results?.findings?.length || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Security Findings
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" color="warning.main">
-                      {results.alerts?.length || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Alerts Generated
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <Card>
-                  <CardContent>
-                    <Typography variant="h6" color="info.main">
-                      {results.results?.statistics?.eventsAnalyzed || 0}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Events Analyzed
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              
-              {/* Summary */}
-              <Grid item xs={12}>
-                <Typography variant="h6" gutterBottom>Summary</Typography>
-                <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
-                  <Typography variant="body2">
-                    {results.results?.summary?.description || 'Analysis completed successfully with no immediate threats detected.'}
-                  </Typography>
-                </Paper>
-              </Grid>
+            {(() => {
+              try {
+                return (
+                  <Grid container spacing={3}>
+                    <Grid item xs={12} md={4}>
+                      <Card>
+                        <CardContent>
+                          <Typography variant="h6" color="primary">
+                            {results.results?.findings?.length || 0}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Security Findings
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Card>
+                        <CardContent>
+                          <Typography variant="h6" color="warning.main">
+                            {results.alerts?.length || 0}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Alerts Generated
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                    <Grid item xs={12} md={4}>
+                      <Card>
+                        <CardContent>
+                          <Typography variant="h6" color="info.main">
+                            {results.results?.statistics?.eventsAnalyzed || 0}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary">
+                            Events Analyzed
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                    
+                    {/* Summary */}
+                    <Grid item xs={12}>
+                      <Typography variant="h6" gutterBottom>Summary</Typography>
+                      <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
+                        <Typography variant="body2">
+                          {safeRenderValue(results.results?.summary?.description, 'Analysis completed successfully with no immediate threats detected.')}
+                        </Typography>
+                      </Paper>
+                    </Grid>
 
-              {/* Findings */}
-              {results.results?.findings?.length > 0 && (
-                <Grid item xs={12}>
-                  <Typography variant="h6" gutterBottom>Key Findings</Typography>
-                  {results.results.findings.map((finding, index) => (
-                    <Alert key={index} severity={finding.severity || 'info'} sx={{ mb: 1 }}>
-                      <Typography variant="body2" fontWeight="bold">
-                        {finding.title}
-                      </Typography>
-                      <Typography variant="body2">
-                        {finding.description}
-                      </Typography>
-                    </Alert>
-                  ))}
-                </Grid>
-              )}
+                    {/* Findings */}
+                    {results.results?.findings?.length > 0 && (
+                      <Grid item xs={12}>
+                        <Typography variant="h6" gutterBottom>Key Findings</Typography>
+                        {results.results.findings.map((finding, index) => (
+                          <Alert key={index} severity={finding.severity || 'info'} sx={{ mb: 1 }}>
+                            <Typography variant="body2" fontWeight="bold">
+                              {safeRenderValue(finding.title, 'Unknown Finding')}
+                            </Typography>
+                            <Typography variant="body2">
+                              {safeRenderValue(finding.description, 'No description available')}
+                            </Typography>
+                            {finding.affectedEntities && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" color="text.secondary">
+                                  Affected: {finding.affectedEntities.users?.length || 0} users, {finding.affectedEntities.resources?.length || 0} resources
+                                </Typography>
+                              </Box>
+                            )}
+                            {finding.mitreAttack && (
+                              <Box sx={{ mt: 1 }}>
+                                <Typography variant="caption" color="text.secondary">
+                                  MITRE ATT&CK: {Array.isArray(finding.mitreAttack.tactics) ? finding.mitreAttack.tactics.join(', ') : safeRenderValue(finding.mitreAttack.tactics, 'Unknown')}
+                                </Typography>
+                              </Box>
+                            )}
+                          </Alert>
+                        ))}
+                      </Grid>
+                    )}
 
-              {/* Recommendations */}
-              {results.results?.recommendations?.length > 0 && (
-                <Grid item xs={12}>
-                  <Typography variant="h6" gutterBottom>Recommendations</Typography>
-                  <ul>
-                    {results.results.recommendations.map((rec, index) => (
-                      <li key={index}>
-                        <Typography variant="body2">{rec}</Typography>
-                      </li>
-                    ))}
-                  </ul>
-                </Grid>
-              )}
-            </Grid>
+                    {/* Recommendations */}
+                    {results.results?.recommendations?.length > 0 && (
+                      <Grid item xs={12}>
+                        <Typography variant="h6" gutterBottom>Recommendations</Typography>
+                        <ul>
+                          {results.results.recommendations.map((rec, index) => (
+                            <li key={index}>
+                              <Typography variant="body2">
+                                {safeRenderValue(rec, 'No recommendation details')}
+                              </Typography>
+                            </li>
+                          ))}
+                        </ul>
+                      </Grid>
+                    )}
+                  </Grid>
+                );
+              } catch (error) {
+                console.error('Error rendering results:', error);
+                return (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    <Typography variant="body2">
+                      Error displaying analysis results. Please try again or contact support.
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Error: {error.message}
+                    </Typography>
+                  </Alert>
+                );
+              }
+            })()}
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setResults(null)}>Close</Button>
