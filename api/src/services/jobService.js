@@ -71,6 +71,7 @@ const createTestConnectionJob = async (testData) => {
       parameters: {
         applicationId: testData.applicationId,
         fqdn: testData.fqdn,
+        tenantId: testData.tenantId,
         certificateThumbprint: testData.certificateThumbprint,
         clientSecret: testData.clientSecret
       }

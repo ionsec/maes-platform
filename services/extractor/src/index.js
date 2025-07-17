@@ -156,12 +156,21 @@ const processTestConnectionJob = async (job) => {
       ualStatus = 'error';
     }
     
+    // Extract Graph connection status
+    let graphStatus = 'unknown';
+    if (result.stdout.includes('GRAPH_CONNECTION_SUCCESS')) {
+      graphStatus = 'success';
+    } else if (result.stdout.includes('GRAPH_CONNECTION_ERROR')) {
+      graphStatus = 'error';
+    }
+    
     return {
       success: true,
       testId,
       result: result.stdout,
       connectionStatus: result.stdout.includes('CONNECTION_SUCCESS') ? 'success' : 'failed',
-      ualStatus
+      ualStatus,
+      graphStatus
     };
     
   } catch (error) {
@@ -186,6 +195,10 @@ function buildPowerShellCommand(type, parameters, credentials) {
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft-Extractor-Suite module...";
     Import-Module Microsoft-Extractor-Suite -Force;
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Module loaded successfully";
+    
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft.Graph module...";
+    Import-Module Microsoft.Graph -Force;
+    Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Microsoft.Graph module loaded successfully";
   `;
   
   let command = baseCommand;
@@ -232,6 +245,11 @@ function buildPowerShellCommand(type, parameters, credentials) {
         Connect-M365 -AppId '${credentials.applicationId}' -Organization '${parameters.fqdn || parameters.organization}' -Certificate $cert -ErrorAction Stop;
         Write-Host 'Connect-M365 completed successfully';
         
+        # Connect to Microsoft Graph using certificate
+        Write-Host "Connecting to Microsoft Graph with AppId: ${credentials.applicationId}, TenantId: ${parameters.tenantId}";
+        Connect-MgGraph -ApplicationId '${credentials.applicationId}' -Certificate $cert -TenantId '${parameters.tenantId}' -ErrorAction Stop;
+        Write-Host 'Connect-MgGraph completed successfully';
+        
         # Verify Exchange Online connection
         Write-Host "Verifying Exchange Online connection...";
         $sessions = Get-PSSession;
@@ -248,6 +266,15 @@ function buildPowerShellCommand(type, parameters, credentials) {
           Write-Host "Search-UnifiedAuditLog cmdlet is available";
         } catch {
           Write-Error "Search-UnifiedAuditLog cmdlet NOT available - Exchange Online connection may have failed";
+          Write-Error "Error: $_";
+        }
+        
+        # Test Microsoft Graph connection
+        try {
+          $graphContext = Get-MgContext -ErrorAction Stop;
+          Write-Host "Microsoft Graph connection verified - TenantId: $($graphContext.TenantId)";
+        } catch {
+          Write-Error "Microsoft Graph connection verification failed";
           Write-Error "Error: $_";
         }
       } catch {
@@ -294,16 +321,84 @@ function buildPowerShellCommand(type, parameters, credentials) {
         throw;
       }
     `,
-    'azure_signin_logs': `Get-AzureADSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
-    'azure_audit_logs': `Get-AzureADAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
-    'mfa_status': `Get-MFAStatus -OutputDir '${OUTPUT_PATH}'`,
+    'azure_signin_logs': `
+      Write-Host "Starting Azure Sign-In Logs extraction via Graph...";
+      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      try {
+        Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+        Write-Host "Graph Sign-In Logs extraction completed successfully.";
+      } catch {
+        Write-Error "Graph Sign-In Logs extraction failed: $_";
+        throw;
+      }
+    `,
+    'azure_audit_logs': `
+      Write-Host "Starting Azure Audit Logs extraction via Graph...";
+      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      try {
+        Get-GraphEntraAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+        Write-Host "Graph Audit Logs extraction completed successfully.";
+      } catch {
+        Write-Error "Graph Audit Logs extraction failed: $_";
+        throw;
+      }
+    `,
+    'mfa_status': `
+      Write-Host "Starting MFA Status extraction via Graph...";
+      try {
+        Get-MFA -OutputDir '${OUTPUT_PATH}';
+        Write-Host "MFA Status extraction completed successfully.";
+      } catch {
+        Write-Error "MFA Status extraction failed: $_";
+        throw;
+      }
+    `,
     'oauth_permissions': `Get-OAuthPermissions -OutputDir '${OUTPUT_PATH}'`,
-    'risky_users': `Get-RiskyUsers -OutputDir '${OUTPUT_PATH}'`,
+    'risky_users': `
+      Write-Host "Starting Risky Users extraction via Graph...";
+      try {
+        Get-Users -OutputDir '${OUTPUT_PATH}';
+        Write-Host "Users extraction completed successfully.";
+      } catch {
+        Write-Error "Users extraction failed: $_";
+        throw;
+      }
+    `,
     'risky_detections': `Get-RiskyDetections -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
     'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
     'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
-    'devices': `Get-Devices -OutputDir '${OUTPUT_PATH}'`,
-    'full_extraction': `Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${OUTPUT_PATH}'`
+    'devices': `
+      Write-Host "Starting Devices extraction via Graph...";
+      try {
+        Get-Devices -OutputDir '${OUTPUT_PATH}';
+        Write-Host "Devices extraction completed successfully.";
+      } catch {
+        Write-Error "Devices extraction failed: $_";
+        throw;
+      }
+    `,
+    'full_extraction': `Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${OUTPUT_PATH}'`,
+    'ual_graph': `
+      Write-Host "Starting UAL extraction via Graph...";
+      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      try {
+        Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+        Write-Host "UAL Graph extraction completed successfully.";
+      } catch {
+        Write-Error "UAL Graph extraction failed: $_";
+        throw;
+      }
+    `,
+    'licenses': `
+      Write-Host "Starting Licenses extraction via Graph...";
+      try {
+        Get-Licenses -OutputDir '${OUTPUT_PATH}';
+        Write-Host "Licenses extraction completed successfully.";
+      } catch {
+        Write-Error "Licenses extraction failed: $_";
+        throw;
+      }
+    `
   };
   
   command += extractionCommands[type] || '';
@@ -357,10 +452,33 @@ function buildTestConnectionCommand(parameters) {
       # Connect to Exchange Online (Connect-M365) using that cert
       Connect-M365 -AppId '${parameters.applicationId}' -Organization '${parameters.fqdn}' -Certificate $cert -ErrorAction Stop; 
       Write-Host 'Connect-M365 completed successfully';
+      
+      # Connect to Microsoft Graph using certificate and tenant ID
+      Connect-MgGraph -ApplicationId '${parameters.applicationId}' -Certificate $cert -TenantId '${parameters.tenantId || parameters.fqdn}' -ErrorAction Stop; 
+      Write-Host 'Connect-MgGraph completed successfully';
+      
+      # Verify Graph connection
+      try { 
+        $graphContext = Get-MgContext -ErrorAction Stop; 
+        Write-Host "GRAPH_CONNECTION_SUCCESS - TenantId: $($graphContext.TenantId)";
+      } catch { 
+        Write-Host 'GRAPH_CONNECTION_ERROR';
+      }
+      
       Write-Host 'CONNECTION_SUCCESS';
-      Connect-MgGraph -ClientId '${parameters.applicationId}' -CertificateThumbprint $cert.Thumbprint -TenantId '${parameters.fqdn}' -ErrorAction Stop; 
-      try { $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; Write-Host \"UAL_STATUS:$($UalEnabled.ToString().ToUpper())\" } catch { Write-Host 'UAL_STATUS:ERROR' }; 
-      Disconnect-ExchangeOnline -Confirm:$false; Disconnect-MgGraph 
+      
+      # Test UAL availability
+      try { 
+        $AuditConfig = Get-AdminAuditLogConfig -ErrorAction Stop; 
+        $UalEnabled = $AuditConfig.UnifiedAuditLogIngestionEnabled; 
+        Write-Host "UAL_STATUS:$($UalEnabled.ToString().ToUpper())";
+      } catch { 
+        Write-Host 'UAL_STATUS:ERROR';
+      }
+      
+      # Disconnect services
+      Disconnect-ExchangeOnline -Confirm:$false; 
+      Disconnect-MgGraph; 
     } catch { Write-Host "CONNECTION_ERROR: $_" }`;
   }
   
@@ -407,24 +525,50 @@ async function executePowerShell(command, job, extractionLogger) {
           // Log meaningful messages
           if (line.includes('Loading Microsoft-Extractor-Suite module')) {
             extractionLogger.info('Loading Microsoft Extractor Suite module...');
+          } else if (line.includes('Loading Microsoft.Graph module')) {
+            extractionLogger.info('Loading Microsoft Graph module...');
           } else if (line.includes('Module loaded successfully')) {
             extractionLogger.info('Module loaded successfully');
+          } else if (line.includes('Microsoft.Graph module loaded successfully')) {
+            extractionLogger.info('Microsoft Graph module loaded successfully');
           } else if (line.includes('Connecting to Microsoft 365')) {
             extractionLogger.info('Connecting to Microsoft 365...');
+          } else if (line.includes('Connecting to Microsoft Graph')) {
+            extractionLogger.info('Connecting to Microsoft Graph...');
           } else if (line.includes('Using mounted certificate')) {
             extractionLogger.info('Using certificate authentication');
           } else if (line.includes('Certificate:')) {
             extractionLogger.info(`Certificate thumbprint: ${line.split('Certificate:')[1].trim()}`);
           } else if (line.includes('Connect-M365 completed successfully')) {
             extractionLogger.info('Successfully connected to Microsoft 365');
+          } else if (line.includes('Connect-MgGraph completed successfully')) {
+            extractionLogger.info('Successfully connected to Microsoft Graph');
+          } else if (line.includes('Microsoft Graph connection verified')) {
+            extractionLogger.info('Microsoft Graph connection verified');
           } else if (line.includes('UAL_STATUS:ENABLED')) {
             extractionLogger.info('✓ Unified Audit Log is enabled');
           } else if (line.includes('UAL_STATUS:DISABLED')) {
             extractionLogger.warn('⚠ Unified Audit Log is disabled - extraction may fail');
           } else if (line.includes('Starting Unified Audit Log extraction')) {
             extractionLogger.info('Starting Unified Audit Log extraction...');
+          } else if (line.includes('Starting Azure Sign-In Logs extraction')) {
+            extractionLogger.info('Starting Azure Sign-In Logs extraction via Graph...');
+          } else if (line.includes('Starting Azure Audit Logs extraction')) {
+            extractionLogger.info('Starting Azure Audit Logs extraction via Graph...');
+          } else if (line.includes('Starting MFA Status extraction')) {
+            extractionLogger.info('Starting MFA Status extraction via Graph...');
+          } else if (line.includes('Starting Devices extraction')) {
+            extractionLogger.info('Starting Devices extraction via Graph...');
+          } else if (line.includes('Starting Users extraction')) {
+            extractionLogger.info('Starting Users extraction via Graph...');
+          } else if (line.includes('Starting Licenses extraction')) {
+            extractionLogger.info('Starting Licenses extraction via Graph...');
+          } else if (line.includes('Starting UAL extraction via Graph')) {
+            extractionLogger.info('Starting UAL extraction via Graph...');
           } else if (line.includes('UAL extraction completed successfully')) {
             extractionLogger.info('UAL extraction completed successfully');
+          } else if (line.includes('extraction completed successfully')) {
+            extractionLogger.info('Graph extraction completed successfully');
           } else if (line.includes('Get-UAL')) {
             extractionLogger.info('Executing UAL extraction command...');
           } else if (line.includes('Verifying Exchange Online connection')) {
@@ -465,6 +609,12 @@ async function executePowerShell(command, job, extractionLogger) {
           } else if (errorMessage.includes('certificate') && (errorMessage.includes('not found') || errorMessage.includes('invalid'))) {
             extractionLogger.error('Authentication failed: Certificate error');
             extractionLogger.error('Please verify the certificate file path and password');
+          } else if (errorMessage.includes('Connect-MgGraph') && errorMessage.includes('failed')) {
+            extractionLogger.error('Microsoft Graph connection failed');
+            extractionLogger.error('Please verify the Azure AD application has the required Graph API permissions');
+          } else if (errorMessage.includes('GRAPH_CONNECTION_ERROR')) {
+            extractionLogger.error('Microsoft Graph connection verification failed');
+            extractionLogger.error('Please check the tenant ID and application permissions');
           } else if (errorMessage.includes('Unified Audit Log is not enabled')) {
             extractionLogger.error('Extraction failed: Unified Audit Log is not enabled');
             extractionLogger.error('Please enable auditing in the Microsoft 365 compliance center');
@@ -737,6 +887,13 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
       'unified_audit_log': 'ual_analysis',
       'azure_signin_logs': 'signin_analysis',
       'azure_audit_logs': 'audit_analysis',
+      'mfa_status': 'mfa_analysis',
+      'oauth_permissions': 'oauth_analysis',
+      'risky_users': 'risky_user_analysis',
+      'risky_detections': 'risky_detection_analysis',
+      'devices': 'device_analysis',
+      'ual_graph': 'ual_analysis',
+      'licenses': 'comprehensive_analysis',
       'full_extraction': 'comprehensive_analysis'
     };
     

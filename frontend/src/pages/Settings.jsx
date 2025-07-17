@@ -186,7 +186,8 @@ const Settings = () => {
         success: true,
         message: response.data.message,
         details: response.data.details,
-        ualStatus: response.data.ualStatus
+        ualStatus: response.data.ualStatus,
+        graphStatus: response.data.graphStatus
       });
       
       enqueueSnackbar('Connection test successful!', { variant: 'success' });
@@ -666,37 +667,75 @@ const Settings = () => {
               >
                 <Typography variant="subtitle2" gutterBottom>{connectionTestResult.message}</Typography>
                 
-                {connectionTestResult.ualStatus && (
+                {(connectionTestResult.ualStatus || connectionTestResult.graphStatus) && (
                   <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(0,0,0,0.04)', borderRadius: 1 }}>
-                    <Typography variant="caption" display="block" gutterBottom>
-                      <strong>Unified Audit Log Status:</strong>
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {connectionTestResult.ualStatus === 'enabled' && (
-                        <>
-                          <CheckCircleIcon sx={{ color: 'success.main', fontSize: 16 }} />
-                          <Typography variant="caption" color="success.main">
-                            Enabled - You can extract unified audit logs
-                          </Typography>
-                        </>
-                      )}
-                      {connectionTestResult.ualStatus === 'disabled' && (
-                        <>
-                          <WarningIcon sx={{ color: 'warning.main', fontSize: 16 }} />
-                          <Typography variant="caption" color="warning.main">
-                            Disabled - Enable auditing in Microsoft 365 compliance center to access audit logs
-                          </Typography>
-                        </>
-                      )}
-                      {connectionTestResult.ualStatus === 'error' && (
-                        <>
-                          <ErrorIcon sx={{ color: 'error.main', fontSize: 16 }} />
-                          <Typography variant="caption" color="error.main">
-                            Unable to verify - Check application permissions
-                          </Typography>
-                        </>
-                      )}
-                    </Box>
+                    {connectionTestResult.ualStatus && (
+                      <>
+                        <Typography variant="caption" display="block" gutterBottom>
+                          <strong>Unified Audit Log Status:</strong>
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                          {connectionTestResult.ualStatus === 'enabled' && (
+                            <>
+                              <CheckCircleIcon sx={{ color: 'success.main', fontSize: 16 }} />
+                              <Typography variant="caption" color="success.main">
+                                Enabled - You can extract unified audit logs
+                              </Typography>
+                            </>
+                          )}
+                          {connectionTestResult.ualStatus === 'disabled' && (
+                            <>
+                              <WarningIcon sx={{ color: 'warning.main', fontSize: 16 }} />
+                              <Typography variant="caption" color="warning.main">
+                                Disabled - Enable auditing in Microsoft 365 compliance center to access audit logs
+                              </Typography>
+                            </>
+                          )}
+                          {connectionTestResult.ualStatus === 'error' && (
+                            <>
+                              <ErrorIcon sx={{ color: 'error.main', fontSize: 16 }} />
+                              <Typography variant="caption" color="error.main">
+                                Unable to verify - Check application permissions
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+                      </>
+                    )}
+                    
+                    {connectionTestResult.graphStatus && (
+                      <>
+                        <Typography variant="caption" display="block" gutterBottom>
+                          <strong>Microsoft Graph API Status:</strong>
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {connectionTestResult.graphStatus === 'success' && (
+                            <>
+                              <CheckCircleIcon sx={{ color: 'success.main', fontSize: 16 }} />
+                              <Typography variant="caption" color="success.main">
+                                Connected - You can extract Graph data (Users, Devices, MFA, Licenses)
+                              </Typography>
+                            </>
+                          )}
+                          {connectionTestResult.graphStatus === 'error' && (
+                            <>
+                              <ErrorIcon sx={{ color: 'error.main', fontSize: 16 }} />
+                              <Typography variant="caption" color="error.main">
+                                Connection failed - Check tenant ID and Graph API permissions
+                              </Typography>
+                            </>
+                          )}
+                          {connectionTestResult.graphStatus === 'unknown' && (
+                            <>
+                              <WarningIcon sx={{ color: 'warning.main', fontSize: 16 }} />
+                              <Typography variant="caption" color="warning.main">
+                                Unable to verify Graph connection
+                              </Typography>
+                            </>
+                          )}
+                        </Box>
+                      </>
+                    )}
                   </Box>
                 )}
                 
