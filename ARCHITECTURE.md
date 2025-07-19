@@ -210,12 +210,12 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-    │  │      Settings       │  │   Organizations     │  │      Alerts         │     │
+    │  │      Settings       │  │   Organizations     │  │      System         │     │
     │  │                     │  │                     │  │                     │     │
-    │  │  • User Profile     │  │  • Tenant Config    │  │  • Real-time Alerts │     │
-    │  │  • Credentials      │  │  • Connection Test  │  │  • Severity Levels  │     │
-    │  │  • Preferences      │  │  • Multi-tenant     │  │  • Alert History    │     │
-    │  │  • API Keys         │  │  • Access Control   │  │  • Notifications    │     │
+    │  │  • User Profile     │  │  • Tenant Config    │  │  • System Logs      │     │
+    │  │  • Credentials      │  │  • Connection Test  │  │  • Container Logs   │     │
+    │  │  • Preferences      │  │  • Multi-tenant     │  │  • Raw Log View     │     │
+    │  │  • API Keys         │  │  • Access Control   │  │  • Log Filtering    │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -254,12 +254,12 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-    │  │  /api/organizations │  │    /api/alerts      │  │    /api/reports     │     │
+    │  │  /api/organizations │  │    /api/system      │  │    /api/reports     │     │
     │  │                     │  │                     │  │                     │     │
-    │  │  • GET /current     │  │  • GET /            │  │  • GET /            │     │
-    │  │  • PUT /            │  │  • POST /           │  │  • POST /           │     │
-    │  │  • POST /test-conn  │  │  • PUT /:id         │  │  • GET /:id         │     │
-    │  │  • GET /stats       │  │  • DELETE /:id      │  │  • POST /:id/export │     │
+    │  │  • GET /current     │  │  • GET /logs        │  │  • GET /            │     │
+    │  │  • PUT /            │  │  • GET /logs/stats  │  │  • POST /           │     │
+    │  │  • POST /test-conn  │  │  • Container Filter │  │  • GET /:id         │     │
+    │  │  • GET /stats       │  │  • Real-time Data   │  │  • POST /:id/export │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                            │
@@ -273,7 +273,8 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     │  │  • BullMQ Queue     │  │  • PostgreSQL ORM  │  │  • Real-time Events │     │
     │  │  • Job Scheduling   │  │  • Query Builder    │  │  • Progress Updates │     │
     │  │  • Priority Mgmt    │  │  • Transaction Mgmt │  │  • Notification Hub │     │
-    │  │  • Error Handling   │  │  • Connection Pool  │  │  • Room Management  │     │
+    │  │  • Status Sync      │  │  • Connection Pool  │  │  • Room Management  │     │
+    │  │  • Error Handling   │  │  • Retry Logic      │  │  • System Logs      │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -293,8 +294,9 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     │  │                     │  │                     │  │                     │     │
     │  │  • Queue Consumer   │  │  • Priority Queue   │  │  • Real-time Updates│     │
     │  │  • Job Validation   │  │  • Retry Logic      │  │  • Log Streaming    │     │
-    │  │  • Error Handling   │  │  • Timeout Mgmt     │  │  • Status Tracking  │     │
-    │  │  • Concurrency     │  │  • Health Checks    │  │  • Metric Collection│     │
+    │  │  • Error Handling   │  │  • Timeout Mgmt     │  │  • Status Sync      │     │
+    │  │  • Concurrency     │  │  • Health Checks    │  │  • API Communication│     │
+    │  │  • Status Updates   │  │  • Recovery Logic   │  │  • Metric Collection│     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                            │
@@ -337,6 +339,7 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     │  │  • Admin Audit      │  │  • Risk Events      │  │  • Risky Users      │     │
     │  │  • Mailbox Audit    │  │  • Conditional Access│ │  • Device Compliance│     │
     │  │  • Azure AD Audit   │  │  • B2B/B2C Logins   │  │  • OAuth Apps       │     │
+    │  │  • UAL Graph        │  │  • Device Logs      │  │  • Licenses         │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -765,6 +768,100 @@ Frontend Stack                 Backend Stack                  Infrastructure Sta
 - **Database Sharding**: TimescaleDB time-based partitioning
 - **Resource Limits**: Docker resource constraints
 - **Auto-scaling**: Kubernetes HPA (optional)
+
+## Service Communication & Status Synchronization
+
+The MAES platform implements robust service-to-service communication with comprehensive status synchronization between the extractor service and API layer.
+
+### Status Synchronization Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                         Service Status Synchronization                             │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                            Authentication Layer                                 │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   Service Tokens    │  │   IP Validation     │  │   Request Routing   │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Internal Auth    │  │  • IPv6/IPv4 Handle │  │  • API Endpoints    │     │
+    │  │  • Token Validation │  │  • Container Network│  │  • Internal Routes  │     │
+    │  │  • Secure Channels  │  │  • Trust Boundaries │  │  • Service Discovery│     │
+    │  │  • Timing Safe      │  │  • Security Zones   │  │  • Load Balancing   │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                            Status Update Flow                                   │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   Extractor Job     │  │   Status Updates    │  │   Database Sync     │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Job Execution    │  │  • Retry Logic      │  │  • Real-time State  │     │
+    │  │  • Progress Track   │  │  • Exponential      │  │  • Status Columns   │     │
+    │  │  • Completion       │  │    Backoff          │  │  • Progress Updates │     │
+    │  │  • Error Handling   │  │  • Error Recovery   │  │  • Metadata Storage │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Features
+
+- **IPv6-mapped IPv4 Support**: Handles container networking with proper IP normalization
+- **Exponential Backoff Retry**: 3 attempts with 2-second delays for failed status updates  
+- **Service Token Authentication**: Secure internal communication between services
+- **Real-time Synchronization**: Immediate status updates reflected in the database and UI
+- **Comprehensive Error Handling**: Graceful degradation with detailed error logging
+
+## System Logs Architecture
+
+The platform features an enhanced system logs infrastructure providing real-time access to container logs and system monitoring data.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              System Logs Architecture                               │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                              Frontend Interface                                 │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   SystemLogs Page   │  │   Container Filter  │  │   Raw Log Viewer    │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Real-time Data   │  │  • All Containers   │  │  • Full Log Details │     │
+    │  │  • Search/Filter    │  │  • maes-api         │  │  • JSON Parsing     │     │
+    │  │  • Severity Levels  │  │  • maes-extractor   │  │  • Metadata Display │     │
+    │  │  • Time Navigation  │  │  • maes-analyzer    │  │  • Copy Functions   │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │ HTTPS/API
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                              API Layer                                          │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   Public Endpoints  │  │   Internal Service  │  │   Authentication    │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • /api/system/logs │  │  • /api/internal/   │  │  • Permission Check │     │
+    │  │  • /api/system/     │  │    system-logs      │  │  • Service Tokens   │     │
+    │  │    logs/stats       │  │  • Docker Commands  │  │  • RBAC Validation  │     │
+    │  │  • Pagination       │  │  • Log Parsing      │  │  • Admin Access     │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### System Logs Features
+
+- **Multi-Container Support**: Aggregates logs from all MAES platform containers
+- **Real-time Processing**: Live log streaming with automatic updates
+- **Advanced Filtering**: Search by container, log level, time range, and content
+- **Raw Log Access**: Complete unprocessed log data with JSON parsing
+- **Secure Access**: Requires `canManageSystemSettings` permission for access
+- **Performance Optimized**: Efficient pagination and caching for large log volumes
 
 ## Real-time Alerts Architecture
 
