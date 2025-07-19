@@ -306,13 +306,13 @@ const SystemLogs = () => {
             </Grid>
             <Grid item xs={12} md={2}>
               <FormControl fullWidth size="small">
-                <InputLabel>Source</InputLabel>
+                <InputLabel>Container</InputLabel>
                 <Select
-                  value={filters.source}
-                  label="Source"
-                  onChange={(e) => handleFilterChange('source', e.target.value)}
+                  value={filters.container}
+                  label="Container"
+                  onChange={(e) => handleFilterChange('container', e.target.value)}
                 >
-                  {logSources.map(source => (
+                  {logContainers.map(source => (
                     <MenuItem key={source} value={source}>
                       {source.charAt(0).toUpperCase() + source.slice(1)}
                     </MenuItem>
