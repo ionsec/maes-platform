@@ -30,7 +30,9 @@ import {
   ConnectedTv,
   TrendingUp,
   Memory,
-  Speed
+  Speed,
+  Tour,
+  Help
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getApiUrl } from '../config/api'
@@ -79,6 +81,12 @@ const menuItems = [
     icon: <Settings />, 
     path: '/settings',
     description: 'Platform Settings'
+  },
+  { 
+    text: 'Tour Demo', 
+    icon: <Help />, 
+    path: '/tour-demo',
+    description: 'Guided Tour System Demo'
   }
 ]
 

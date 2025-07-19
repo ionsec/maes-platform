@@ -46,6 +46,9 @@ import { useForm, Controller } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
 import dayjs from 'dayjs';
 import axios from '../utils/axios';
+import TourButton from '../components/TourButton';
+import TourResetButton from '../components/TourResetButton';
+import { analysisTourSteps } from '../utils/tourConfigs';
 
 const extractionTypes = [
   { value: 'unified_audit_log', label: 'Unified Audit Log' },

@@ -46,10 +46,13 @@ import {
 import { useForm, Controller } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
 import axios from '../utils/axios';
+import ThemeSelector from '../components/ThemeSelector';
+import { useTheme } from '../theme/ThemeProvider';
 
 const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [organization, setOrganization] = useState(null);
+  const { currentTheme } = useTheme();
   const [tabValue, setTabValue] = useState(0);
   const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
   const [showCredentials, setShowCredentials] = useState({});
@@ -256,6 +259,7 @@ const Settings = () => {
       <Paper sx={{ mb: 3 }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
           <Tab label="General" />
+          <Tab label="Appearance" />
           <Tab label="Extraction" />
           <Tab label="Analysis" />
           <Tab label="Alerting" />
@@ -374,8 +378,59 @@ const Settings = () => {
           </Grid>
         )}
 
-        {/* Extraction Settings */}
+        {/* Appearance Settings */}
         {tabValue === 1 && (
+          <Card>
+            <CardHeader title="Theme & Appearance" />
+            <CardContent>
+              <Grid container spacing={3}>
+                <Grid item xs={12}>
+                  <Typography variant="h6" gutterBottom>
+                    Theme Selection
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    Choose a theme that matches your workflow and preference. Themes are automatically saved and applied across all sessions.
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+                    <ThemeSelector variant="compact" />
+                    <Typography variant="caption" color="text.secondary">
+                      Click to browse all available themes
+                    </Typography>
+                  </Box>
+
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    <Typography variant="body2">
+                      <strong>Professional Tip:</strong> Dark themes are recommended for prolonged use and reduce eye strain during incident response operations.
+                    </Typography>
+                  </Alert>
+
+                  <Card variant="outlined" sx={{ mt: 3 }}>
+                    <CardContent>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Current Theme Information
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Chip 
+                          label={currentTheme.category} 
+                          size="small" 
+                          color="primary" 
+                          variant="outlined" 
+                        />
+                        <Typography variant="body2">
+                          {currentTheme.description}
+                        </Typography>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Extraction Settings */}
+        {tabValue === 2 && (
           <Card>
             <CardHeader title="Data Extraction Settings" />
             <CardContent>
@@ -436,7 +491,7 @@ const Settings = () => {
         )}
 
         {/* Analysis Settings */}
-        {tabValue === 2 && (
+        {tabValue === 3 && (
           <Card>
             <CardHeader title="Security Analysis Settings" />
             <CardContent>
@@ -477,7 +532,7 @@ const Settings = () => {
         )}
 
         {/* Alerting Settings */}
-        {tabValue === 3 && (
+        {tabValue === 4 && (
           <Card>
             <CardHeader title="Alert and Notification Settings" />
             <CardContent>
@@ -532,7 +587,7 @@ const Settings = () => {
         )}
 
         {/* Credentials Settings */}
-        {tabValue === 4 && (
+        {tabValue === 5 && (
           <Card>
             <CardHeader 
               title="Microsoft 365 & Azure Credentials" 

@@ -54,8 +54,37 @@ import {
 import { useForm, Controller } from 'react-hook-form'
 import { useSnackbar } from 'notistack'
 import axios from '../utils/axios'
+import TourButton from '../components/TourButton'
 
 const SIEMConfiguration = () => {
+  // Tour steps configuration
+  const siemTourSteps = [
+    {
+      target: '[data-tour="siem-title"]',
+      title: 'SIEM Integration Hub',
+      content: 'This page allows you to configure external SIEM systems to receive MAES security events and analysis results in real-time.',
+      tourId: 'siem-tour'
+    },
+    {
+      target: '[data-tour="add-siem-button"]',
+      title: 'Add SIEM Configuration',
+      content: 'Click here to add a new SIEM integration. MAES supports popular SIEM platforms like Splunk, QRadar, Elasticsearch, and generic REST APIs.',
+      tourId: 'siem-tour'
+    },
+    {
+      target: '[data-tour="overview-cards"]',
+      title: 'Configuration Overview',
+      content: 'These cards show a quick overview of your SIEM integrations including total configurations, active integrations, and automated exports.',
+      tourId: 'siem-tour'
+    },
+    {
+      target: '[data-tour="configurations-table"]',
+      title: 'SIEM Configurations Table',
+      content: 'Monitor and manage all your SIEM integrations. You can test connections, trigger manual exports, edit configurations, and view export status.',
+      tourId: 'siem-tour'
+    }
+  ]
+
   const [configurations, setConfigurations] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -218,7 +247,7 @@ const SIEMConfiguration = () => {
         <Paper sx={{ p: 3 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Box>
-              <Typography variant="h4" gutterBottom>
+              <Typography variant="h4" gutterBottom data-tour="siem-title">
                 <Security sx={{ mr: 1, verticalAlign: 'middle' }} />
                 SIEM Integration
               </Typography>
@@ -226,17 +255,28 @@ const SIEMConfiguration = () => {
                 Configure external SIEM systems to receive MAES security events and analysis results
               </Typography>
             </Box>
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => {
-                setEditingConfig(null)
-                reset()
-                setDialogOpen(true)
-              }}
-            >
-              Add SIEM Configuration
-            </Button>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <TourButton 
+                tourSteps={siemTourSteps}
+                tourId="siem-tour"
+                variant="outlined"
+                size="small"
+              >
+                Help Tour
+              </TourButton>
+              <Button
+                variant="contained"
+                startIcon={<Add />}
+                onClick={() => {
+                  setEditingConfig(null)
+                  reset()
+                  setDialogOpen(true)
+                }}
+                data-tour="add-siem-button"
+              >
+                Add SIEM Configuration
+              </Button>
+            </Box>
           </Box>
 
           {error && (
@@ -252,7 +292,7 @@ const SIEMConfiguration = () => {
           )}
 
           {/* Overview Cards */}
-          <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid container spacing={3} sx={{ mb: 3 }} data-tour="overview-cards">
             <Grid item xs={12} md={3}>
               <Card>
                 <CardContent>
@@ -304,7 +344,7 @@ const SIEMConfiguration = () => {
           </Grid>
 
           {/* Configurations Table */}
-          <TableContainer component={Paper} variant="outlined">
+          <TableContainer component={Paper} variant="outlined" data-tour="configurations-table">
             <Table>
               <TableHead>
                 <TableRow>

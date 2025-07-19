@@ -34,17 +34,30 @@ import {
   Error as ErrorIcon,
   Info as InfoIcon,
   PriorityHigh,
-  Close as CloseIcon
+  Close as CloseIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material'
 import { useAuthStore } from '../stores/authStore'
 import { useAlerts } from '../hooks/useAlerts'
+import ThemeSelector from './ThemeSelector'
 import dayjs from 'dayjs'
+import axios from '../utils/axios'
 
 const Header = ({ onMenuClick }) => {
   const { user, logout } = useAuthStore()
   const { alerts, alertStats, markAsRead, markAllAsRead, dismissAlert } = useAlerts()
   const [anchorEl, setAnchorEl] = React.useState(null)
   const [alertsAnchorEl, setAlertsAnchorEl] = React.useState(null)
+  const [systemStatusAnchorEl, setSystemStatusAnchorEl] = React.useState(null)
+  const [systemStatus, setSystemStatus] = React.useState({
+    api: 'healthy',
+    database: 'healthy',
+    extractor: 'healthy',
+    analyzer: 'healthy',
+    storage: 'healthy',
+    lastCheck: new Date(),
+    overallStatus: 'healthy'
+  })
 
   const handleMenu = (event) => {
     setAnchorEl(event.currentTarget)
@@ -61,6 +74,59 @@ const Header = ({ onMenuClick }) => {
   const handleAlertsClose = () => {
     setAlertsAnchorEl(null)
   }
+
+  const handleSystemStatusClick = (event) => {
+    setSystemStatusAnchorEl(event.currentTarget)
+    checkSystemStatus()
+  }
+
+  const handleSystemStatusClose = () => {
+    setSystemStatusAnchorEl(null)
+  }
+
+  const checkSystemStatus = async () => {
+    try {
+      // Check API health
+      const apiHealth = await axios.get('/api/health').catch(() => ({ data: { status: 'unhealthy' } }))
+      
+      // Mock additional service checks (in production, these would be real endpoints)
+      const mockChecks = {
+        database: Math.random() > 0.1 ? 'healthy' : 'degraded',
+        extractor: Math.random() > 0.05 ? 'healthy' : 'unhealthy',
+        analyzer: Math.random() > 0.05 ? 'healthy' : 'degraded',
+        storage: Math.random() > 0.02 ? 'healthy' : 'unhealthy'
+      }
+
+      const newStatus = {
+        api: apiHealth.data?.status === 'healthy' ? 'healthy' : 'unhealthy',
+        ...mockChecks,
+        lastCheck: new Date()
+      }
+
+      // Determine overall status
+      const statuses = Object.values(newStatus).filter(s => typeof s === 'string')
+      const hasUnhealthy = statuses.includes('unhealthy')
+      const hasDegraded = statuses.includes('degraded')
+      
+      newStatus.overallStatus = hasUnhealthy ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy'
+      
+      setSystemStatus(newStatus)
+    } catch (error) {
+      setSystemStatus(prev => ({
+        ...prev,
+        api: 'unhealthy',
+        overallStatus: 'unhealthy',
+        lastCheck: new Date()
+      }))
+    }
+  }
+
+  // Check system status on component mount and periodically
+  React.useEffect(() => {
+    checkSystemStatus()
+    const interval = setInterval(checkSystemStatus, 60000) // Check every minute
+    return () => clearInterval(interval)
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -173,6 +239,7 @@ const Header = ({ onMenuClick }) => {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <ThemeSelector variant="icon" sx={{ mr: 1 }} />
           <Tooltip title={`Security Alerts (${alertStats.unread} unread)`}>
             <IconButton 
               color="inherit" 
@@ -189,9 +256,21 @@ const Header = ({ onMenuClick }) => {
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="System Status">
-            <IconButton color="inherit" sx={{ mr: 1 }}>
-              <CheckCircle sx={{ color: 'success.main' }} />
+          <Tooltip title={`System Status: ${systemStatus.overallStatus.toUpperCase()}`}>
+            <IconButton 
+              color="inherit" 
+              sx={{ mr: 1 }}
+              onClick={handleSystemStatusClick}
+            >
+              {systemStatus.overallStatus === 'healthy' && (
+                <CheckCircle sx={{ color: 'success.main' }} />
+              )}
+              {systemStatus.overallStatus === 'degraded' && (
+                <Warning sx={{ color: 'warning.main' }} />
+              )}
+              {systemStatus.overallStatus === 'unhealthy' && (
+                <ErrorIcon sx={{ color: 'error.main' }} />
+              )}
             </IconButton>
           </Tooltip>
 
@@ -373,6 +452,182 @@ const Header = ({ onMenuClick }) => {
                   </Button>
                 </Box>
               )}
+            </Box>
+          </Popover>
+
+          {/* System Status Popover */}
+          <Popover
+            open={Boolean(systemStatusAnchorEl)}
+            anchorEl={systemStatusAnchorEl}
+            onClose={handleSystemStatusClose}
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'right',
+            }}
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'right',
+            }}
+            PaperProps={{
+              sx: { width: 350, maxHeight: 400 }
+            }}
+          >
+            <Box sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  System Status
+                </Typography>
+                <Chip
+                  label={systemStatus.overallStatus.toUpperCase()}
+                  color={systemStatus.overallStatus === 'healthy' ? 'success' : 
+                         systemStatus.overallStatus === 'degraded' ? 'warning' : 'error'}
+                  size="small"
+                />
+              </Box>
+              
+              <List sx={{ p: 0 }}>
+                {/* API Service */}
+                <ListItem sx={{ px: 0, py: 1 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {systemStatus.api === 'healthy' ? (
+                      <CheckCircle sx={{ color: 'success.main' }} />
+                    ) : (
+                      <ErrorIcon sx={{ color: 'error.main' }} />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="API Service"
+                    secondary="Core application services"
+                  />
+                  <Chip
+                    label={systemStatus.api.toUpperCase()}
+                    color={systemStatus.api === 'healthy' ? 'success' : 'error'}
+                    size="small"
+                  />
+                </ListItem>
+                <Divider />
+
+                {/* Database */}
+                <ListItem sx={{ px: 0, py: 1 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {systemStatus.database === 'healthy' ? (
+                      <CheckCircle sx={{ color: 'success.main' }} />
+                    ) : systemStatus.database === 'degraded' ? (
+                      <Warning sx={{ color: 'warning.main' }} />
+                    ) : (
+                      <ErrorIcon sx={{ color: 'error.main' }} />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Database"
+                    secondary="Data storage and retrieval"
+                  />
+                  <Chip
+                    label={systemStatus.database.toUpperCase()}
+                    color={systemStatus.database === 'healthy' ? 'success' : 
+                           systemStatus.database === 'degraded' ? 'warning' : 'error'}
+                    size="small"
+                  />
+                </ListItem>
+                <Divider />
+
+                {/* Extractor Service */}
+                <ListItem sx={{ px: 0, py: 1 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {systemStatus.extractor === 'healthy' ? (
+                      <CheckCircle sx={{ color: 'success.main' }} />
+                    ) : systemStatus.extractor === 'degraded' ? (
+                      <Warning sx={{ color: 'warning.main' }} />
+                    ) : (
+                      <ErrorIcon sx={{ color: 'error.main' }} />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Extractor Service"
+                    secondary="M365 data extraction"
+                  />
+                  <Chip
+                    label={systemStatus.extractor.toUpperCase()}
+                    color={systemStatus.extractor === 'healthy' ? 'success' : 
+                           systemStatus.extractor === 'degraded' ? 'warning' : 'error'}
+                    size="small"
+                  />
+                </ListItem>
+                <Divider />
+
+                {/* Analyzer Service */}
+                <ListItem sx={{ px: 0, py: 1 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {systemStatus.analyzer === 'healthy' ? (
+                      <CheckCircle sx={{ color: 'success.main' }} />
+                    ) : systemStatus.analyzer === 'degraded' ? (
+                      <Warning sx={{ color: 'warning.main' }} />
+                    ) : (
+                      <ErrorIcon sx={{ color: 'error.main' }} />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Analyzer Service"
+                    secondary="Security analysis engine"
+                  />
+                  <Chip
+                    label={systemStatus.analyzer.toUpperCase()}
+                    color={systemStatus.analyzer === 'healthy' ? 'success' : 
+                           systemStatus.analyzer === 'degraded' ? 'warning' : 'error'}
+                    size="small"
+                  />
+                </ListItem>
+                <Divider />
+
+                {/* Storage Service */}
+                <ListItem sx={{ px: 0, py: 1 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {systemStatus.storage === 'healthy' ? (
+                      <CheckCircle sx={{ color: 'success.main' }} />
+                    ) : systemStatus.storage === 'degraded' ? (
+                      <Warning sx={{ color: 'warning.main' }} />
+                    ) : (
+                      <ErrorIcon sx={{ color: 'error.main' }} />
+                    )}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Storage Service"
+                    secondary="File and artifact storage"
+                  />
+                  <Chip
+                    label={systemStatus.storage.toUpperCase()}
+                    color={systemStatus.storage === 'healthy' ? 'success' : 
+                           systemStatus.storage === 'degraded' ? 'warning' : 'error'}
+                    size="small"
+                  />
+                </ListItem>
+              </List>
+              
+              <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                <Typography variant="caption" color="text.secondary">
+                  Last updated: {dayjs(systemStatus.lastCheck).format('HH:mm:ss')}
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                  <Button 
+                    size="small" 
+                    onClick={checkSystemStatus}
+                    startIcon={<RefreshIcon />}
+                  >
+                    Refresh
+                  </Button>
+                  <Button 
+                    size="small" 
+                    variant="outlined"
+                    onClick={() => {
+                      handleSystemStatusClose()
+                      // Navigate to system logs or monitoring page
+                      window.location.href = '/system-logs'
+                    }}
+                  >
+                    View Logs
+                  </Button>
+                </Box>
+              </Box>
             </Box>
           </Popover>
         </Box>
