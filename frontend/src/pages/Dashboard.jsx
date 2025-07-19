@@ -60,6 +60,8 @@ import axios from '../utils/axios'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
 import { useAlerts } from '../hooks/useAlerts'
+import TourButton from '../components/TourButton'
+import { useTour } from '../contexts/TourContext'
 
 dayjs.extend(relativeTime)
 
@@ -67,6 +69,7 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 
 const Dashboard = () => {
   const { alertStats } = useAlerts()
+  const { startTour, isTourCompleted } = useTour()
   const [stats, setStats] = useState({
     extractions: { total: 0, active: 0, completed: 0, failed: 0 },
     analyses: { total: 0, completed: 0, running: 0, failed: 0 },
@@ -91,6 +94,57 @@ const Dashboard = () => {
   const [editMode, setEditMode] = useState(false)
   const [layouts, setLayouts] = useState({})
   
+  // Tour steps configuration
+  const dashboardTourSteps = [
+    {
+      target: '[data-tour="dashboard-title"]',
+      title: 'Welcome to the Dashboard!',
+      content: 'This is your main control center where you can monitor all MAES platform activities, system metrics, and recent operations.',
+      tourId: 'dashboard-tour'
+    },
+    {
+      target: '[data-tour="metrics-cards"]',
+      title: 'System Metrics Overview',
+      content: 'These cards show real-time system metrics including CPU usage, memory consumption, active jobs, and system errors. Click the info icons for detailed explanations.',
+      tourId: 'dashboard-tour'
+    },
+    {
+      target: '[data-tour="monitoring-tools"]',
+      title: 'Monitoring Tools',
+      content: 'Access professional monitoring tools like Grafana for dashboards, Prometheus for metrics, Loki for logs, and cAdvisor for container monitoring.',
+      tourId: 'dashboard-tour'
+    },
+    {
+      target: '[data-tour="recent-jobs"]',
+      title: 'Recent Jobs',
+      content: 'Monitor your recent extraction and analysis jobs with their status, progress, and duration. This helps you track what\'s currently happening in your system.',
+      tourId: 'dashboard-tour'
+    },
+    {
+      target: '[data-tour="edit-mode"]',
+      title: 'Customize Your Dashboard',
+      content: 'Toggle edit mode to drag, resize, and rearrange dashboard widgets to suit your workflow. Your layout will be automatically saved.',
+      tourId: 'dashboard-tour'
+    },
+    {
+      target: '[data-tour="activity-chart"]',
+      title: 'Activity Trends',
+      content: 'View weekly trends for extractions, analyses, alerts, and errors to understand your platform usage patterns and identify potential issues.',
+      tourId: 'dashboard-tour'
+    }
+  ]
+
+  // Auto-start tour for new users (temporarily disabled for debugging)
+  useEffect(() => {
+    // Temporarily disabled to debug blank page issue
+    // if (!isTourCompleted('dashboard-tour')) {
+    //   const timer = setTimeout(() => {
+    //     startTour(dashboardTourSteps, 'dashboard-tour')
+    //   }, 1000)
+    //   return () => clearTimeout(timer)
+    // }
+  }, [startTour, isTourCompleted])
+
   // Default layout configuration
   const defaultLayout = [
     { i: 'cpu-metric', x: 0, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
@@ -734,10 +788,14 @@ const Dashboard = () => {
         mb: 3,
         gap: { xs: 2, sm: 0 }
       }}>
-        <Typography variant="h4" sx={{ 
-          flexGrow: 1,
-          fontSize: { xs: '1.5rem', sm: '2.125rem' }
-        }}>
+        <Typography 
+          variant="h4" 
+          data-tour="dashboard-title"
+          sx={{ 
+            flexGrow: 1,
+            fontSize: { xs: '1.5rem', sm: '2.125rem' }
+          }}
+        >
           System Monitoring Dashboard
         </Typography>
         <Box sx={{ 
@@ -762,17 +820,28 @@ const Dashboard = () => {
           <IconButton onClick={fetchDashboardData} color="primary" title="Refresh Dashboard">
             <RefreshIcon />
           </IconButton>
+          <TourButton 
+            tourSteps={dashboardTourSteps}
+            tourId="dashboard-tour"
+            variant="outlined"
+            size="small"
+          >
+            Help Tour
+          </TourButton>
           
           {/* Edit Mode Controls */}
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            gap: 1,
-            borderLeft: '1px solid',
-            borderColor: 'divider',
-            pl: 2,
-            ml: 1
-          }}>
+          <Box 
+            data-tour="edit-mode"
+            sx={{ 
+              display: 'flex', 
+              alignItems: 'center',
+              gap: 1,
+              borderLeft: '1px solid',
+              borderColor: 'divider',
+              pl: 2,
+              ml: 1
+            }}
+          >
             <FormControlLabel
               control={
                 <Switch
@@ -882,7 +951,7 @@ const Dashboard = () => {
           preventCollision={false}
           margin={[16, 16]}
         >
-          <div key="cpu-metric">
+          <div key="cpu-metric" data-tour="metrics-cards">
             <CPUMetricWidget />
           </div>
           <div key="memory-metric">
@@ -894,10 +963,10 @@ const Dashboard = () => {
           <div key="errors-metric">
             <ErrorsMetricWidget />
           </div>
-          <div key="monitoring-tools">
+          <div key="monitoring-tools" data-tour="monitoring-tools">
             <MonitoringToolsWidget />
           </div>
-          <div key="recent-jobs">
+          <div key="recent-jobs" data-tour="recent-jobs">
             <RecentJobsWidget />
           </div>
           <div key="system-resources">
@@ -909,7 +978,7 @@ const Dashboard = () => {
           <div key="container-logs">
             <ContainerLogsWidget />
           </div>
-          <div key="activity-chart">
+          <div key="activity-chart" data-tour="activity-chart">
             <ActivityChartWidget />
           </div>
         </ResponsiveGridLayout>

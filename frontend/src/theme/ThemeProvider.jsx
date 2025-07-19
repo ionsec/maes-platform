@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
-import darkTheme from './darkTheme';
+import { themes, getThemeById } from './themes';
 
 const ThemeContext = createContext();
 
@@ -13,27 +13,45 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }) => {
-  const [isDarkMode, setIsDarkMode] = useState(true); // Default to dark mode for DFIR
+  const [currentThemeId, setCurrentThemeId] = useState('dark'); // Default to dark theme for DFIR
 
   useEffect(() => {
     // Load theme preference from localStorage
-    const savedTheme = localStorage.getItem('maes-theme');
-    if (savedTheme) {
-      setIsDarkMode(savedTheme === 'dark');
+    const savedThemeId = localStorage.getItem('maes-theme-id');
+    if (savedThemeId && themes[savedThemeId]) {
+      setCurrentThemeId(savedThemeId);
     }
   }, []);
 
-  const toggleTheme = () => {
-    const newTheme = !isDarkMode;
-    setIsDarkMode(newTheme);
-    localStorage.setItem('maes-theme', newTheme ? 'dark' : 'light');
+  const setTheme = (themeId) => {
+    if (themes[themeId]) {
+      setCurrentThemeId(themeId);
+      localStorage.setItem('maes-theme-id', themeId);
+    }
   };
 
-  const theme = isDarkMode ? darkTheme : darkTheme; // For now, always use dark theme
+  const toggleTheme = () => {
+    // Legacy function for backward compatibility - toggles between dark and light
+    const newThemeId = currentThemeId === 'light' ? 'dark' : 'light';
+    setTheme(newThemeId);
+  };
+
+  const currentTheme = getThemeById(currentThemeId);
+  const isDarkMode = currentTheme.theme.palette.mode === 'dark';
+
+  const value = {
+    currentThemeId,
+    currentTheme,
+    isDarkMode,
+    themes,
+    setTheme,
+    toggleTheme,
+    theme: currentTheme.theme // For backward compatibility
+  };
 
   return (
-    <ThemeContext.Provider value={{ isDarkMode, toggleTheme, theme }}>
-      <MuiThemeProvider theme={theme}>
+    <ThemeContext.Provider value={value}>
+      <MuiThemeProvider theme={currentTheme.theme}>
         <CssBaseline />
         {children}
       </MuiThemeProvider>

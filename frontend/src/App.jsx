@@ -14,10 +14,12 @@ const ExternalRedirect = ({ url }) => {
 }
 import { useAuthStore } from './stores/authStore'
 import { setNavigate } from './utils/axios'
+import { TourProvider } from './contexts/TourContext'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import SOSButton from './components/SOSButton'
 import Footer from './components/Footer'
+import Tour from './components/Tour'
 import Dashboard from './pages/Dashboard'
 import Extractions from './pages/Extractions'
 import Analysis from './pages/Analysis'
@@ -28,6 +30,7 @@ import SIEMConfiguration from './pages/SIEMConfiguration'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
+import TourDemo from './components/TourDemo'
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -95,43 +98,47 @@ function App() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <Header onMenuClick={toggleSidebar} />
-      <div style={{ display: 'flex', flex: 1 }}>
-        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <Container 
-          maxWidth={false} 
-          sx={{ 
-            mt: 8, 
-            ml: { xs: 0, sm: '240px' }, // Always account for sidebar on desktop
-            transition: 'margin-left 0.3s',
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column'
-          }}
-        >
-          <Box sx={{ flex: 1 }}>
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/extractions" element={<Extractions />} />
-              <Route path="/analysis" element={<Analysis />} />
-              <Route path="/alerts" element={<Alerts />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/siem" element={<SIEMConfiguration />} />
-              {/* Redirect monitoring service routes to external tabs */}
-              <Route path="/grafana/*" element={<ExternalRedirect url="/grafana/" />} />
-              <Route path="/prometheus/*" element={<ExternalRedirect url="/prometheus/" />} />
-              <Route path="/loki/*" element={<ExternalRedirect url="/loki/" />} />
-              <Route path="/cadvisor/*" element={<ExternalRedirect url="/cadvisor/" />} />
-            </Routes>
-          </Box>
-          <Footer />
-        </Container>
+    <TourProvider>
+      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+        <Header onMenuClick={toggleSidebar} />
+        <div style={{ display: 'flex', flex: 1 }}>
+          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+          <Container 
+            maxWidth={false} 
+            sx={{ 
+              mt: 8, 
+              ml: { xs: 0, sm: '240px' }, // Always account for sidebar on desktop
+              transition: 'margin-left 0.3s',
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column'
+            }}
+          >
+            <Box sx={{ flex: 1 }}>
+              <Routes>
+                <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/extractions" element={<Extractions />} />
+                <Route path="/analysis" element={<Analysis />} />
+                <Route path="/alerts" element={<Alerts />} />
+                <Route path="/reports" element={<Reports />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/siem" element={<SIEMConfiguration />} />
+                <Route path="/tour-demo" element={<TourDemo />} />
+                {/* Redirect monitoring service routes to external tabs */}
+                <Route path="/grafana/*" element={<ExternalRedirect url="/grafana/" />} />
+                <Route path="/prometheus/*" element={<ExternalRedirect url="/prometheus/" />} />
+                <Route path="/loki/*" element={<ExternalRedirect url="/loki/" />} />
+                <Route path="/cadvisor/*" element={<ExternalRedirect url="/cadvisor/" />} />
+              </Routes>
+            </Box>
+            <Footer />
+          </Container>
+        </div>
+        <SOSButton />
+        <Tour />
       </div>
-      <SOSButton />
-    </div>
+    </TourProvider>
   )
 }
 

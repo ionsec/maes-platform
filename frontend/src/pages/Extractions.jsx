@@ -48,6 +48,7 @@ import {
 } from '@mui/icons-material';
 import { DateTimePicker } from '@mui/x-date-pickers';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import TourButton from '../components/TourButton';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { useForm, Controller } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
@@ -79,6 +80,28 @@ const statusColors = {
 };
 
 const Extractions = () => {
+  // Tour steps configuration
+  const extractionsTourSteps = [
+    {
+      target: '[data-tour="extractions-title"]',
+      title: 'Data Extractions',
+      content: 'This page allows you to manage and monitor Microsoft 365 data extraction jobs. You can create new extractions, monitor progress, and download results.',
+      tourId: 'extractions-tour'
+    },
+    {
+      target: '[data-tour="new-extraction-button"]',
+      title: 'Create New Extraction',
+      content: 'Click this button to start a new data extraction job. You can choose different extraction types like Unified Audit Log, Exchange items, or SharePoint data.',
+      tourId: 'extractions-tour'
+    },
+    {
+      target: '[data-tour="extractions-table"]',
+      title: 'Extractions List',
+      content: 'Monitor all your extraction jobs here. You can see the status, progress, and results of each extraction. Click on items to view logs or download data.',
+      tourId: 'extractions-tour'
+    }
+  ]
+
   const [extractions, setExtractions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -348,8 +371,16 @@ const Extractions = () => {
     <LocalizationProvider dateAdapter={AdapterDayjs}>
       <Box sx={{ p: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h4">Data Extractions</Typography>
-          <Box>
+          <Typography variant="h4" data-tour="extractions-title">Data Extractions</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TourButton 
+              tourSteps={extractionsTourSteps}
+              tourId="extractions-tour"
+              variant="outlined"
+              size="small"
+            >
+              Help Tour
+            </TourButton>
             <IconButton onClick={fetchExtractions} disabled={loading}>
               <RefreshIcon />
             </IconButton>
@@ -357,6 +388,7 @@ const Extractions = () => {
               color="primary" 
               sx={{ ml: 1 }}
               onClick={() => setDialogOpen(true)}
+              data-tour="new-extraction-button"
             >
               <AddIcon />
             </Fab>
@@ -437,7 +469,7 @@ const Extractions = () => {
         </Grid>
 
         {/* Extractions Table */}
-        <TableContainer component={Paper}>
+        <TableContainer component={Paper} data-tour="extractions-table">
           <Table>
             <TableHead>
               <TableRow>
