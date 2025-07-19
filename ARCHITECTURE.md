@@ -205,17 +205,17 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     │  │                     │  │                     │  │                     │     │
     │  │  • Real-time Stats  │  │  • Job Creation     │  │  • Results View     │     │
     │  │  • System Health    │  │  • Progress Monitor │  │  • Finding Details  │     │
-    │  │  • Alert Summary    │  │  • Log Streaming    │  │  • MITRE Mapping    │     │
-    │  │  • Quick Actions    │  │  • Download Files   │  │  • Export Options   │     │
+    │  │  • Alert Management │  │  • Log Streaming    │  │  • MITRE Mapping    │     │
+    │  │  • Monitoring Tools │  │  • Download Files   │  │  • Export Options   │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
     │  │      Settings       │  │   Organizations     │  │      Alerts         │     │
     │  │                     │  │                     │  │                     │     │
-    │  │  • User Profile     │  │  • Tenant Config    │  │  • Alert Management │     │
-    │  │  • Credentials      │  │  • Connection Test  │  │  • Notifications    │     │
-    │  │  • Preferences      │  │  • Multi-tenant     │  │  • Escalation Rules │     │
-    │  │  • API Keys         │  │  • Access Control   │  │  • Webhook Config   │     │
+    │  │  • User Profile     │  │  • Tenant Config    │  │  • Real-time Alerts │     │
+    │  │  • Credentials      │  │  • Connection Test  │  │  • Severity Levels  │     │
+    │  │  • Preferences      │  │  • Multi-tenant     │  │  • Alert History    │     │
+    │  │  • API Keys         │  │  • Access Control   │  │  • Notifications    │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -766,4 +766,91 @@ Frontend Stack                 Backend Stack                  Infrastructure Sta
 - **Resource Limits**: Docker resource constraints
 - **Auto-scaling**: Kubernetes HPA (optional)
 
-This architecture provides a robust, scalable, and secure foundation for the MAES platform, enabling comprehensive Microsoft 365 security analysis with enterprise-grade capabilities.
+## Real-time Alerts Architecture
+
+The MAES platform includes a comprehensive real-time alerts system that provides immediate notification of security events and system status updates.
+
+### Alert Management System
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                            Alert Management Architecture                            │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                              Alert Generation                                   │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │  Analysis Engine    │  │   System Monitor    │  │   External Sources  │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Security         │  │  • Service Health   │  │  • API Webhooks     │     │
+    │  │    Findings         │  │  • Resource Usage   │  │  • Monitoring Tools │     │
+    │  │  • Threat Detection │  │  • Error Tracking   │  │  • Third-party      │     │
+    │  │  • Anomaly Reports  │  │  • Performance     │  │    Integrations     │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                             Alert Processing                                    │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │  Severity Classification │ │   Deduplication   │  │    Enrichment       │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Critical         │  │  • Similar Alerts   │  │  • Context Data     │     │
+    │  │  • High             │  │  • Time Windows     │  │  • Related Events   │     │
+    │  │  • Medium           │  │  • Pattern Matching │  │  • User Information │     │
+    │  │  • Low              │  │  • Alert Grouping   │  │  • Historical Data  │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                              Alert Storage                                      │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   PostgreSQL        │  │     Redis Cache     │  │   Real-time State   │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Persistent       │  │  • Active Alerts    │  │  • Unread Count     │     │
+    │  │    Storage          │  │  • Quick Access     │  │  • Live Statistics  │     │
+    │  │  • Historical Data  │  │  • Session Data     │  │  • User Preferences │     │
+    │  │  • Audit Trail      │  │  • Fast Retrieval   │  │  • Filter State     │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                            Alert Delivery                                       │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   Header Badge      │  │   Alert Popover     │  │   External Delivery │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Real-time Count  │  │  • Detailed List    │  │  • Email Notifications│    │
+    │  │  • Severity Colors  │  │  • Mark as Read     │  │  • Webhook Delivery │     │
+    │  │  • Visual Indicator │  │  • Dismiss Actions  │  │  • SIEM Integration │     │
+    │  │  • Click Navigation │  │  • Time Stamps      │  │  • API Endpoints    │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Frontend Alert Integration
+
+The header component now features a comprehensive alerts system:
+
+- **Real-time Badge**: Shows unread alert count with severity-based color coding
+- **Interactive Popover**: Displays detailed alert information with management actions
+- **Shared State**: Uses `useAlerts` React hook for consistent data across components
+- **Auto-refresh**: Automatically updates alert counts and status in real-time
+
+### Monitoring Services Integration
+
+The platform now includes integrated access to monitoring tools directly from the frontend:
+
+- **Grafana**: Interactive dashboards and data visualization (https://localhost/grafana/)
+- **Prometheus**: Metrics collection and monitoring (https://localhost/prometheus/)
+- **Loki**: Log aggregation via Grafana Explore interface
+- **cAdvisor**: Container resource monitoring (https://localhost/cadvisor/)
+
+These services are accessible through both the header toolbar and sidebar navigation, with proper nginx proxy configuration to handle routing and static asset serving.
+
+This architecture provides a robust, scalable, and secure foundation for the MAES platform, enabling comprehensive Microsoft 365 security analysis with enterprise-grade capabilities and real-time monitoring integration.

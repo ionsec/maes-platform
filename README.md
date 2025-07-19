@@ -20,7 +20,8 @@
 - **M365 Data Extraction**: Audit logs, Azure AD, Exchange, SharePoint, Teams
 - **Advanced Analytics**: MITRE ATT&CK mapping, behavioral analysis, threat hunting
 - **Upload & Analyze**: Support for pre-extracted log files (JSON, CSV, TXT, LOG)
-- **Monitoring & Observability**: Prometheus, Grafana, Loki stack with pre-built dashboards
+- **Real-time Alerts**: Comprehensive alert system with severity levels and notifications
+- **Monitoring & Observability**: Prometheus, Grafana, Loki, cAdvisor with integrated access
 - **Security & Compliance**: Multi-tenant, RBAC, audit logging
 - **Enterprise-Ready**: Docker containerization, microservices architecture
 - **Real-time Progress**: Live analysis progress tracking with WebSocket updates
@@ -71,7 +72,7 @@ cp .env.example .env
    - **Web Interface**: https://localhost (dev) or https://yourdomain.com (prod)
    - **API Documentation**: https://localhost/api/docs (proxied via nginx)
    - **Default Login**: admin@maes.local / admin123
-   - **Monitoring**: https://localhost/grafana/ (admin / admin) - [📊 Monitoring Guide](docs/MONITORING.md)
+   - **Monitoring**: Direct access from dashboard or https://localhost/grafana/ (admin / admin) - [📊 Monitoring Guide](docs/MONITORING.md)
 
 ## 🔒 SSL & Domain Configuration
 
@@ -306,10 +307,26 @@ All monitoring services are accessible through nginx reverse proxy at:
 
 ### 🎯 Quick Access
 
-Access monitoring from the MAES Dashboard:
-- Click **"Grafana"** button to open pre-configured dashboards
-- Click **"Prometheus"** button to access metrics directly
-- View live container logs in the Dashboard's "Live Container Logs" section
+Access monitoring directly from the MAES platform:
+- **Header Toolbar**: Quick access buttons to Grafana, Prometheus, Loki, and cAdvisor
+- **Sidebar Navigation**: Dedicated monitoring services section with detailed descriptions  
+- **Dashboard Widgets**: Live container logs and system metrics integrated into the main dashboard
+
+### 🚨 Real-time Alerts
+
+The MAES platform includes a comprehensive real-time alerts system:
+
+**Alert Features**:
+- **Severity Levels**: Critical, High, Medium, Low with color-coded indicators
+- **Real-time Badge**: Header icon showing unread alert count
+- **Interactive Popover**: Detailed alert list with management actions
+- **Alert Management**: Mark as read, dismiss, and bulk operations
+- **Auto-refresh**: Alerts update automatically across all dashboard components
+
+**Accessing Alerts**:
+- Click the warning icon in the header to view all alerts
+- Alerts integrate with the monitoring stack for comprehensive system oversight
+- Alert history and management available through the dedicated alerts interface
 
 ### 📈 Available Dashboards
 
