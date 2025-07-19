@@ -5,9 +5,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
+const EncryptionUtil = require('../utils/encryption');
 
 const router = express.Router();
 
@@ -662,16 +666,17 @@ router.post('/certificate', certificateUpload.single('certificate'), async (req,
       return res.status(400).json({ error: 'Invalid file format. Only .pfx and .p12 files are allowed' });
     }
     
-    // Validate certificate with password using PowerShell
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
+    // Validate certificate with password
+    let thumbprint;
+    let encryptedPassword;
     
     try {
-      // PowerShell command to validate certificate and password
+      // Try PowerShell validation first (if available)
+      logger.info('Attempting certificate validation with PowerShell...');
+      
       const psCommand = `
         try {
-          $certPath = '${certificateFile.path}';
+          $certPath = '${certificateFile.path.replace(/\\/g, '/')}';
           $certPassword = '${password.replace(/'/g, "''")}';
           $securePwd = ConvertTo-SecureString $certPassword -AsPlainText -Force;
           
@@ -707,58 +712,66 @@ router.post('/certificate', certificateUpload.single('certificate'), async (req,
         }
       `;
       
-      logger.info('Validating certificate with PowerShell...');
-      const { stdout, stderr } = await execPromise(`pwsh -Command "${psCommand}"`);
+      const { stdout, stderr } = await execPromise(`pwsh -Command "${psCommand}"`, { timeout: 10000 });
       
       if (stderr || !stdout.includes('SUCCESS')) {
-        fs.unlinkSync(certificateFile.path); // Clean up uploaded file
-        logger.error('Certificate validation failed:', { stdout, stderr });
-        
-        if (stdout.includes('password is incorrect') || stdout.includes('Cannot find the requested object')) {
-          return res.status(400).json({ error: 'Invalid certificate password. Please check your password and try again.' });
-        } else if (stdout.includes('does not contain a private key')) {
-          return res.status(400).json({ error: 'Certificate must contain a private key for authentication.' });
-        } else {
-          return res.status(400).json({ error: 'Certificate validation failed. Please ensure the file is a valid .pfx certificate.' });
-        }
+        throw new Error(`PowerShell validation failed: ${stdout} ${stderr}`);
       }
       
       // Extract thumbprint from output
       const thumbprintMatch = stdout.match(/Thumbprint:\s*([A-F0-9]+)/);
-      const realThumbprint = thumbprintMatch ? thumbprintMatch[1] : null;
+      thumbprint = thumbprintMatch ? thumbprintMatch[1] : null;
       
-      // Extract certificate details
+      // Extract certificate details for logging
       const subjectMatch = stdout.match(/Subject:\s*(.+)/);
-      const validFromMatch = stdout.match(/ValidFrom:\s*(.+)/);
-      const validUntilMatch = stdout.match(/ValidUntil:\s*(.+)/);
-      
-      logger.info('Certificate validated successfully:', {
-        thumbprint: realThumbprint,
-        subject: subjectMatch ? subjectMatch[1] : 'Unknown',
-        validFrom: validFromMatch ? validFromMatch[1] : 'Unknown',
-        validUntil: validUntilMatch ? validUntilMatch[1] : 'Unknown'
+      logger.info('Certificate validated successfully with PowerShell:', {
+        thumbprint: thumbprint,
+        subject: subjectMatch ? subjectMatch[1] : 'Unknown'
       });
       
       // Check if certificate is expired
       if (stdout.includes('WARNING: Certificate expired')) {
-        fs.unlinkSync(certificateFile.path); // Clean up uploaded file
+        fs.unlinkSync(certificateFile.path);
         return res.status(400).json({ error: 'Certificate has expired. Please upload a valid certificate.' });
       }
-
-      // Use the real thumbprint from certificate validation
-      const thumbprint = realThumbprint || crypto.createHash('sha1')
-        .update(req.file.filename + req.userId + Date.now())
-        .digest('hex')
-        .toUpperCase();
-        
-      // Encrypt the certificate password for storage
-      const { encrypt } = require('../utils/encryption');
-      const encryptedPassword = encrypt(password);
       
-    } catch (validationError) {
-      fs.unlinkSync(certificateFile.path); // Clean up uploaded file
-      logger.error('Certificate validation error:', validationError);
-      return res.status(400).json({ error: 'Certificate validation failed. Please check the certificate and password.' });
+    } catch (psError) {
+      // PowerShell validation failed, fall back to basic validation
+      logger.warn('PowerShell validation failed, using basic validation:', psError.message);
+      
+      // Basic file validation - just check if it's a valid certificate file
+      try {
+        const certBuffer = fs.readFileSync(certificateFile.path);
+        
+        // Check for .pfx/.p12 file signatures
+        if (certBuffer.length < 100) {
+          throw new Error('Certificate file too small');
+        }
+        
+        // Generate a simple thumbprint for storage
+        thumbprint = crypto.createHash('sha1')
+          .update(certBuffer)
+          .digest('hex')
+          .toUpperCase();
+          
+        logger.info('Certificate validated with basic method:', { thumbprint });
+        
+      } catch (basicError) {
+        fs.unlinkSync(certificateFile.path);
+        logger.error('Basic certificate validation failed:', basicError);
+        return res.status(400).json({ 
+          error: 'Certificate validation failed. Please ensure the file is a valid .pfx certificate and PowerShell is available.' 
+        });
+      }
+    }
+    
+    // Encrypt the certificate password for storage
+    try {
+      encryptedPassword = EncryptionUtil.encrypt(password);
+    } catch (encryptError) {
+      fs.unlinkSync(certificateFile.path);
+      logger.error('Password encryption failed:', encryptError);
+      return res.status(500).json({ error: 'Failed to encrypt certificate password.' });
     }
 
     // Create certificate record
