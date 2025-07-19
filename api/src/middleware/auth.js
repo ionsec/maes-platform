@@ -2,6 +2,110 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { pool, getRow } = require('../services/database');
 const { logger } = require('../utils/logger');
+const redis = require('redis');
+
+// Redis client for token blacklisting
+let redisClient = null;
+let redisConnectionFailed = false;
+
+const initRedisClient = async () => {
+  if (!redisClient && !redisConnectionFailed) {
+    try {
+      const redisUrl = `redis://${process.env.REDIS_PASSWORD ? `:${process.env.REDIS_PASSWORD}@` : ''}${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}`;
+      
+      redisClient = redis.createClient({
+        url: redisUrl,
+        socket: {
+          reconnectStrategy: (retries) => {
+            if (retries >= 3) {
+              logger.warn('Redis connection failed after 3 retries, disabling JWT blacklisting');
+              redisConnectionFailed = true;
+              return false;
+            }
+            return Math.min(retries * 100, 3000);
+          }
+        }
+      });
+      
+      redisClient.on('error', (err) => {
+        logger.error('Redis connection error for auth middleware:', err);
+        redisConnectionFailed = true;
+      });
+      
+      redisClient.on('connect', () => {
+        logger.info('Redis client connected for JWT blacklisting');
+        redisConnectionFailed = false;
+      });
+      
+      redisClient.on('ready', () => {
+        logger.info('Redis client ready for JWT blacklisting');
+      });
+      
+      await redisClient.connect();
+      
+    } catch (err) {
+      logger.error('Failed to connect to Redis for JWT blacklisting:', err);
+      redisConnectionFailed = true;
+      redisClient = null;
+    }
+  }
+  return redisClient;
+};
+
+// Initialize Redis client
+initRedisClient();
+
+// JWT Token blacklisting functions
+const blacklistToken = async (token) => {
+  try {
+    if (redisConnectionFailed) {
+      logger.warn('Redis unavailable, skipping token blacklisting');
+      return false;
+    }
+    
+    const client = await initRedisClient();
+    if (client && client.isOpen) {
+      // Decode token to get expiry time
+      const decoded = jwt.decode(token);
+      if (decoded && decoded.exp) {
+        const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+        if (ttl > 0) {
+          // Store token hash instead of full token for security
+          const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+          await client.setEx(`blacklist:${tokenHash}`, ttl, 'true');
+          logger.info('Token blacklisted successfully');
+          return true;
+        }
+      }
+    }
+    return false;
+  } catch (error) {
+    logger.error('Error blacklisting token:', error);
+    redisConnectionFailed = true;
+    return false;
+  }
+};
+
+const isTokenBlacklisted = async (token) => {
+  try {
+    if (redisConnectionFailed) {
+      logger.warn('Redis unavailable, skipping blacklist check');
+      return false; // Fail open when Redis is unavailable
+    }
+    
+    const client = await initRedisClient();
+    if (client && client.isOpen) {
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const result = await client.get(`blacklist:${tokenHash}`);
+      return result === 'true';
+    }
+    return false;
+  } catch (error) {
+    logger.error('Error checking token blacklist:', error);
+    redisConnectionFailed = true;
+    return false; // Fail open for availability
+  }
+};
 
 // Service authentication token for internal service communication
 const SERVICE_AUTH_TOKEN = process.env.SERVICE_AUTH_TOKEN || 'internal-service-token';
@@ -302,18 +406,56 @@ const ROLE_PERMISSIONS = {
   }
 };
 
-// Authenticate JWT token (with service token bypass)
+// Authenticate JWT token (with secure service token validation)
 const authenticateToken = async (req, res, next) => {
   try {
     // Check for service token first (for internal service communication)
     const serviceToken = req.headers['x-service-token'];
-    logger.info(`Service token check: provided=${serviceToken ? 'PRESENT' : 'MISSING'}, expected=PRESENT, match=${serviceToken === process.env.SERVICE_AUTH_TOKEN}`);
     
-    if (serviceToken === process.env.SERVICE_AUTH_TOKEN) {
-      // Skip JWT authentication for internal services
-      logger.info('Service token authenticated, bypassing JWT');
-      req.isServiceRequest = true;
-      return next();
+    // Secure service token validation - don't log token values
+    if (serviceToken && process.env.SERVICE_AUTH_TOKEN) {
+      // Use timing-safe comparison to prevent timing attacks
+      const expectedToken = process.env.SERVICE_AUTH_TOKEN;
+      if (serviceToken.length === expectedToken.length && 
+          crypto.timingSafeEqual(Buffer.from(serviceToken), Buffer.from(expectedToken))) {
+        
+        // Service token authenticated - set specific service user context
+        logger.info('Internal service request authenticated');
+        req.isServiceRequest = true;
+        req.userId = 'service'; // Special service user identifier
+        req.userRole = 'service';
+        req.organizationId = req.headers['x-organization-id'] || 'system';
+        
+        // Validate that this is actually an internal service request
+        const clientIP = req.ip || req.connection.remoteAddress;
+        
+        // Handle IPv6-mapped IPv4 addresses (::ffff:xxx.xxx.xxx.xxx)
+        const normalizedIP = clientIP.startsWith('::ffff:') ? clientIP.substring(7) : clientIP;
+        
+        const isInternalRequest = normalizedIP === '127.0.0.1' || 
+                                clientIP === '::1' || 
+                                normalizedIP.startsWith('172.') || 
+                                normalizedIP.startsWith('10.') ||
+                                normalizedIP.startsWith('192.168.');
+        
+        if (!isInternalRequest) {
+          logger.warn(`Service token used from external IP: ${clientIP}`, {
+            ip: clientIP,
+            userAgent: req.get('User-Agent'),
+            path: req.path
+          });
+          return res.status(403).json({ error: 'Service token not allowed from external networks' });
+        }
+        
+        return next();
+      } else {
+        logger.warn('Invalid service token provided', {
+          ip: req.ip,
+          userAgent: req.get('User-Agent'),
+          path: req.path
+        });
+        return res.status(401).json({ error: 'Invalid service token' });
+      }
     }
 
     const authHeader = req.headers['authorization'];
@@ -321,6 +463,12 @@ const authenticateToken = async (req, res, next) => {
 
     if (!token) {
       return res.status(401).json({ error: 'Access token required' });
+    }
+
+    // Check if token is blacklisted
+    const isBlacklisted = await isTokenBlacklisted(token);
+    if (isBlacklisted) {
+      return res.status(403).json({ error: 'Token has been revoked' });
     }
 
     // Verify JWT token
@@ -446,5 +594,6 @@ module.exports = {
   requirePermission,
   requireRole,
   auditLog,
+  blacklistToken,
   ROLE_PERMISSIONS
 };

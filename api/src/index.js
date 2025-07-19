@@ -26,6 +26,7 @@ const uploadRoutes = require('./routes/upload');
 const registrationRoutes = require('./routes/registration');
 const siemRoutes = require('./routes/siem');
 const internalRoutes = require('./routes/internal');
+const systemRoutes = require('./routes/system');
 
 const app = express();
 
@@ -208,6 +209,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/registration', registrationRoutes);
 app.use('/api/siem', siemRoutes);
 app.use('/api/internal', internalRoutes);
+app.use('/api/system', systemRoutes);
 
 // Certificate download endpoint
 app.get('/api/certificates/app.crt', (req, res) => {

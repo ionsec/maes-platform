@@ -97,16 +97,24 @@ const processExtractionJob = async (job) => {
     // Set progress to 100% before completing
     await job.updateProgress(100);
     
-    // Update extraction status to completed via API
+    // Update extraction status to completed via API - critical for UI consistency
     try {
+      logger.info(`Attempting to update extraction ${extractionId} status to 'completed'...`);
       await updateExtractionStatus(extractionId, 'completed', {
         outputFiles,
         statistics: result.statistics,
         completedAt: new Date(),
         progress: 100
       });
+      logger.info(`Successfully updated extraction ${extractionId} status to 'completed'`);
     } catch (updateError) {
-      logger.error(`Failed to update extraction status for ${extractionId}:`, updateError);
+      logger.error(`CRITICAL: Failed to update extraction status for ${extractionId}. UI may show incorrect status.`, {
+        error: updateError.message,
+        extractionId,
+        outputFiles: outputFiles.length,
+        statistics: result.statistics
+      });
+      // Don't throw here - the extraction was successful, just the status update failed
     }
     
     return {
@@ -123,6 +131,23 @@ const processExtractionJob = async (job) => {
     // Stop progress monitoring on error
     if (progressMonitor && progressMonitor.stop) {
       progressMonitor.stop();
+    }
+    
+    // Update extraction status to failed via API
+    try {
+      logger.info(`Updating extraction ${extractionId} status to 'failed' due to error...`);
+      await updateExtractionStatus(extractionId, 'failed', {
+        errorMessage: error.message,
+        failedAt: new Date(),
+        progress: job.progress || 0
+      });
+      logger.info(`Successfully updated extraction ${extractionId} status to 'failed'`);
+    } catch (updateError) {
+      logger.error(`CRITICAL: Failed to update extraction status to 'failed' for ${extractionId}. UI may show incorrect status.`, {
+        originalError: error.message,
+        updateError: updateError.message,
+        extractionId
+      });
     }
     
     throw error;
@@ -188,7 +213,10 @@ const extractionWorker = new Worker('extraction-jobs', async (job) => {
   } else if (job.name === 'test-connection') {
     return await processTestConnectionJob(job);
   }
-}, { connection: redisConnection });
+}, { 
+  connection: redisConnection,
+  concurrency: parseInt(process.env.EXTRACTOR_CONCURRENCY) || 3 // Allow 3 concurrent jobs by default
+});
 
 // Helper function to decrypt password via API
 async function decryptPassword(encryptedPassword) {
@@ -331,7 +359,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     const mountedCertPath = '/certs/app.pfx';
     const fallbackCertPath = '/output/app.pfx';
     let certPath = mountedCertPath;
-    let certPassword = 'Password123'; // Default password
+    let certPassword = process.env.CERT_PASSWORD || 'Password123'; // Use environment variable or fallback
     
     // Use user certificate if available
     if (userCertInfo) {
@@ -351,7 +379,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
       }
     } else {
       certPath = credentials.certificateFilePath || mountedCertPath;
-      certPassword = credentials.certificatePassword || 'Password123';
+      certPassword = credentials.certificatePassword || process.env.CERT_PASSWORD || 'Password123';
       logger.info(`Using default certificate: ${certPath}`);
     }
     command += `
@@ -521,23 +549,81 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'azure_signin_logs': `
       Write-Host "Starting Azure Sign-In Logs extraction via Graph...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
-      try {
-        Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
-        Write-Host "Graph Sign-In Logs extraction completed successfully.";
-      } catch {
-        Write-Error "Graph Sign-In Logs extraction failed: $_";
-        throw;
+      $retryCount = 0;
+      $maxRetries = 5;
+      $baseDelaySeconds = 30;
+      $completed = $false;
+      
+      while (-not $completed -and $retryCount -lt $maxRetries) {
+        try {
+          if ($retryCount -gt 0) {
+            $delaySeconds = $baseDelaySeconds * [math]::Pow(2, $retryCount - 1);
+            $jitter = Get-Random -Minimum 1 -Maximum 10;
+            $totalDelay = $delaySeconds + $jitter;
+            Write-Host "Retry attempt $retryCount/$maxRetries after $totalDelay seconds...";
+            Start-Sleep -Seconds $totalDelay;
+          }
+          
+          Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+          Write-Host "Graph Sign-In Logs extraction completed successfully.";
+          $completed = $true;
+        } catch {
+          $errorMessage = $_.Exception.Message;
+          Write-Host "Attempt $($retryCount + 1) failed: $errorMessage";
+          
+          if ($errorMessage -like "*TooManyRequests*" -or $errorMessage -like "*Too many requests*" -or $errorMessage -like "*429*") {
+            $retryCount++;
+            if ($retryCount -lt $maxRetries) {
+              Write-Host "Rate limit hit, will retry with exponential backoff...";
+            } else {
+              Write-Error "Max retries exceeded for rate limiting. Please try again later.";
+              throw;
+            }
+          } else {
+            Write-Error "Graph Sign-In Logs extraction failed with non-retryable error: $errorMessage";
+            throw;
+          }
+        }
       }
     `,
     'azure_audit_logs': `
       Write-Host "Starting Azure Audit Logs extraction via Graph...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
-      try {
-        Get-GraphEntraAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
-        Write-Host "Graph Audit Logs extraction completed successfully.";
-      } catch {
-        Write-Error "Graph Audit Logs extraction failed: $_";
-        throw;
+      $retryCount = 0;
+      $maxRetries = 5;
+      $baseDelaySeconds = 30;
+      $completed = $false;
+      
+      while (-not $completed -and $retryCount -lt $maxRetries) {
+        try {
+          if ($retryCount -gt 0) {
+            $delaySeconds = $baseDelaySeconds * [math]::Pow(2, $retryCount - 1);
+            $jitter = Get-Random -Minimum 1 -Maximum 10;
+            $totalDelay = $delaySeconds + $jitter;
+            Write-Host "Retry attempt $retryCount/$maxRetries after $totalDelay seconds...";
+            Start-Sleep -Seconds $totalDelay;
+          }
+          
+          Get-GraphEntraAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+          Write-Host "Graph Audit Logs extraction completed successfully.";
+          $completed = $true;
+        } catch {
+          $errorMessage = $_.Exception.Message;
+          Write-Host "Attempt $($retryCount + 1) failed: $errorMessage";
+          
+          if ($errorMessage -like "*TooManyRequests*" -or $errorMessage -like "*Too many requests*" -or $errorMessage -like "*429*") {
+            $retryCount++;
+            if ($retryCount -lt $maxRetries) {
+              Write-Host "Rate limit hit, will retry with exponential backoff...";
+            } else {
+              Write-Error "Max retries exceeded for rate limiting. Please try again later.";
+              throw;
+            }
+          } else {
+            Write-Error "Graph Audit Logs extraction failed with non-retryable error: $errorMessage";
+            throw;
+          }
+        }
       }
     `,
     'mfa_status': `
@@ -578,12 +664,41 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'ual_graph': `
       Write-Host "Starting UAL extraction via Graph...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
-      try {
-        Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -OutputDir '${OUTPUT_PATH}';
-        Write-Host "UAL Graph extraction completed successfully.";
-      } catch {
-        Write-Error "UAL Graph extraction failed: $_";
-        throw;
+      $retryCount = 0;
+      $maxRetries = 5;
+      $baseDelaySeconds = 30;
+      $completed = $false;
+      
+      while (-not $completed -and $retryCount -lt $maxRetries) {
+        try {
+          if ($retryCount -gt 0) {
+            $delaySeconds = $baseDelaySeconds * [math]::Pow(2, $retryCount - 1);
+            $jitter = Get-Random -Minimum 1 -Maximum 10;
+            $totalDelay = $delaySeconds + $jitter;
+            Write-Host "Retry attempt $retryCount/$maxRetries after $totalDelay seconds...";
+            Start-Sleep -Seconds $totalDelay;
+          }
+          
+          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -OutputDir '${OUTPUT_PATH}';
+          Write-Host "UAL Graph extraction completed successfully.";
+          $completed = $true;
+        } catch {
+          $errorMessage = $_.Exception.Message;
+          Write-Host "Attempt $($retryCount + 1) failed: $errorMessage";
+          
+          if ($errorMessage -like "*TooManyRequests*" -or $errorMessage -like "*Too many requests*" -or $errorMessage -like "*429*") {
+            $retryCount++;
+            if ($retryCount -lt $maxRetries) {
+              Write-Host "Rate limit hit, will retry with exponential backoff...";
+            } else {
+              Write-Error "Max retries exceeded for rate limiting. Please try again later.";
+              throw;
+            }
+          } else {
+            Write-Error "UAL Graph extraction failed with non-retryable error: $errorMessage";
+            throw;
+          }
+        }
       }
     `,
     'licenses': `
@@ -621,7 +736,7 @@ async function buildTestConnectionCommand(parameters) {
     
     let certPath = '/certs/app.pfx';
     const fallbackCertPath = '/output/app.pfx';
-    let certPassword = 'Password123';
+    let certPassword = process.env.CERT_PASSWORD || 'Password123';
     
     // Use user certificate if available
     if (userCertInfo) {
@@ -788,6 +903,12 @@ async function executePowerShell(command, job, extractionLogger) {
             extractionLogger.info('Starting UAL extraction via Graph...');
           } else if (line.includes('UAL extraction completed successfully')) {
             extractionLogger.info('UAL extraction completed successfully');
+          } else if (line.includes('Rate limit hit, will retry')) {
+            extractionLogger.warn('⚠ Rate limit encountered, retrying with exponential backoff...');
+          } else if (line.includes('Retry attempt')) {
+            extractionLogger.info(line.trim());
+          } else if (line.includes('Max retries exceeded for rate limiting')) {
+            extractionLogger.error('Rate limit retries exhausted - please try again later');
           } else if (line.includes('extraction completed successfully')) {
             extractionLogger.info('Graph extraction completed successfully');
           } else if (line.includes('Get-UAL')) {
@@ -839,6 +960,10 @@ async function executePowerShell(command, job, extractionLogger) {
           } else if (errorMessage.includes('Unified Audit Log is not enabled')) {
             extractionLogger.error('Extraction failed: Unified Audit Log is not enabled');
             extractionLogger.error('Please enable auditing in the Microsoft 365 compliance center');
+          } else if (errorMessage.includes('TooManyRequests') || errorMessage.includes('Too many requests') || errorMessage.includes('429')) {
+            extractionLogger.warn('⚠ Microsoft Graph rate limit encountered - automatic retry in progress...');
+          } else if (errorMessage.includes('Max retries exceeded')) {
+            extractionLogger.error('Rate limit retries exhausted - extraction failed');
           } else if (errorMessage.includes('Write-Error')) {
             // Extract the actual error message from Write-Error
             const errorMatch = errorMessage.match(/Write-Error:.*?([^[]+)/);;
@@ -976,12 +1101,33 @@ extractionWorker.on('completed', (job, result) => {
   logger.info(`Job ${job.id} completed successfully:`, result);
 });
 
-extractionWorker.on('failed', (job, err) => {
+extractionWorker.on('failed', async (job, err) => {
   logger.error(`Job ${job.id} failed after ${job.attemptsMade} attempts:`, err);
+  
+  const extractionId = job.data.extractionId || job.data.testId;
   
   // If job has exceeded max attempts, mark it as permanently failed
   if (job.attemptsMade >= job.opts.attempts) {
     logger.error(`Job ${job.id} permanently failed after ${job.attemptsMade} attempts`);
+    
+    // Update extraction status to failed
+    if (extractionId) {
+      try {
+        logger.info(`Updating extraction ${extractionId} status to 'failed' after max retries exceeded...`);
+        await updateExtractionStatus(extractionId, 'failed', {
+          errorMessage: err.message,
+          failedAt: new Date(),
+          attemptsExhausted: true
+        });
+        logger.info(`Successfully updated extraction ${extractionId} status to 'failed' after exhausting retries`);
+      } catch (updateError) {
+        logger.error(`CRITICAL: Failed to update extraction status to 'failed' for ${extractionId} after exhausting retries.`, {
+          originalError: err.message,
+          updateError: updateError.message,
+          extractionId
+        });
+      }
+    }
   }
 });
 
@@ -1054,9 +1200,10 @@ async function healthCheck() {
 // Clean up stalled jobs function
 async function cleanupStalledJobs() {
   try {
-    // Get failed and active jobs using BullMQ's getJobs method
+    // Get failed, active, and waiting jobs using BullMQ's getJobs method
     const failed = await extractionQueue.getJobs(['failed']);
     const active = await extractionQueue.getJobs(['active']);
+    const waiting = await extractionQueue.getJobs(['waiting']);
     
     if (failed.length > 0) {
       logger.warn(`Found ${failed.length} failed jobs, cleaning up old ones...`);
@@ -1089,8 +1236,85 @@ async function cleanupStalledJobs() {
         }
       }
     }
+    
+    // Check waiting jobs against API to see if they were cancelled
+    if (waiting.length > 0) {
+      for (const job of waiting) {
+        try {
+          const extractionId = job.data.extractionId || job.data.testId;
+          if (extractionId) {
+            const status = await getExtractionStatus(extractionId);
+            if (status === 'cancelled' || status === 'failed') {
+              logger.info(`Removing cancelled/failed waiting job ${job.id} (${extractionId})`);
+              await job.remove();
+            }
+          }
+        } catch (error) {
+          logger.error(`Failed to check status for waiting job ${job.id}:`, error);
+        }
+      }
+    }
   } catch (error) {
     logger.error('Cleanup stalled jobs failed:', error);
+  }
+}
+
+// Check extraction status via API
+async function getExtractionStatus(extractionId) {
+  try {
+    const apiUrl = process.env.API_URL || 'http://api:3000';
+    const serviceToken = process.env.SERVICE_AUTH_TOKEN;
+    
+    const response = await axios.get(
+      `${apiUrl}/api/extractions/${extractionId}`,
+      {
+        headers: {
+          'x-service-token': serviceToken,
+          'Content-Type': 'application/json'
+        },
+        timeout: 5000
+      }
+    );
+    
+    if (response.data && response.data.extraction) {
+      return response.data.extraction.status;
+    }
+    return 'unknown';
+  } catch (error) {
+    logger.error(`Failed to get extraction status for ${extractionId}:`, error);
+    return 'unknown';
+  }
+}
+
+// Startup cleanup - remove orphaned jobs that were cancelled while container was down
+async function startupCleanup() {
+  try {
+    logger.info('Performing startup cleanup of orphaned jobs...');
+    
+    // Get all jobs in various states
+    const allJobStates = ['waiting', 'active', 'delayed', 'failed'];
+    const allJobs = await extractionQueue.getJobs(allJobStates);
+    
+    for (const job of allJobs) {
+      try {
+        const extractionId = job.data.extractionId || job.data.testId;
+        if (extractionId) {
+          const status = await getExtractionStatus(extractionId);
+          
+          // Remove jobs that were cancelled or completed while container was down
+          if (status === 'cancelled' || status === 'completed' || status === 'failed') {
+            logger.info(`Removing orphaned ${job.opts.jobId} job ${job.id} (${extractionId}) - API status: ${status}`);
+            await job.remove();
+          }
+        }
+      } catch (error) {
+        logger.error(`Failed to cleanup orphaned job ${job.id}:`, error);
+      }
+    }
+    
+    logger.info('Startup cleanup completed');
+  } catch (error) {
+    logger.error('Startup cleanup failed:', error);
   }
 }
 
@@ -1229,10 +1453,21 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
   }
 }
 
-// Helper function to update extraction status via API
-async function updateExtractionStatus(extractionId, status, metadata = {}) {
+// Helper function to update extraction status via API with retry logic
+async function updateExtractionStatus(extractionId, status, metadata = {}, retryCount = 0) {
+  const maxRetries = 3;
+  const retryDelay = 2000; // 2 seconds
+  
   try {
     const apiUrl = process.env.API_URL || 'http://api:3000';
+    const serviceToken = process.env.SERVICE_AUTH_TOKEN;
+    
+    if (!serviceToken) {
+      throw new Error('SERVICE_AUTH_TOKEN environment variable is not set');
+    }
+    
+    logger.info(`Updating extraction ${extractionId} status to '${status}' (attempt ${retryCount + 1})`);
+    
     const response = await axios.patch(
       `${apiUrl}/api/extractions/${extractionId}/status`,
       {
@@ -1241,21 +1476,46 @@ async function updateExtractionStatus(extractionId, status, metadata = {}) {
       },
       {
         headers: {
-          'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+          'x-service-token': serviceToken,
           'Content-Type': 'application/json'
         },
-        timeout: 10000
+        timeout: 15000 // Increased timeout
       }
     );
     
-    if (response.data.success) {
-      logger.info(`Extraction ${extractionId} status updated to ${status}`);
+    if (response.data && response.data.success) {
+      logger.info(`Successfully updated extraction ${extractionId} status to '${status}'`);
+      return true;
+    } else {
+      throw new Error(`API response indicated failure: ${JSON.stringify(response.data)}`);
     }
     
   } catch (error) {
-    logger.error(`Failed to update extraction status via API:`, error.message);
-    throw error;
+    const errorMessage = error.response?.data?.error || error.message;
+    logger.error(`Failed to update extraction status (attempt ${retryCount + 1}/${maxRetries + 1}):`, {
+      extractionId,
+      status,
+      error: errorMessage,
+      statusCode: error.response?.status,
+      url: `${process.env.API_URL || 'http://api:3000'}/api/extractions/${extractionId}/status`
+    });
+    
+    // Retry logic
+    if (retryCount < maxRetries) {
+      logger.info(`Retrying status update for extraction ${extractionId} in ${retryDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, retryDelay));
+      return updateExtractionStatus(extractionId, status, metadata, retryCount + 1);
+    } else {
+      logger.error(`Max retries (${maxRetries}) exceeded for updating extraction ${extractionId} status. This may cause UI to show incorrect status.`);
+      throw error;
+    }
   }
 }
 
-logger.info('Extractor service started and listening for jobs');
+// Run startup cleanup to remove orphaned jobs
+startupCleanup().then(() => {
+  logger.info('Extractor service started and listening for jobs');
+}).catch(error => {
+  logger.error('Startup cleanup failed, but service will continue:', error);
+  logger.info('Extractor service started and listening for jobs');
+});

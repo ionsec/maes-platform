@@ -24,7 +24,15 @@ import {
   Pagination,
   Tooltip,
   Badge,
-  LinearProgress
+  LinearProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Collapse
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -38,14 +46,18 @@ import {
   Storage as StorageIcon,
   Security as SecurityIcon,
   Analytics as AnalyticsIcon,
-  CloudDownload as CloudDownloadIcon
+  CloudDownload as CloudDownloadIcon,
+  Visibility as VisibilityIcon,
+  ExpandMore as ExpandMoreIcon,
+  Close as CloseIcon,
+  ContentCopy as ContentCopyIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import dayjs from 'dayjs';
 import axios from '../utils/axios';
 
 const logLevels = ['all', 'info', 'warning', 'error', 'debug'];
-const logSources = ['all', 'api', 'database', 'extractor', 'analyzer', 'storage', 'auth', 'system'];
+const logContainers = ['all', 'maes-api', 'maes-extractor', 'maes-analyzer', 'maes-postgres', 'maes-redis'];
 
 const levelColors = {
   info: 'info',
@@ -61,14 +73,13 @@ const levelIcons = {
   debug: <ComputerIcon />
 };
 
-const sourceIcons = {
-  api: <ComputerIcon />,
-  database: <StorageIcon />,
-  extractor: <CloudDownloadIcon />,
-  analyzer: <AnalyticsIcon />,
-  storage: <StorageIcon />,
-  auth: <SecurityIcon />,
-  system: <ComputerIcon />
+const containerIcons = {
+  'maes-api': <ComputerIcon />,
+  'maes-postgres': <StorageIcon />,
+  'maes-extractor': <CloudDownloadIcon />,
+  'maes-analyzer': <AnalyticsIcon />,
+  'maes-redis': <StorageIcon />,
+  'system': <ComputerIcon />
 };
 
 const SystemLogs = () => {
@@ -76,101 +87,35 @@ const SystemLogs = () => {
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState({
     level: 'all',
-    source: 'all',
+    container: 'all',
     search: '',
-    startDate: '',
-    endDate: ''
+    lines: '100'
   });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [rawLogDialog, setRawLogDialog] = useState({ open: false, log: null });
+  const [expandedLogs, setExpandedLogs] = useState(new Set());
   const { enqueueSnackbar } = useSnackbar();
-
-  // Generate mock log data
-  const generateMockLogs = () => {
-    const sources = ['api', 'database', 'extractor', 'analyzer', 'storage', 'auth', 'system'];
-    const levels = ['info', 'warning', 'error', 'debug'];
-    const messages = {
-      info: [
-        'User authentication successful',
-        'Data extraction completed',
-        'Analysis job started',
-        'System health check passed',
-        'Configuration updated',
-        'Backup completed successfully'
-      ],
-      warning: [
-        'High memory usage detected',
-        'Slow database query performance',
-        'Rate limit approaching threshold',
-        'Certificate expiring soon',
-        'Disk space getting low'
-      ],
-      error: [
-        'Failed to connect to Microsoft Graph API',
-        'Database connection timeout',
-        'Analysis job failed with exception',
-        'Authentication token expired',
-        'Storage service unavailable'
-      ],
-      debug: [
-        'Processing user request',
-        'Validating input parameters',
-        'Executing database query',
-        'Parsing response data',
-        'Cleaning up temporary files'
-      ]
-    };
-
-    const mockLogs = [];
-    for (let i = 0; i < 100; i++) {
-      const level = levels[Math.floor(Math.random() * levels.length)];
-      const source = sources[Math.floor(Math.random() * sources.length)];
-      const message = messages[level][Math.floor(Math.random() * messages[level].length)];
-      
-      mockLogs.push({
-        id: i + 1,
-        timestamp: dayjs().subtract(Math.floor(Math.random() * 24 * 7), 'hours').toISOString(),
-        level,
-        source,
-        message,
-        details: `Additional context for ${message.toLowerCase()}`,
-        requestId: `req_${Math.random().toString(36).substr(2, 9)}`,
-        userId: Math.random() > 0.5 ? `user_${Math.floor(Math.random() * 100)}` : null
-      });
-    }
-
-    return mockLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  };
 
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      // In a real application, this would be an API call
-      // const response = await axios.get('/api/system/logs', { params: { ...filters, page } });
-      
-      // For now, use mock data
-      const mockLogs = generateMockLogs();
-      
-      // Apply filters to mock data
-      let filteredLogs = mockLogs.filter(log => {
-        if (filters.level !== 'all' && log.level !== filters.level) return false;
-        if (filters.source !== 'all' && log.source !== filters.source) return false;
-        if (filters.search && !log.message.toLowerCase().includes(filters.search.toLowerCase())) return false;
-        if (filters.startDate && dayjs(log.timestamp).isBefore(dayjs(filters.startDate))) return false;
-        if (filters.endDate && dayjs(log.timestamp).isAfter(dayjs(filters.endDate))) return false;
-        return true;
+      const response = await axios.get('/api/system/logs', { 
+        params: { 
+          ...filters, 
+          page,
+          limit: 20
+        } 
       });
-
-      // Paginate
-      const itemsPerPage = 20;
-      const startIndex = (page - 1) * itemsPerPage;
-      const paginatedLogs = filteredLogs.slice(startIndex, startIndex + itemsPerPage);
       
-      setLogs(paginatedLogs);
-      setTotalPages(Math.ceil(filteredLogs.length / itemsPerPage));
+      const { logs: fetchedLogs, pagination } = response.data;
+      
+      setLogs(fetchedLogs);
+      setTotalPages(pagination.totalPages);
     } catch (error) {
       enqueueSnackbar('Failed to fetch system logs', { variant: 'error' });
+      console.error('System logs fetch error:', error);
     } finally {
       setLoading(false);
     }
