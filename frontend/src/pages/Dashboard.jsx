@@ -14,7 +14,19 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Alert,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem
 } from '@mui/material'
 import {
   CloudDownload,
@@ -23,9 +35,17 @@ import {
   TrendingUp,
   Security,
   Assessment,
-  Info as InfoIcon
+  Info as InfoIcon,
+  Speed as SpeedIcon,
+  Memory as MemoryIcon,
+  Storage as StorageIcon,
+  Computer as ComputerIcon,
+  Timeline as TimelineIcon,
+  BugReport as BugReportIcon,
+  Refresh as RefreshIcon,
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
 import axios from '../utils/axios'
 import dayjs from 'dayjs'
 
@@ -36,63 +56,159 @@ const Dashboard = () => {
     alerts: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
     coverage: { services: 0, users: 0, devices: 0 }
   })
+  const [systemMetrics, setSystemMetrics] = useState({
+    cpu: 0,
+    memory: 0,
+    disk: 0,
+    network: 0
+  })
+  const [recentJobs, setRecentJobs] = useState([])
+  const [recentErrors, setRecentErrors] = useState([])
+  const [containerLogs, setContainerLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [infoDialog, setInfoDialog] = useState({ open: false, title: '', content: '' })
+  const [logFilter, setLogFilter] = useState('all')
+  const [refreshInterval, setRefreshInterval] = useState(30) // seconds
+
+  const fetchDashboardData = async () => {
+    try {
+      // Fetch basic stats
+      const [extractionsRes, analysisRes, alertsRes] = await Promise.all([
+        axios.get('/api/extractions'),
+        axios.get('/api/analysis'),
+        axios.get('/api/alerts')
+      ])
+
+      const extractions = extractionsRes.data.extractions || []
+      const analysisJobs = analysisRes.data.analysisJobs || []
+      const alerts = alertsRes.data.alerts || []
+
+      setStats({
+        extractions: {
+          total: extractions.length,
+          active: extractions.filter(e => ['pending', 'running'].includes(e.status)).length,
+          completed: extractions.filter(e => e.status === 'completed').length,
+          failed: extractions.filter(e => e.status === 'failed').length
+        },
+        analyses: {
+          total: analysisJobs.length,
+          completed: analysisJobs.filter(a => a.status === 'completed').length,
+          running: analysisJobs.filter(a => ['pending', 'running'].includes(a.status)).length,
+          failed: analysisJobs.filter(a => a.status === 'failed').length
+        },
+        alerts: {
+          total: alerts.length,
+          critical: alerts.filter(a => a.severity === 'critical').length,
+          high: alerts.filter(a => a.severity === 'high').length,
+          medium: alerts.filter(a => a.severity === 'medium').length,
+          low: alerts.filter(a => a.severity === 'low').length
+        },
+        coverage: {
+          services: 12, // Static for now
+          users: extractions.reduce((sum, e) => sum + (e.statistics?.uniqueUsers || 0), 0),
+          devices: 1203 // Static for now
+        }
+      })
+
+      // Fetch recent jobs
+      const recentJobsData = [
+        ...extractions.slice(0, 5).map(e => ({
+          id: e.id,
+          type: 'Extraction',
+          name: e.type,
+          status: e.status,
+          startTime: e.createdAt,
+          duration: e.duration || 0,
+          progress: e.progress || 0
+        })),
+        ...analysisJobs.slice(0, 5).map(a => ({
+          id: a.id,
+          type: 'Analysis',
+          name: a.type,
+          status: a.status,
+          startTime: a.createdAt,
+          duration: a.duration || 0,
+          progress: a.progress || 0
+        }))
+      ].sort((a, b) => new Date(b.startTime) - new Date(a.startTime)).slice(0, 10)
+
+      setRecentJobs(recentJobsData)
+
+      // Mock system metrics (in real implementation, these would come from Prometheus)
+      setSystemMetrics({
+        cpu: Math.random() * 100,
+        memory: Math.random() * 100,
+        disk: Math.random() * 100,
+        network: Math.random() * 100
+      })
+
+      // Mock recent errors
+      setRecentErrors([
+        {
+          timestamp: new Date(Date.now() - 5 * 60 * 1000),
+          level: 'error',
+          service: 'extractor',
+          message: 'Failed to connect to Microsoft Graph API',
+          count: 3
+        },
+        {
+          timestamp: new Date(Date.now() - 15 * 60 * 1000),
+          level: 'warning',
+          service: 'analyzer',
+          message: 'High memory usage detected',
+          count: 1
+        },
+        {
+          timestamp: new Date(Date.now() - 30 * 60 * 1000),
+          level: 'error',
+          service: 'api',
+          message: 'Database connection timeout',
+          count: 2
+        }
+      ])
+
+      // Mock container logs
+      setContainerLogs([
+        {
+          timestamp: new Date(),
+          level: 'info',
+          container: 'maes-api',
+          message: 'HTTP request processed successfully'
+        },
+        {
+          timestamp: new Date(Date.now() - 1000),
+          level: 'info',
+          container: 'maes-extractor',
+          message: 'Starting new extraction job'
+        },
+        {
+          timestamp: new Date(Date.now() - 2000),
+          level: 'warning',
+          container: 'maes-analyzer',
+          message: 'Analysis queue backlog detected'
+        },
+        {
+          timestamp: new Date(Date.now() - 3000),
+          level: 'info',
+          container: 'maes-prometheus',
+          message: 'Metrics scrape completed'
+        }
+      ])
+
+    } catch (error) {
+      console.error('Failed to fetch dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        // Fetch extractions
-        const extractionsRes = await axios.get('/api/extractions')
-        const extractions = extractionsRes.data.extractions || []
-        
-        // Fetch analysis jobs
-        const analysisRes = await axios.get('/api/analysis')
-        const analysisJobs = analysisRes.data.analysisJobs || []
-        
-        // Fetch alerts
-        const alertsRes = await axios.get('/api/alerts')
-        const alerts = alertsRes.data.alerts || []
-
-        setStats({
-          extractions: {
-            total: extractions.length,
-            active: extractions.filter(e => ['pending', 'running'].includes(e.status)).length,
-            completed: extractions.filter(e => e.status === 'completed').length,
-            failed: extractions.filter(e => e.status === 'failed').length
-          },
-          analyses: {
-            total: analysisJobs.length,
-            completed: analysisJobs.filter(a => a.status === 'completed').length,
-            running: analysisJobs.filter(a => ['pending', 'running'].includes(a.status)).length,
-            failed: analysisJobs.filter(a => a.status === 'failed').length
-          },
-          alerts: {
-            total: alerts.length,
-            critical: alerts.filter(a => a.severity === 'critical').length,
-            high: alerts.filter(a => a.severity === 'high').length,
-            medium: alerts.filter(a => a.severity === 'medium').length,
-            low: alerts.filter(a => a.severity === 'low').length
-          },
-          coverage: {
-            services: 12, // Static for now
-            users: extractions.reduce((sum, e) => sum + (e.statistics?.uniqueUsers || 0), 0),
-            devices: 1203 // Static for now
-          }
-        })
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
     fetchDashboardData()
-    const interval = setInterval(fetchDashboardData, 30000) // Refresh every 30 seconds
+    const interval = setInterval(fetchDashboardData, refreshInterval * 1000)
     return () => clearInterval(interval)
-  }, [])
+  }, [refreshInterval])
 
-  // Generate activity data based on recent extractions
+  // Generate activity data for charts
   const activityData = []
   const now = new Date()
   for (let i = 6; i >= 0; i--) {
@@ -103,20 +219,21 @@ const Dashboard = () => {
       name: dayName,
       extractions: Math.floor(Math.random() * 10) + 1,
       analyses: Math.floor(Math.random() * 8) + 1,
-      alerts: Math.floor(Math.random() * 5)
+      alerts: Math.floor(Math.random() * 5),
+      errors: Math.floor(Math.random() * 3)
     })
   }
 
-  const alertDistribution = [
-    { name: 'Critical', value: stats.alerts.critical, color: '#f44336' },
-    { name: 'High', value: stats.alerts.high, color: '#ff9800' },
-    { name: 'Medium', value: stats.alerts.medium, color: '#ffc107' },
-    { name: 'Low', value: stats.alerts.low, color: '#4caf50' }
-  ].filter(item => item.value > 0)
+  const systemMetricsData = [
+    { name: 'CPU', value: systemMetrics.cpu, color: '#8884d8' },
+    { name: 'Memory', value: systemMetrics.memory, color: '#82ca9d' },
+    { name: 'Disk', value: systemMetrics.disk, color: '#ffc658' },
+    { name: 'Network', value: systemMetrics.network, color: '#ff7300' }
+  ]
 
-  const StatCard = ({ title, value, icon, color, subtitle, info }) => (
+  const MetricCard = ({ title, value, icon, color, subtitle, info, unit = '' }) => (
     <Tooltip title={info || title} placement="top" enterDelay={500}>
-      <Card className="hoverable-card" sx={{ 
+      <Card sx={{ 
         height: '100%', 
         minHeight: { xs: '140px', sm: '160px' },
         display: 'flex', 
@@ -147,7 +264,7 @@ const Dashboard = () => {
                 mb: 0.5
               }}
             >
-              {value}
+              {value}{unit}
             </Typography>
             <Typography 
               variant="body2" 
@@ -200,6 +317,10 @@ const Dashboard = () => {
     </Tooltip>
   )
 
+  const filteredLogs = containerLogs.filter(log => 
+    logFilter === 'all' || log.level === logFilter || log.container.includes(logFilter)
+  )
+
   return (
     <Box sx={{ p: { xs: 2, sm: 3 } }}>
       <Box sx={{ 
@@ -213,7 +334,7 @@ const Dashboard = () => {
           flexGrow: 1,
           fontSize: { xs: '1.5rem', sm: '2.125rem' }
         }}>
-          MAES Dashboard
+          System Monitoring Dashboard
         </Typography>
         <Box sx={{ 
           display: 'flex', 
@@ -221,350 +342,286 @@ const Dashboard = () => {
           gap: { xs: 1, sm: 2 },
           flexWrap: { xs: 'wrap', sm: 'nowrap' }
         }}>
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            padding: { xs: '6px 12px', sm: '8px 16px' },
-            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-            borderRadius: 1,
-            border: '1px solid rgba(25, 118, 210, 0.3)'
-          }}>
-            <Typography variant="h6" sx={{ 
-              color: 'primary.main',
-              fontWeight: 'bold',
-              letterSpacing: 1,
-              fontSize: { xs: '0.9rem', sm: '1.25rem' }
-            }}>
-              IONSEC.IO
-            </Typography>
-          </Box>
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center',
-            padding: { xs: '4px 8px', sm: '6px 12px' },
-            backgroundColor: 'rgba(211, 47, 47, 0.1)',
-            borderRadius: 1,
-            border: '1px solid rgba(211, 47, 47, 0.3)'
-          }}>
-            <Typography variant="caption" sx={{ 
-              color: 'error.main',
-              fontWeight: 'bold',
-              fontSize: { xs: '0.65rem', sm: '0.75rem' }
-            }}>
-              24/7 Incident Response
-            </Typography>
-          </Box>
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Refresh</InputLabel>
+            <Select
+              value={refreshInterval}
+              label="Refresh"
+              onChange={(e) => setRefreshInterval(e.target.value)}
+            >
+              <MenuItem value={10}>10s</MenuItem>
+              <MenuItem value={30}>30s</MenuItem>
+              <MenuItem value={60}>1m</MenuItem>
+              <MenuItem value={300}>5m</MenuItem>
+            </Select>
+          </FormControl>
+          <IconButton onClick={fetchDashboardData} color="primary">
+            <RefreshIcon />
+          </IconButton>
+          <Button
+            variant="outlined"
+            startIcon={<OpenInNewIcon />}
+            onClick={() => window.open('/grafana/', '_blank')}
+            size="small"
+          >
+            Grafana
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<OpenInNewIcon />}
+            onClick={() => window.open('/prometheus/', '_blank')}
+            size="small"
+          >
+            Prometheus
+          </Button>
         </Box>
       </Box>
       
       <Grid container spacing={3}>
-        {/* Stats Cards */}
+        {/* System Metrics Cards */}
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Total Extractions"
-            value={stats.extractions.total}
-            icon={<CloudDownload sx={{ fontSize: 40 }} />}
+          <MetricCard
+            title="CPU Usage"
+            value={systemMetrics.cpu.toFixed(1)}
+            unit="%"
+            icon={<SpeedIcon />}
             color="primary.main"
-            subtitle={`${stats.extractions.active} active`}
-            info="Data extraction jobs that collect evidence from Microsoft 365 services including Unified Audit Logs, Azure AD logs, Exchange, SharePoint, and Teams. This includes both scheduled and on-demand extractions."
+            subtitle={`${stats.extractions.active} active jobs`}
+            info="Current CPU utilization across all containers. High values may indicate resource contention."
           />
         </Grid>
         
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Analyses Complete"
-            value={stats.analyses.total}
-            icon={<Analytics sx={{ fontSize: 40 }} />}
+          <MetricCard
+            title="Memory Usage"
+            value={systemMetrics.memory.toFixed(1)}
+            unit="%"
+            icon={<MemoryIcon />}
             color="success.main"
-            subtitle={`${stats.analyses.running} running`}
-            info="Analysis jobs that process extracted data using advanced algorithms to detect threats, anomalies, and suspicious activities. Each analysis generates detailed findings and security alerts based on MITRE ATT&CK framework."
+            subtitle="Available memory"
+            info="Memory utilization across the platform. Monitor for memory leaks and resource optimization."
           />
         </Grid>
         
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Active Alerts"
-            value={stats.alerts.total}
-            icon={<Warning sx={{ fontSize: 40 }} />}
+          <MetricCard
+            title="Active Jobs"
+            value={stats.extractions.active + stats.analyses.running}
+            icon={<Analytics />}
             color="warning.main"
-            subtitle={`${stats.alerts.critical} critical`}
-            info="Security alerts generated from analysis results. Alerts are categorized by severity (Critical, High, Medium, Low) and include detailed information about detected threats, IOCs, and recommended response actions."
+            subtitle={`${stats.extractions.total} total extractions`}
+            info="Currently running extraction and analysis jobs across all services."
           />
         </Grid>
         
         <Grid item xs={12} sm={6} md={3}>
-          <StatCard
-            title="Monitored Users"
-            value={stats.coverage.users.toLocaleString()}
-            icon={<Security sx={{ fontSize: 40 }} />}
-            color="info.main"
-            subtitle={`${stats.coverage.devices} devices`}
-            info="Total number of unique users and devices being monitored across your Microsoft 365 environment. This includes user accounts, service principals, and registered devices that appear in audit logs and security events."
+          <MetricCard
+            title="System Errors"
+            value={recentErrors.length}
+            icon={<BugReportIcon />}
+            color="error.main"
+            subtitle="Last 24 hours"
+            info="Critical errors and warnings from all services requiring attention."
           />
         </Grid>
 
-        {/* Activity Chart */}
+        {/* Recent Jobs Table */}
         <Grid item xs={12} lg={8}>
-          <Tooltip title="Weekly activity trends showing extractions, analyses, and alerts over the past 7 days" placement="top" enterDelay={500}>
-            <Paper sx={{ 
-              p: { xs: 2, sm: 3 }, 
-              height: { xs: '350px', sm: '400px', lg: '400px' }, 
-              display: 'flex', 
-              flexDirection: 'column',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                boxShadow: 2
-              }
-            }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                Weekly Activity
-              </Typography>
-              <Tooltip title="Click for more information">
-                <IconButton
-                  size="small"
-                  onClick={() => setInfoDialog({ 
-                    open: true, 
-                    title: 'Weekly Activity Chart', 
-                    content: 'This chart shows the daily activity trends for extractions, analyses, and alerts over the past week. It helps you understand platform usage patterns and identify peak activity periods for better resource planning.' 
-                  })}
-                  sx={{ opacity: 0.7 }}
-                >
-                  <InfoIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <Box sx={{ flexGrow: 1, minHeight: { xs: 250, sm: 300 } }}>
+          <Paper sx={{ p: 3, height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h6" gutterBottom>
+              Recent Jobs
+            </Typography>
+            <TableContainer sx={{ flexGrow: 1 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Progress</TableCell>
+                    <TableCell>Started</TableCell>
+                    <TableCell>Duration</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {recentJobs.map((job, index) => (
+                    <TableRow key={index}>
+                      <TableCell>
+                        <Chip 
+                          label={job.type} 
+                          size="small" 
+                          color={job.type === 'Extraction' ? 'primary' : 'secondary'}
+                        />
+                      </TableCell>
+                      <TableCell>{job.name}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={job.status} 
+                          size="small"
+                          color={
+                            job.status === 'completed' ? 'success' :
+                            job.status === 'failed' ? 'error' :
+                            job.status === 'running' ? 'info' : 'default'
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <LinearProgress 
+                            variant="determinate" 
+                            value={job.progress} 
+                            sx={{ width: 50 }}
+                          />
+                          <Typography variant="caption">{job.progress}%</Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption">
+                          {dayjs(job.startTime).format('MMM DD HH:mm')}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption">
+                          {job.duration ? `${Math.floor(job.duration / 60)}m` : '-'}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </Grid>
+
+        {/* System Metrics Chart */}
+        <Grid item xs={12} lg={4}>
+          <Paper sx={{ p: 3, height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h6" gutterBottom>
+              System Resources
+            </Typography>
+            <Box sx={{ flexGrow: 1, minHeight: 300 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={activityData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                <BarChart data={systemMetricsData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="name" 
-                    fontSize={12}
-                    tick={{ fontSize: 12 }}
-                  />
-                  <YAxis 
-                    fontSize={12}
-                    tick={{ fontSize: 12 }}
-                  />
+                  <XAxis dataKey="name" fontSize={12} />
+                  <YAxis fontSize={12} domain={[0, 100]} />
+                  <RechartsTooltip formatter={(value) => [`${value.toFixed(1)}%`, 'Usage']} />
+                  <Bar dataKey="value" fill="#8884d8">
+                    {systemMetricsData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          </Paper>
+        </Grid>
+
+        {/* Recent Errors */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3, height: '350px', display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h6" gutterBottom>
+              Recent Errors & Warnings
+            </Typography>
+            <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+              {recentErrors.map((error, index) => (
+                <Alert 
+                  key={index} 
+                  severity={error.level === 'error' ? 'error' : 'warning'}
+                  sx={{ mb: 1 }}
+                >
+                  <Box>
+                    <Typography variant="body2" fontWeight="bold">
+                      {error.service.toUpperCase()}: {error.message}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {dayjs(error.timestamp).format('MMM DD HH:mm:ss')} - Count: {error.count}
+                    </Typography>
+                  </Box>
+                </Alert>
+              ))}
+            </Box>
+          </Paper>
+        </Grid>
+
+        {/* Container Logs */}
+        <Grid item xs={12} md={6}>
+          <Paper sx={{ p: 3, height: '350px', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                Live Container Logs
+              </Typography>
+              <FormControl size="small" sx={{ minWidth: 100 }}>
+                <InputLabel>Filter</InputLabel>
+                <Select
+                  value={logFilter}
+                  label="Filter"
+                  onChange={(e) => setLogFilter(e.target.value)}
+                >
+                  <MenuItem value="all">All</MenuItem>
+                  <MenuItem value="error">Errors</MenuItem>
+                  <MenuItem value="warning">Warnings</MenuItem>
+                  <MenuItem value="maes-api">API</MenuItem>
+                  <MenuItem value="maes-extractor">Extractor</MenuItem>
+                  <MenuItem value="maes-analyzer">Analyzer</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+            <Box sx={{ 
+              flexGrow: 1, 
+              overflowY: 'auto',
+              bgcolor: '#0d1117',
+              color: '#c9d1d9',
+              p: 1,
+              borderRadius: 1,
+              fontFamily: 'monospace',
+              fontSize: '0.75rem'
+            }}>
+              {filteredLogs.map((log, index) => (
+                <Box key={index} sx={{ mb: 0.5 }}>
+                  <span style={{ color: '#7c3aed' }}>
+                    [{dayjs(log.timestamp).format('HH:mm:ss')}]
+                  </span>
+                  {' '}
+                  <span style={{ 
+                    color: log.level === 'error' ? '#f85149' :
+                          log.level === 'warning' ? '#d29922' : '#79c0ff'
+                  }}>
+                    [{log.level.toUpperCase()}]
+                  </span>
+                  {' '}
+                  <span style={{ color: '#a5a5a5' }}>
+                    {log.container}:
+                  </span>
+                  {' '}
+                  {log.message}
+                </Box>
+              ))}
+            </Box>
+          </Paper>
+        </Grid>
+
+        {/* Activity Chart */}
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3, height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <Typography variant="h6" gutterBottom>
+              Weekly Activity & Performance Trends
+            </Typography>
+            <Box sx={{ flexGrow: 1, minHeight: 300 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={activityData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" fontSize={12} />
+                  <YAxis fontSize={12} />
                   <RechartsTooltip />
-                  <Line type="monotone" dataKey="extractions" stroke="#8884d8" strokeWidth={2} />
-                  <Line type="monotone" dataKey="analyses" stroke="#82ca9d" strokeWidth={2} />
-                  <Line type="monotone" dataKey="alerts" stroke="#ffc658" strokeWidth={2} />
+                  <Line type="monotone" dataKey="extractions" stroke="#8884d8" strokeWidth={2} name="Extractions" />
+                  <Line type="monotone" dataKey="analyses" stroke="#82ca9d" strokeWidth={2} name="Analyses" />
+                  <Line type="monotone" dataKey="alerts" stroke="#ffc658" strokeWidth={2} name="Alerts" />
+                  <Line type="monotone" dataKey="errors" stroke="#ff7300" strokeWidth={2} name="Errors" />
                 </LineChart>
               </ResponsiveContainer>
             </Box>
           </Paper>
-          </Tooltip>
-        </Grid>
-
-        {/* Alert Distribution */}
-        <Grid item xs={12} lg={4}>
-          <Tooltip title="Distribution of security alerts by severity level - Critical, High, Medium, and Low" placement="top" enterDelay={500}>
-            <Paper sx={{ 
-              p: { xs: 2, sm: 3 }, 
-              height: { xs: '350px', sm: '400px', lg: '400px' }, 
-              display: 'flex', 
-              flexDirection: 'column',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                boxShadow: 2
-              }
-            }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                Alert Distribution
-              </Typography>
-              <Tooltip title="Click for more information">
-                <IconButton
-                  size="small"
-                  onClick={() => setInfoDialog({ 
-                    open: true, 
-                    title: 'Alert Distribution', 
-                    content: 'This pie chart shows the distribution of security alerts by severity level. Critical alerts require immediate attention, High alerts need prompt investigation, Medium alerts should be reviewed within 24 hours, and Low alerts are informational.' 
-                  })}
-                  sx={{ opacity: 0.7 }}
-                >
-                  <InfoIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <Box sx={{ flexGrow: 1, minHeight: { xs: 250, sm: 300 } }}>
-              {alertDistribution.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={alertDistribution}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, value }) => `${name}: ${value}`}
-                      outerRadius={window.innerWidth < 600 ? 60 : 80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {alertDistribution.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <RechartsTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              ) : (
-                <Box sx={{ 
-                  height: '100%', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center',
-                  flexDirection: 'column'
-                }}>
-                  <Security sx={{ fontSize: { xs: 48, sm: 60 }, color: 'text.disabled', mb: 2 }} />
-                  <Typography variant="body2" color="text.secondary" align="center">
-                    No alerts generated yet.
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" align="center" sx={{ mt: 1 }}>
-                    Alerts will appear here after analysis completes.
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Paper>
-          </Tooltip>
-        </Grid>
-
-        {/* IONSEC.IO Services */}
-        <Grid item xs={12} md={6}>
-          <Tooltip title="Professional cybersecurity services including incident response, digital forensics, and security consulting" placement="top" enterDelay={500}>
-            <Paper sx={{ 
-              p: { xs: 2, sm: 3 }, 
-              height: '100%', 
-              minHeight: { xs: '300px', sm: '350px' },
-              display: 'flex', 
-              flexDirection: 'column',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                boxShadow: 2
-              }
-            }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                IONSEC.IO Services
-              </Typography>
-              <Tooltip title="Click for more information">
-                <IconButton
-                  size="small"
-                  onClick={() => setInfoDialog({ 
-                    open: true, 
-                    title: 'IONSEC.IO Professional Services', 
-                    content: 'IONSEC.IO provides comprehensive cybersecurity services including 24/7 incident response, digital forensics, threat hunting, and security consulting. Our expert team helps organizations investigate security incidents, recover from breaches, and strengthen their security posture.' 
-                  })}
-                  sx={{ opacity: 0.7 }}
-                >
-                  <InfoIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="body2" color="text.secondary" paragraph>
-                Professional cybersecurity incident response and digital forensics services.
-              </Typography>
-              
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-                <Chip label="Incident Response" color="primary" size="small" />
-                <Chip label="Digital Forensics" color="primary" size="small" />
-                <Chip label="Cybersecurity" color="primary" size="small" />
-                <Chip label="24/7 Support" color="error" size="small" />
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" fontWeight="bold">Emergency:</Typography>
-                  <Typography variant="body2" color="primary.main">+972-543181773</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" fontWeight="bold">Email:</Typography>
-                  <Typography variant="body2" color="primary.main">info@ionsec.io</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" fontWeight="bold">Website:</Typography>
-                  <Typography variant="body2" color="primary.main">ionsec.io</Typography>
-                </Box>
-              </Box>
-            </Box>
-          </Paper>
-          </Tooltip>
-        </Grid>
-
-        {/* Recent Activities */}
-        <Grid item xs={12} md={6}>
-          <Tooltip title="Real-time platform activities including extraction jobs, analysis progress, and system events" placement="top" enterDelay={500}>
-            <Paper sx={{ 
-              p: { xs: 2, sm: 3 }, 
-              height: '100%', 
-              minHeight: { xs: '300px', sm: '350px' },
-              display: 'flex', 
-              flexDirection: 'column',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                boxShadow: 2
-              }
-            }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                Recent Activities
-              </Typography>
-              <Tooltip title="Click for more information">
-                <IconButton
-                  size="small"
-                  onClick={() => setInfoDialog({ 
-                    open: true, 
-                    title: 'Recent Activities', 
-                    content: 'This section shows real-time platform activities including extraction jobs, analysis progress, security monitoring status, and system events. It provides a quick overview of what the platform is currently doing.' 
-                  })}
-                  sx={{ opacity: 0.7 }}
-                >
-                  <InfoIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <Box sx={{ mt: 2 }}>
-              {loading ? (
-                <Typography variant="body2" color="text.secondary">
-                  Loading activities...
-                </Typography>
-              ) : (
-                <Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-                    {stats.extractions.total === 0 ? 
-                      'No activities yet. Start by creating your first extraction.' : 
-                      'Showing recent platform activities'}
-                  </Typography>
-                  {[
-                    { type: 'info', message: 'Platform initialized and ready for M365 data extraction', time: 'Just now', status: 'info' },
-                    { type: 'extraction', message: stats.extractions.active > 0 ? `${stats.extractions.active} extraction(s) currently running` : 'No active extractions', time: '1 minute ago', status: stats.extractions.active > 0 ? 'success' : 'info' },
-                    { type: 'analysis', message: stats.analyses.running > 0 ? `${stats.analyses.running} analysis job(s) in progress` : 'Analysis engine ready', time: '2 minutes ago', status: stats.analyses.running > 0 ? 'warning' : 'info' },
-                    { type: 'security', message: 'Security monitoring active', time: '3 minutes ago', status: 'success' }
-                  ].map((activity, index) => (
-                <Box key={index} sx={{ display: 'flex', alignItems: 'center', mb: 1, p: 1 }}>
-                  <Chip
-                    label={activity.type}
-                    size="small"
-                    color={activity.status}
-                    sx={{ mr: 2, minWidth: 80 }}
-                  />
-                  <Typography variant="body2" sx={{ flex: 1 }}>
-                    {activity.message}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {activity.time}
-                  </Typography>
-                </Box>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          </Paper>
-          </Tooltip>
         </Grid>
       </Grid>
       

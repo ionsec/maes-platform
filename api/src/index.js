@@ -10,6 +10,7 @@ const { pool } = require('./services/database');
 const { logger } = require('./utils/logger');
 const { rateLimiter } = require('./middleware/rateLimiter');
 const { redirectHandler } = require('./middleware/redirectHandler');
+const { register, trackHttpRequests } = require('./utils/metrics');
 const swaggerSpecs = require('./swagger');
 
 // Import routes
@@ -146,6 +147,9 @@ app.use(rateLimiter);
 // Redirect handler middleware
 app.use(redirectHandler);
 
+// Metrics tracking middleware
+app.use(trackHttpRequests);
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({
@@ -153,6 +157,16 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0'
   });
+});
+
+// Metrics endpoint for Prometheus
+app.get('/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (ex) {
+    res.status(500).end(ex);
+  }
 });
 
 // API documentation with custom options
