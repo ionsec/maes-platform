@@ -30,7 +30,8 @@ import SIEMConfiguration from './pages/SIEMConfiguration'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import Onboarding from './pages/Onboarding'
-import TourDemo from './components/TourDemo'
+import SystemLogs from './pages/SystemLogs'
+import UserProfile from './pages/UserProfile'
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -124,7 +125,8 @@ function App() {
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/siem" element={<SIEMConfiguration />} />
-                <Route path="/tour-demo" element={<TourDemo />} />
+                <Route path="/system-logs" element={<SystemLogs />} />
+                <Route path="/profile" element={<UserProfile />} />
                 {/* Redirect monitoring service routes to external tabs */}
                 <Route path="/grafana/*" element={<ExternalRedirect url="/grafana/" />} />
                 <Route path="/prometheus/*" element={<ExternalRedirect url="/prometheus/" />} />

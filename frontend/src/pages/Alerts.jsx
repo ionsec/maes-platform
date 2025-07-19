@@ -751,9 +751,9 @@ const Alerts = () => {
                             {selectedAlert.affectedEntities.users.map((user, index) => (
                               <ListItem key={index}>
                                 <ListItemAvatar>
-                                  <Avatar sx={{ width: 24, height: 24 }}>{user[0]}</Avatar>
+                                  <Avatar sx={{ width: 24, height: 24 }}>{String(user)[0]}</Avatar>
                                 </ListItemAvatar>
-                                <ListItemText primary={user} />
+                                <ListItemText primary={String(user)} />
                               </ListItem>
                             ))}
                           </List>

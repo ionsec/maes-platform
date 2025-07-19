@@ -39,6 +39,7 @@ import {
 } from '@mui/icons-material'
 import { useAuthStore } from '../stores/authStore'
 import { useAlerts } from '../hooks/useAlerts'
+import { useNavigate } from 'react-router-dom'
 import ThemeSelector from './ThemeSelector'
 import dayjs from 'dayjs'
 import axios from '../utils/axios'
@@ -46,6 +47,7 @@ import axios from '../utils/axios'
 const Header = ({ onMenuClick }) => {
   const { user, logout } = useAuthStore()
   const { alerts, alertStats, markAsRead, markAllAsRead, dismissAlert } = useAlerts()
+  const navigate = useNavigate()
   const [anchorEl, setAnchorEl] = React.useState(null)
   const [alertsAnchorEl, setAlertsAnchorEl] = React.useState(null)
   const [systemStatusAnchorEl, setSystemStatusAnchorEl] = React.useState(null)
@@ -308,7 +310,10 @@ const Header = ({ onMenuClick }) => {
             open={Boolean(anchorEl)}
             onClose={handleClose}
           >
-            <MenuItem onClick={handleClose}>
+            <MenuItem onClick={() => {
+              handleClose()
+              navigate('/profile')
+            }}>
               <AccountCircle sx={{ mr: 1 }} />
               Profile
             </MenuItem>
@@ -620,8 +625,7 @@ const Header = ({ onMenuClick }) => {
                     variant="outlined"
                     onClick={() => {
                       handleSystemStatusClose()
-                      // Navigate to system logs or monitoring page
-                      window.location.href = '/system-logs'
+                      navigate('/system-logs')
                     }}
                   >
                     View Logs
