@@ -135,12 +135,14 @@ const Onboarding = () => {
     setActiveStep((prevActiveStep) => prevActiveStep + 1)
     setError('')
     setSuccess('')
+    setTestConnectionResult(null) // Clear any previous test results
   }
 
   const handleBack = () => {
     setActiveStep((prevActiveStep) => prevActiveStep - 1)
     setError('')
     setSuccess('')
+    setTestConnectionResult(null)
   }
 
   const handlePasswordChange = async () => {
@@ -275,10 +277,32 @@ const Onboarding = () => {
   }
 
   const handleSkipOnboarding = async () => {
+    if (loading) return; // Prevent multiple calls
+    
     setLoading(true)
+    setError('')
+    setSuccess('')
+    
+    let timeoutId;
     try {
+      // Set a safety timeout
+      timeoutId = setTimeout(() => {
+        setError('API call is taking too long. Proceeding to dashboard anyway...');
+        setLoading(false);
+        // Still navigate to dashboard even if API fails
+        setTimeout(() => {
+          useAuthStore.getState().updateUser({ needsOnboarding: false });
+          navigate('/dashboard');
+        }, 2000);
+      }, 15000); // 15 second timeout
+      
       // Call API to mark onboarding as complete
-      await axios.post('/api/auth/complete-onboarding')
+      await axios.post('/api/auth/complete-onboarding', {}, {
+        timeout: 10000 // 10 second timeout for this API call
+      })
+      
+      // Clear safety timeout
+      if (timeoutId) clearTimeout(timeoutId);
       
       // Update the auth store to reflect the change
       useAuthStore.getState().updateUser({ needsOnboarding: false })
@@ -286,17 +310,52 @@ const Onboarding = () => {
       setSuccess('Onboarding skipped! You can configure settings later in the Settings page.')
       setTimeout(() => navigate('/dashboard'), 2000)
     } catch (error) {
-      setError('Failed to complete onboarding. Please try again.')
+      console.error('Error skipping onboarding:', error);
+      
+      // Clear safety timeout
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      // If API fails, still allow user to proceed to dashboard
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout') || error.message?.includes('Network error')) {
+        setSuccess('API unavailable, but proceeding to dashboard. You can complete setup later in Settings.')
+        useAuthStore.getState().updateUser({ needsOnboarding: false })
+        setTimeout(() => navigate('/dashboard'), 2000)
+      } else {
+        setError(error.response?.data?.error || 'Failed to complete onboarding. Please try again or refresh the page.')
+      }
     } finally {
       setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
   const handleCompleteOnboarding = async () => {
+    if (loading) return; // Prevent multiple calls
+    
     setLoading(true)
+    setError('')
+    setSuccess('')
+    
+    let timeoutId;
     try {
+      // Set a safety timeout
+      timeoutId = setTimeout(() => {
+        setError('API call is taking too long. Proceeding to dashboard anyway...');
+        setLoading(false);
+        // Still navigate to dashboard even if API fails
+        setTimeout(() => {
+          useAuthStore.getState().updateUser({ needsOnboarding: false });
+          navigate('/dashboard');
+        }, 2000);
+      }, 15000); // 15 second timeout
+      
       // Call API to mark onboarding as complete
-      await axios.post('/api/auth/complete-onboarding')
+      await axios.post('/api/auth/complete-onboarding', {}, {
+        timeout: 10000 // 10 second timeout for this API call
+      })
+      
+      // Clear safety timeout
+      if (timeoutId) clearTimeout(timeoutId);
       
       // Update the auth store to reflect the change
       useAuthStore.getState().updateUser({ needsOnboarding: false })
@@ -304,9 +363,22 @@ const Onboarding = () => {
       setSuccess('Onboarding completed! Redirecting to dashboard...')
       setTimeout(() => navigate('/dashboard'), 2000)
     } catch (error) {
-      setError('Failed to complete onboarding. Please try again.')
+      console.error('Error completing onboarding:', error);
+      
+      // Clear safety timeout
+      if (timeoutId) clearTimeout(timeoutId);
+      
+      // If API fails, still allow user to proceed to dashboard
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout') || error.message?.includes('Network error')) {
+        setSuccess('API unavailable, but proceeding to dashboard. You can complete setup later in Settings.')
+        useAuthStore.getState().updateUser({ needsOnboarding: false })
+        setTimeout(() => navigate('/dashboard'), 2000)
+      } else {
+        setError(error.response?.data?.error || 'Failed to complete onboarding. Please try again or refresh the page.')
+      }
     } finally {
       setLoading(false)
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 
@@ -380,9 +452,13 @@ const Onboarding = () => {
                 </Button>
                 <Button
                   variant="outlined"
-                  onClick={handleCompleteOnboarding}
+                  onClick={() => {
+                    setError('');
+                    handleSkipOnboarding();
+                  }}
                   startIcon={<SkipNext />}
                   color="secondary"
+                  disabled={loading}
                 >
                   Skip to Dashboard
                 </Button>
@@ -528,48 +604,102 @@ const Onboarding = () => {
                 </Box>
               )}
 
-              <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+              <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
                 <Button
                   variant="contained"
                   onClick={async () => {
+                    if (loading) return; // Prevent multiple clicks
+                    
+                    setError(''); // Clear any previous errors
+                    setSuccess('');
+                    
                     if (credentialsData.applicationId || organizationData.tenantId || organizationData.fqdn) {
                       // Save credentials to user preferences
+                      let timeoutId;
                       try {
                         setLoading(true)
                         
+                        // Set a safety timeout to prevent infinite loading
+                        timeoutId = setTimeout(() => {
+                          setError('Operation is taking too long. Please try again or use "Save Without Certificate".');
+                          setLoading(false);
+                        }, 150000); // 2.5 minutes safety timeout
+                        
                         // Upload certificate first if provided
                         let certificateUploadResult = null;
+                        let certificateUploadFailed = false;
                         if (credentialsData.certificateFile && credentialsData.certificatePassword) {
-                          const formData = new FormData();
-                          formData.append('certificate', credentialsData.certificateFile);
-                          formData.append('password', credentialsData.certificatePassword);
-                          formData.append('organizationId', organizationData.tenantId || 'default');
-                          
-                          certificateUploadResult = await axios.post('/api/user/certificate', formData, {
-                            headers: { 'Content-Type': 'multipart/form-data' }
-                          });
+                          try {
+                            setSuccess('Uploading certificate...')
+                            const formData = new FormData();
+                            formData.append('certificate', credentialsData.certificateFile);
+                            formData.append('password', credentialsData.certificatePassword);
+                            
+                            // Use longer timeout for certificate uploads
+                            certificateUploadResult = await axios.post('/api/user/certificate', formData, {
+                              headers: { 'Content-Type': 'multipart/form-data' },
+                              timeout: 120000 // 2 minutes timeout for certificate upload
+                            });
+                            setSuccess('Certificate uploaded, saving preferences...')
+                          } catch (certError) {
+                            console.error('Certificate upload failed:', certError);
+                            certificateUploadFailed = true;
+                            if (certError.code === 'ECONNABORTED' || certError.message?.includes('timeout')) {
+                              setSuccess('Certificate upload timed out, saving other preferences without certificate...')
+                            } else {
+                              setSuccess('Certificate upload failed, saving other preferences without certificate...')
+                            }
+                          }
                         }
                         
+                        // Prepare user preferences object
                         const preferences = {
                           tenantId: organizationData.tenantId,
                           fqdn: organizationData.fqdn,
                           applicationId: credentialsData.applicationId || '574cfe92-60a1-4271-9c80-8aba00070e67',
+                          authMethod: credentialsData.authMethod,
                           ...(credentialsData.clientSecret && { clientSecret: credentialsData.clientSecret }),
                           ...(credentialsData.certificateThumbprint && { certificateThumbprint: credentialsData.certificateThumbprint }),
                           ...(certificateUploadResult && { 
-                            certificateFilePath: certificateUploadResult.data.certificatePath,
+                            certificateFilePath: certificateUploadResult.data.certificate?.filePath || certificateUploadResult.data.filePath,
+                            certificateThumbprint: certificateUploadResult.data.certificate?.thumbprint,
                             certificatePassword: credentialsData.certificatePassword
                           }),
                           credentialsConfiguredAt: new Date().toISOString()
                         }
                         
-                        await axios.put('/api/users/profile', { preferences })
-                        setSuccess('Credentials saved successfully!')
-                        setTimeout(() => handleNext(), 1500)
+                        // Save to user preferences
+                        setSuccess('Saving preferences...');
+                        await axios.put('/api/user/preferences', { preferences }, {
+                          timeout: 30000 // 30 second timeout for preferences save
+                        });
+                        
+                        // Clear safety timeout since operation completed
+                        if (timeoutId) clearTimeout(timeoutId);
+                        
+                        if (certificateUploadFailed) {
+                          setSuccess('Credentials saved successfully! Note: Certificate upload failed and was skipped. You can upload it later in Settings.')
+                        } else {
+                          setSuccess('Credentials saved successfully!')
+                        }
+                        setTimeout(() => handleNext(), 2000)
                       } catch (error) {
-                        setError(error.response?.data?.error || 'Failed to save credentials')
+                        console.error('Error saving credentials:', error);
+                        
+                        // Clear safety timeout
+                        if (timeoutId) clearTimeout(timeoutId);
+                        
+                        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+                          setError('Operation timed out. Please try again or use "Save Without Certificate".')
+                        } else if (error.code === 'ERR_NETWORK') {
+                          setError('Network error. Please check your connection and try again.')
+                        } else {
+                          setError(error.response?.data?.error || error.message || 'Failed to save credentials')
+                        }
                       } finally {
+                        // Ensure loading is always reset
                         setLoading(false)
+                        if (timeoutId) clearTimeout(timeoutId);
                       }
                     } else {
                       handleNext()
@@ -579,6 +709,74 @@ const Onboarding = () => {
                   startIcon={loading ? <CircularProgress size={20} /> : <VpnKey />}
                 >
                   {loading ? 'Saving...' : 'Save & Continue'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={async () => {
+                    if (loading) return; // Prevent multiple clicks
+                    
+                    setError('');
+                    setSuccess('');
+                    
+                    if (credentialsData.applicationId || organizationData.tenantId || organizationData.fqdn) {
+                      let timeoutId;
+                      try {
+                        setLoading(true)
+                        
+                        // Set a safety timeout
+                        timeoutId = setTimeout(() => {
+                          setError('Operation is taking too long. Please try again.');
+                          setLoading(false);
+                        }, 60000); // 1 minute safety timeout
+                        
+                        setSuccess('Saving credentials without certificate...')
+                        
+                        const preferences = {
+                          tenantId: organizationData.tenantId,
+                          fqdn: organizationData.fqdn,
+                          applicationId: credentialsData.applicationId || '574cfe92-60a1-4271-9c80-8aba00070e67',
+                          authMethod: credentialsData.authMethod,
+                          ...(credentialsData.clientSecret && { clientSecret: credentialsData.clientSecret }),
+                          ...(credentialsData.certificateThumbprint && { certificateThumbprint: credentialsData.certificateThumbprint }),
+                          credentialsConfiguredAt: new Date().toISOString()
+                        }
+                        
+                        await axios.put('/api/user/preferences', { preferences }, {
+                          timeout: 30000 // 30 second timeout
+                        });
+                        
+                        // Clear safety timeout
+                        if (timeoutId) clearTimeout(timeoutId);
+                        
+                        setSuccess('Credentials saved successfully (certificate skipped)!')
+                        setTimeout(() => handleNext(), 1500)
+                      } catch (error) {
+                        console.error('Error saving credentials:', error);
+                        
+                        // Clear safety timeout
+                        if (timeoutId) clearTimeout(timeoutId);
+                        
+                        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+                          setError('Operation timed out. Please try again.')
+                        } else if (error.code === 'ERR_NETWORK') {
+                          setError('Network error. Please check your connection and try again.')
+                        } else {
+                          setError(error.response?.data?.error || error.message || 'Failed to save credentials')
+                        }
+                      } finally {
+                        // Ensure loading is always reset
+                        setLoading(false)
+                        if (timeoutId) clearTimeout(timeoutId);
+                      }
+                    } else {
+                      handleNext()
+                    }
+                  }}
+                  disabled={loading}
+                  startIcon={<VpnKey />}
+                  color="secondary"
+                >
+                  Save Without Certificate
                 </Button>
                 <Button
                   variant="outlined"
@@ -1277,16 +1475,36 @@ const Onboarding = () => {
                 </Typography>
               </Box>
             </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
               <Button
                 variant="outlined"
-                onClick={handleSkipOnboarding}
+                onClick={() => {
+                  setError('');
+                  setSuccess('');
+                  handleSkipOnboarding();
+                }}
                 startIcon={<SkipNext />}
                 size="small"
                 color="secondary"
+                disabled={loading}
               >
                 Skip Setup & Go to Dashboard
               </Button>
+              {error && (
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    // Force skip - bypass all API calls
+                    useAuthStore.getState().updateUser({ needsOnboarding: false });
+                    navigate('/dashboard');
+                  }}
+                  startIcon={<Launch />}
+                  size="small"
+                  color="warning"
+                >
+                  Force Skip (Emergency)
+                </Button>
+              )}
             </Box>
           </Box>
 
@@ -1326,12 +1544,32 @@ const Onboarding = () => {
                       {index < steps.length - 1 && !loading && (
                         <Button
                           variant="outlined"
-                          onClick={handleSkipOnboarding}
+                          onClick={() => {
+                            setError('');
+                            setSuccess('');
+                            handleSkipOnboarding();
+                          }}
                           sx={{ mt: 1, mr: 1 }}
                           color="secondary"
                           startIcon={<SkipNext />}
                         >
                           Skip Setup
+                        </Button>
+                      )}
+                      {error && (
+                        <Button
+                          variant="outlined"
+                          onClick={() => {
+                            // Force skip - bypass all API calls
+                            useAuthStore.getState().updateUser({ needsOnboarding: false });
+                            navigate('/dashboard');
+                          }}
+                          sx={{ mt: 1, mr: 1 }}
+                          color="warning"
+                          startIcon={<Launch />}
+                          size="small"
+                        >
+                          Force Skip
                         </Button>
                       )}
                     </div>

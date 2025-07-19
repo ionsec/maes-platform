@@ -8,8 +8,9 @@ services:
       POSTGRES_DB: maes_db
       POSTGRES_USER: maes_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maes_secure_password}
-    ports:
-      - "5432:5432"
+    # Removed port exposure for security - database only accessible internally
+    # ports:
+    #   - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -27,8 +28,9 @@ services:
     image: redis:7-alpine
     container_name: maes-redis
     command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secure_password}
-    ports:
-      - "6379:6379"
+    # Removed port exposure for security - Redis only accessible internally
+    # ports:
+    #   - "6379:6379"
     volumes:
       - redis_data:/data
     networks:
@@ -70,6 +72,7 @@ services:
       - ./certs:/app/certs:ro
       - extractor_output:/output:ro
       - user_certificates:/app/uploads/certificates
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -235,15 +238,18 @@ services:
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.50.0
     container_name: maes-cadvisor
-    privileged: true
+    # Removed privileged mode for security - may reduce some monitoring capabilities
+    # privileged: true
     devices:
       - /dev/kmsg:/dev/kmsg
     volumes:
-      - /:/rootfs:ro
+      # Reduced volume mounts for security - only essential monitoring directories
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Removed full root filesystem mount for security
+      # - /:/rootfs:ro
     ports:
       - "8080:8080"
     networks:

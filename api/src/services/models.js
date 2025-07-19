@@ -54,15 +54,32 @@ const UserModel = {
 
   // Update user
   update: async (id, updates) => {
+    // Whitelist of allowed fields to prevent SQL injection
+    const allowedFields = [
+      'username', 'email', 'firstName', 'lastName', 'phone', 'organization',
+      'department', 'jobTitle', 'location', 'bio', 'profilePicture', 
+      'preferences', 'isActive', 'organizationId'
+    ];
+    
     const fields = [];
     const values = [];
     let paramCount = 1;
 
     Object.keys(updates).forEach(key => {
       if (key !== 'id') {
-        fields.push(`${key.replace(/([A-Z])/g, '_$1').toLowerCase()} = $${paramCount}`);
-        values.push(updates[key]);
-        paramCount++;
+        // Convert camelCase to snake_case and validate against whitelist
+        const dbField = key.replace(/([A-Z])/g, '_$1').toLowerCase();
+        const camelField = key;
+        
+        // Check if field is allowed (either camelCase or snake_case)
+        if (allowedFields.includes(camelField) || allowedFields.includes(dbField)) {
+          fields.push(`${dbField} = $${paramCount}`);
+          values.push(updates[key]);
+          paramCount++;
+        } else {
+          // Log potential SQL injection attempt
+          console.warn(`Blocked potential SQL injection attempt: field '${key}' not in whitelist`);
+        }
       }
     });
 
