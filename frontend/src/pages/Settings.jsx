@@ -60,6 +60,10 @@ const Settings = () => {
   const [actualCredentials, setActualCredentials] = useState({});
   const [testingConnection, setTestingConnection] = useState(false);
   const [connectionTestResult, setConnectionTestResult] = useState(null);
+  const [certificateFile, setCertificateFile] = useState(null);
+  const [certificatePassword, setCertificatePassword] = useState('');
+  const [certificateUploadLoading, setCertificateUploadLoading] = useState(false);
+  const [userCertificates, setUserCertificates] = useState([]);
   const { control, handleSubmit, reset, setValue } = useForm();
   const { control: credentialsControl, handleSubmit: handleCredentialsSubmit, reset: resetCredentials, watch: watchCredentials } = useForm();
   const { enqueueSnackbar } = useSnackbar();
@@ -250,6 +254,57 @@ const Settings = () => {
     }
   };
 
+  const fetchUserCertificates = async () => {
+    try {
+      const response = await axios.get('/api/user/certificates');
+      setUserCertificates(response.data.certificates || []);
+    } catch (error) {
+      console.error('Failed to fetch certificates:', error);
+    }
+  };
+
+  const handleCertificateUpload = async () => {
+    if (!certificateFile || !certificatePassword) {
+      enqueueSnackbar('Please select a certificate file and enter password', { variant: 'error' });
+      return;
+    }
+
+    setCertificateUploadLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('certificate', certificateFile);
+      formData.append('password', certificatePassword);
+      formData.append('organizationId', organization?.tenantId || 'default');
+
+      await axios.post('/api/user/certificate', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      enqueueSnackbar('Certificate uploaded successfully', { variant: 'success' });
+      setCertificateFile(null);
+      setCertificatePassword('');
+      fetchUserCertificates();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.error || 'Failed to upload certificate', { variant: 'error' });
+    } finally {
+      setCertificateUploadLoading(false);
+    }
+  };
+
+  const handleDeleteCertificate = async (certificateId) => {
+    try {
+      await axios.delete(`/api/user/certificates/${certificateId}`);
+      enqueueSnackbar('Certificate deleted successfully', { variant: 'success' });
+      fetchUserCertificates();
+    } catch (error) {
+      enqueueSnackbar('Failed to delete certificate', { variant: 'error' });
+    }
+  };
+
+  React.useEffect(() => {
+    fetchUserCertificates();
+  }, []);
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
@@ -264,6 +319,7 @@ const Settings = () => {
           <Tab label="Analysis" />
           <Tab label="Alerting" />
           <Tab label="Credentials" />
+          <Tab label="Certificates" />
         </Tabs>
       </Paper>
 
@@ -686,8 +742,152 @@ const Settings = () => {
           </Card>
         )}
 
+        {/* Certificate Management */}
+        {tabValue === 6 && (
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={8}>
+              <Card>
+                <CardHeader title="Certificate Upload" />
+                <CardContent>
+                  <Grid container spacing={3}>
+                    <Grid item xs={12}>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        Upload your own .pfx certificate file for Microsoft 365 authentication. 
+                        This certificate will be used instead of the default certificate for data extraction.
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={12}>
+                      <input
+                        accept=".pfx,.p12"
+                        style={{ display: 'none' }}
+                        id="certificate-file-input"
+                        type="file"
+                        onChange={(e) => setCertificateFile(e.target.files[0])}
+                      />
+                      <label htmlFor="certificate-file-input">
+                        <Button
+                          variant="outlined"
+                          component="span"
+                          startIcon={<AddIcon />}
+                          fullWidth
+                        >
+                          Select Certificate File (.pfx)
+                        </Button>
+                      </label>
+                      {certificateFile && (
+                        <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+                          Selected: {certificateFile.name}
+                        </Typography>
+                      )}
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        type="password"
+                        label="Certificate Password"
+                        value={certificatePassword}
+                        onChange={(e) => setCertificatePassword(e.target.value)}
+                        placeholder="Enter certificate password"
+                        helperText="Password for the .pfx certificate file"
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <Button
+                        variant="contained"
+                        onClick={handleCertificateUpload}
+                        disabled={!certificateFile || !certificatePassword || certificateUploadLoading}
+                        startIcon={certificateUploadLoading ? <CircularProgress size={16} /> : <SaveIcon />}
+                      >
+                        {certificateUploadLoading ? 'Uploading...' : 'Upload Certificate'}
+                      </Button>
+                    </Grid>
+                    <Grid item xs={12}>
+                      <Alert severity="info">
+                        <Typography variant="body2">
+                          <strong>Certificate Requirements:</strong>
+                        </Typography>
+                        <ul style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
+                          <li>Must be a .pfx (PKCS#12) format</li>
+                          <li>Must include the private key</li>
+                          <li>Certificate must be configured in your Azure application</li>
+                          <li>If not provided, system will fallback to default certificate</li>
+                        </ul>
+                      </Alert>
+                    </Grid>
+                  </Grid>
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Card>
+                <CardHeader title="Uploaded Certificates" />
+                <CardContent>
+                  {userCertificates.length > 0 ? (
+                    <List>
+                      {userCertificates.map((cert) => (
+                        <React.Fragment key={cert.id}>
+                          <ListItem>
+                            <ListItemText 
+                              primary={cert.filename}
+                              secondary={
+                                <Box>
+                                  <Typography variant="caption" display="block">
+                                    Uploaded: {new Date(cert.uploadedAt).toLocaleDateString()}
+                                  </Typography>
+                                  <Typography variant="caption" display="block">
+                                    Thumbprint: {cert.thumbprint}
+                                  </Typography>
+                                  <Chip 
+                                    label={cert.isActive ? 'Active' : 'Inactive'} 
+                                    size="small" 
+                                    color={cert.isActive ? 'success' : 'default'}
+                                    sx={{ mt: 0.5 }}
+                                  />
+                                </Box>
+                              }
+                            />
+                            <ListItemSecondaryAction>
+                              <IconButton 
+                                edge="end" 
+                                color="error"
+                                onClick={() => handleDeleteCertificate(cert.id)}
+                                title="Delete Certificate"
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </ListItemSecondaryAction>
+                          </ListItem>
+                          <Divider />
+                        </React.Fragment>
+                      ))}
+                    </List>
+                  ) : (
+                    <Alert severity="info">
+                      No certificates uploaded yet. Upload a certificate to use custom authentication for data extraction.
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+            <Grid item xs={12}>
+              <Card>
+                <CardHeader title="Default Certificate Information" />
+                <CardContent>
+                  <Alert severity="warning">
+                    <Typography variant="body2">
+                      <strong>Fallback Behavior:</strong> If no user certificate is uploaded or if the uploaded certificate fails, 
+                      the system will automatically fallback to the default certificate located at <code>/certs/app.pfx</code>.
+                      While this provides basic functionality, using your own certificate is recommended for production environments.
+                    </Typography>
+                  </Alert>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+        )}
+
         {/* Save Button */}
-        {tabValue !== 4 && (
+        {tabValue !== 5 && tabValue !== 6 && (
           <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
             <Button
               type="submit"

@@ -69,6 +69,7 @@ services:
     volumes:
       - ./certs:/app/certs:ro
       - extractor_output:/output:ro
+      - user_certificates:/app/uploads/certificates
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,6 +98,7 @@ services:
     volumes:
       - extractor_output:/output
       - ./certs:/certs:ro
+      - user_certificates:/user_certificates:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -256,6 +258,7 @@ volumes:
   prometheus_data:
   grafana_data:
   loki_data:
+  user_certificates:
 
 networks:
   maes-network:

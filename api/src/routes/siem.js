@@ -1,5 +1,5 @@
 const express = require('express');
-const { query, validationResult } = require('express-validator');
+const { query, body, validationResult } = require('express-validator');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
@@ -10,6 +10,268 @@ const router = express.Router();
 // Apply authentication and rate limiting
 router.use(authenticateToken);
 router.use(apiRateLimiter);
+
+// In-memory storage for SIEM configurations (in production, use database)
+let siemConfigurations = [
+  {
+    id: 1,
+    organizationId: 1,
+    name: 'Primary Splunk Instance',
+    type: 'splunk',
+    endpoint: 'https://splunk.example.com:8088/services/collector',
+    apiKey: 'your-hec-token-here',
+    format: 'json',
+    enabled: true,
+    exportFrequency: 'hourly',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 2,
+    organizationId: 1,
+    name: 'QRadar SIEM',
+    type: 'qradar',
+    endpoint: 'https://qradar.example.com/api/siem/events',
+    apiKey: 'qradar-api-key',
+    format: 'json',
+    enabled: false,
+    exportFrequency: 'daily',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }
+];
+let configIdCounter = 3;
+
+/**
+ * @swagger
+ * /api/siem/configurations:
+ *   get:
+ *     summary: Get all SIEM configurations
+ *     tags: [SIEM]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of SIEM configurations
+ */
+router.get('/configurations', requirePermission('canViewSettings'), async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      configurations: siemConfigurations.filter(config => config.organizationId === req.organizationId)
+    });
+  } catch (error) {
+    logger.error('Failed to fetch SIEM configurations:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/siem/configurations:
+ *   post:
+ *     summary: Create SIEM configuration
+ *     tags: [SIEM]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/configurations', 
+  requirePermission('canEditSettings'),
+  [
+    body('name').isString().isLength({ min: 1 }).withMessage('Name is required'),
+    body('type').isIn(['splunk', 'qradar', 'elasticsearch', 'generic']).withMessage('Invalid SIEM type'),
+    body('endpoint').isURL().withMessage('Valid endpoint URL is required'),
+    body('format').optional().isIn(['json', 'cef', 'xml', 'csv']).withMessage('Invalid format'),
+    body('enabled').optional().isBoolean().withMessage('Enabled must be boolean'),
+    body('exportFrequency').optional().isIn(['manual', 'hourly', 'daily', 'weekly']).withMessage('Invalid export frequency')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const newConfig = {
+        id: configIdCounter++,
+        organizationId: req.organizationId,
+        ...req.body,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      siemConfigurations.push(newConfig);
+
+      res.status(201).json({
+        success: true,
+        configuration: newConfig
+      });
+    } catch (error) {
+      logger.error('Failed to create SIEM configuration:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/siem/configurations/{id}:
+ *   put:
+ *     summary: Update SIEM configuration
+ *     tags: [SIEM]
+ */
+router.put('/configurations/:id', 
+  requirePermission('canEditSettings'),
+  [
+    body('name').optional().isString().isLength({ min: 1 }),
+    body('type').optional().isIn(['splunk', 'qradar', 'elasticsearch', 'generic']),
+    body('endpoint').optional().isURL(),
+    body('format').optional().isIn(['json', 'cef', 'xml', 'csv']),
+    body('enabled').optional().isBoolean(),
+    body('exportFrequency').optional().isIn(['manual', 'hourly', 'daily', 'weekly'])
+  ],
+  async (req, res) => {
+    try {
+      const configId = parseInt(req.params.id);
+      const configIndex = siemConfigurations.findIndex(config => 
+        config.id === configId && config.organizationId === req.organizationId
+      );
+
+      if (configIndex === -1) {
+        return res.status(404).json({ error: 'Configuration not found' });
+      }
+
+      siemConfigurations[configIndex] = {
+        ...siemConfigurations[configIndex],
+        ...req.body,
+        updatedAt: new Date().toISOString()
+      };
+
+      res.json({
+        success: true,
+        configuration: siemConfigurations[configIndex]
+      });
+    } catch (error) {
+      logger.error('Failed to update SIEM configuration:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/siem/configurations/{id}:
+ *   delete:
+ *     summary: Delete SIEM configuration
+ *     tags: [SIEM]
+ */
+router.delete('/configurations/:id', requirePermission('canEditSettings'), async (req, res) => {
+  try {
+    const configId = parseInt(req.params.id);
+    const configIndex = siemConfigurations.findIndex(config => 
+      config.id === configId && config.organizationId === req.organizationId
+    );
+
+    if (configIndex === -1) {
+      return res.status(404).json({ error: 'Configuration not found' });
+    }
+
+    siemConfigurations.splice(configIndex, 1);
+
+    res.json({
+      success: true,
+      message: 'Configuration deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Failed to delete SIEM configuration:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/siem/configurations/{id}/test:
+ *   post:
+ *     summary: Test SIEM configuration connection
+ *     tags: [SIEM]
+ */
+router.post('/configurations/:id/test', requirePermission('canExportData'), async (req, res) => {
+  try {
+    const configId = parseInt(req.params.id);
+    const config = siemConfigurations.find(config => 
+      config.id === configId && config.organizationId === req.organizationId
+    );
+
+    if (!config) {
+      return res.status(404).json({ error: 'Configuration not found' });
+    }
+
+    // Mock connection test - in production, this would actually test the endpoint
+    const isSuccessful = Math.random() > 0.3; // 70% success rate for demo
+
+    if (isSuccessful) {
+      res.json({
+        success: true,
+        message: `Successfully connected to ${config.name}`,
+        responseTime: Math.floor(Math.random() * 500) + 100,
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(400).json({
+        success: false,
+        error: `Connection failed: Unable to reach ${config.endpoint}`,
+        details: 'Network timeout or authentication failure'
+      });
+    }
+  } catch (error) {
+    logger.error('Failed to test SIEM configuration:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/siem/configurations/{id}/export:
+ *   post:
+ *     summary: Export events to SIEM
+ *     tags: [SIEM]
+ */
+router.post('/configurations/:id/export', requirePermission('canExportData'), async (req, res) => {
+  try {
+    const configId = parseInt(req.params.id);
+    const config = siemConfigurations.find(config => 
+      config.id === configId && config.organizationId === req.organizationId
+    );
+
+    if (!config) {
+      return res.status(404).json({ error: 'Configuration not found' });
+    }
+
+    if (!config.enabled) {
+      return res.status(400).json({ error: 'Configuration is disabled' });
+    }
+
+    // Mock export - in production, this would fetch and send real events
+    const mockEventCount = Math.floor(Math.random() * 100) + 10;
+    
+    // Simulate processing time
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 500));
+
+    res.json({
+      success: true,
+      eventCount: mockEventCount,
+      format: config.format,
+      destination: config.name,
+      exportedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('Failed to export to SIEM:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 /**
  * @swagger

@@ -17,6 +17,7 @@ const swaggerSpecs = require('./swagger');
 const authRoutes = require('./routes/auth');
 const organizationRoutes = require('./routes/organizations');
 const userRoutes = require('./routes/users');
+const userProfileRoutes = require('./routes/user');
 const extractionRoutes = require('./routes/extractions');
 const analysisRoutes = require('./routes/analysis');
 const alertRoutes = require('./routes/alerts');
@@ -24,6 +25,7 @@ const reportRoutes = require('./routes/reports');
 const uploadRoutes = require('./routes/upload');
 const registrationRoutes = require('./routes/registration');
 const siemRoutes = require('./routes/siem');
+const internalRoutes = require('./routes/internal');
 
 const app = express();
 
@@ -182,10 +184,22 @@ const swaggerOptions = {
 app.use('/api/docs', swaggerUi.serve);
 app.get('/api/docs', swaggerUi.setup(swaggerSpecs, swaggerOptions));
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: process.env.npm_package_version || '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/user', userProfileRoutes);
 app.use('/api/extractions', extractionRoutes);
 app.use('/api/analysis', analysisRoutes);
 app.use('/api/alerts', alertRoutes);
@@ -193,6 +207,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/registration', registrationRoutes);
 app.use('/api/siem', siemRoutes);
+app.use('/api/internal', internalRoutes);
 
 // Certificate download endpoint
 app.get('/api/certificates/app.crt', (req, res) => {
