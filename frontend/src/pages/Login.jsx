@@ -136,10 +136,7 @@ const Login = () => {
             </form>
 
             <Box sx={{ mt: 2, textAlign: 'center' }}>
-              <Typography variant="caption" color="text.secondary" display="block">
-                Default credentials: admin / admin123
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              <Typography variant="body2" color="text.secondary">
                 Don't have an account?{' '}
                 <Button
                   variant="text"

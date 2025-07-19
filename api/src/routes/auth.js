@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const { User, Organization, AuditLog } = require('../services/models');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, blacklistToken } = require('../middleware/auth');
 const { authRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 
@@ -606,6 +606,83 @@ router.get('/callback', async (req, res) => {
     </body>
     </html>
   `);
+});
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout user and invalidate JWT token
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Logout successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Logged out successfully"
+ *       401:
+ *         description: Invalid or missing token
+ *       500:
+ *         description: Internal server error
+ */
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    // Get token from Authorization header
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    
+    if (!token) {
+      return res.status(401).json({ 
+        success: false, 
+        error: 'No token provided' 
+      });
+    }
+    
+    // Blacklist the token
+    const blacklisted = await blacklistToken(token);
+    
+    if (blacklisted) {
+      // Log the logout event
+      logger.info(`User ${req.userId} logged out successfully`, {
+        userId: req.userId,
+        ip: req.ip,
+        userAgent: req.get('User-Agent'),
+        timestamp: new Date().toISOString()
+      });
+      
+      res.json({ 
+        success: true, 
+        message: 'Logged out successfully' 
+      });
+    } else {
+      logger.warn(`Failed to blacklist token for user ${req.userId}`, {
+        userId: req.userId,
+        ip: req.ip
+      });
+      
+      res.status(500).json({ 
+        success: false, 
+        error: 'Logout failed' 
+      });
+    }
+    
+  } catch (error) {
+    logger.error('Logout error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Internal server error' 
+    });
+  }
 });
 
 module.exports = router;

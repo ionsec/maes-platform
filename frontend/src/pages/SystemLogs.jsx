@@ -111,8 +111,8 @@ const SystemLogs = () => {
       
       const { logs: fetchedLogs, pagination } = response.data;
       
-      setLogs(fetchedLogs);
-      setTotalPages(pagination.totalPages);
+      setLogs(fetchedLogs || []);
+      setTotalPages(pagination?.totalPages || 1);
     } catch (error) {
       enqueueSnackbar('Failed to fetch system logs', { variant: 'error' });
       console.error('System logs fetch error:', error);
@@ -143,10 +143,9 @@ const SystemLogs = () => {
   const clearFilters = () => {
     setFilters({
       level: 'all',
-      source: 'all',
+      container: 'all',
       search: '',
-      startDate: '',
-      endDate: ''
+      lines: '100'
     });
     setPage(1);
   };
@@ -365,7 +364,7 @@ const SystemLogs = () => {
             <TableRow>
               <TableCell>Timestamp</TableCell>
               <TableCell>Level</TableCell>
-              <TableCell>Source</TableCell>
+              <TableCell>Container</TableCell>
               <TableCell>Message</TableCell>
               <TableCell>Request ID</TableCell>
               <TableCell>User</TableCell>
@@ -384,17 +383,17 @@ const SystemLogs = () => {
                 </TableCell>
                 <TableCell>
                   <Chip
-                    icon={levelIcons[log.level]}
-                    label={log.level.toUpperCase()}
-                    color={levelColors[log.level]}
+                    icon={levelIcons[log.level] || <InfoIcon />}
+                    label={(log.level || 'info').toUpperCase()}
+                    color={levelColors[log.level] || 'default'}
                     size="small"
                   />
                 </TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {sourceIcons[log.source]}
+                    {containerIcons[log.container] || <ComputerIcon />}
                     <Typography variant="body2">
-                      {log.source}
+                      {log.container || 'unknown'}
                     </Typography>
                   </Box>
                 </TableCell>
@@ -404,7 +403,7 @@ const SystemLogs = () => {
                   </Typography>
                   {log.details && (
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      {log.details}
+                      {JSON.stringify(log.details)}
                     </Typography>
                   )}
                 </TableCell>

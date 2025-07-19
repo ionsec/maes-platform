@@ -74,11 +74,16 @@ COPY . .
 RUN mkdir -p /output
 
 # Generate a self-signed certificate and PFX, then output thumbprint
-RUN openssl req -x509 -newkey rsa:2048 -nodes -keyout /output/app.key -out /output/app.crt \
+# Use environment variable for certificate password with secure default
+ARG CERT_PASSWORD=Password123
+ENV CERT_PASSWORD=${CERT_PASSWORD}
+RUN CERT_PWD="${CERT_PASSWORD:-$(openssl rand -base64 32)}" && \
+    openssl req -x509 -newkey rsa:2048 -nodes -keyout /output/app.key -out /output/app.crt \
     -subj "/CN=EXOAppCert" -days 365 && \
-    openssl pkcs12 -export -out /output/app.pfx -inkey /output/app.key -in /output/app.crt -passout pass:Password123 && \
-    echo "Certificate and PFX generated in /output (password: Password123)" && \
-    echo "Thumbprint (SHA1): $(openssl x509 -in /output/app.crt -noout -fingerprint -sha1 | sed 's/^.*=//')"
+    openssl pkcs12 -export -out /output/app.pfx -inkey /output/app.key -in /output/app.crt -passout pass:"$CERT_PWD" && \
+    echo "Certificate and PFX generated in /output" && \
+    echo "Thumbprint (SHA1): $(openssl x509 -in /output/app.crt -noout -fingerprint -sha1 | sed 's/^.*=//')" && \
+    echo "$CERT_PWD" > /output/cert_password.txt
 
 # Create non-root user
 RUN addgroup -g 1001 -S extractor && \

@@ -22,25 +22,78 @@ const storage = multer.diskStorage({
     }
   },
   filename: (req, file, cb) => {
-    const uniqueSuffix = crypto.randomBytes(6).toString('hex');
-    cb(null, `${Date.now()}-${uniqueSuffix}-${file.originalname}`);
+    const uniqueSuffix = crypto.randomBytes(8).toString('hex');
+    
+    // Sanitize the original filename
+    const sanitizedName = file.originalname
+      .replace(/[^a-zA-Z0-9._-]/g, '_') // Replace unsafe characters
+      .replace(/_{2,}/g, '_') // Replace multiple underscores with single
+      .replace(/^_+|_+$/g, '') // Remove leading/trailing underscores
+      .substring(0, 100); // Limit length
+    
+    // Ensure file has a safe extension
+    const extension = path.extname(sanitizedName).toLowerCase();
+    const baseName = path.basename(sanitizedName, extension);
+    
+    // Generate secure filename
+    const secureFilename = `${Date.now()}-${uniqueSuffix}-${baseName}${extension}`;
+    
+    cb(null, secureFilename);
   }
 });
 
 const upload = multer({
   storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB limit
+    fileSize: 50 * 1024 * 1024, // Reduced to 50MB limit for security
+    files: 5, // Maximum 5 files per request
+    fieldSize: 1024 * 1024, // 1MB field size limit
+    fieldNameSize: 100, // Field name size limit
+    headerPairs: 2000 // Limit header pairs
   },
   fileFilter: (req, file, cb) => {
-    // Accept JSON and CSV files
-    const allowedTypes = ['application/json', 'text/csv', 'text/plain'];
-    if (allowedTypes.includes(file.mimetype) || 
-        file.originalname.match(/\.(json|csv|txt|log)$/i)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Invalid file type. Only JSON, CSV, TXT, and LOG files are allowed.'));
+    // Strict validation - only allow specific file types
+    const allowedMimeTypes = [
+      'application/json', 
+      'text/csv', 
+      'text/plain',
+      'application/csv'
+    ];
+    
+    const allowedExtensions = /\.(json|csv|txt|log)$/i;
+    
+    // Check MIME type
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      return cb(new Error(`Invalid MIME type: ${file.mimetype}. Only JSON, CSV, TXT, and LOG files are allowed.`));
     }
+    
+    // Check file extension
+    if (!allowedExtensions.test(file.originalname)) {
+      return cb(new Error(`Invalid file extension. Only .json, .csv, .txt, and .log files are allowed.`));
+    }
+    
+    // Check for suspicious file names
+    const suspiciousPatterns = [
+      /\.\./,  // Path traversal
+      /[<>:"\/\\|?*\x00-\x1f]/,  // Invalid characters
+      /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i,  // Reserved Windows names
+      /^\./,   // Hidden files
+      /\s{2,}/, // Multiple spaces
+      /.{255,}/ // Very long names
+    ];
+    
+    for (const pattern of suspiciousPatterns) {
+      if (pattern.test(file.originalname)) {
+        return cb(new Error(`Suspicious file name detected: ${file.originalname}`));
+      }
+    }
+    
+    // Additional security: Check file size again at filter level
+    if (file.size && file.size > 50 * 1024 * 1024) {
+      return cb(new Error('File too large. Maximum size is 50MB.'));
+    }
+    
+    cb(null, true);
   }
 });
 
