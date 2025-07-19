@@ -67,6 +67,8 @@ const Onboarding = () => {
     applicationId: '',
     clientSecret: '',
     certificateThumbprint: '',
+    certificateFile: null,
+    certificatePassword: '',
     authMethod: 'client_secret'
   })
 
@@ -458,15 +460,72 @@ const Onboarding = () => {
               )}
 
               {credentialsData.authMethod === 'certificate' && (
-                <TextField
-                  label="Certificate Thumbprint (Optional)"
-                  fullWidth
-                  margin="normal"
-                  value={credentialsData.certificateThumbprint}
-                  onChange={(e) => setCredentialsData({...credentialsData, certificateThumbprint: e.target.value})}
-                  placeholder="Leave empty to use default certificate"
-                  helperText="Optional: Only provide if using a custom certificate"
-                />
+                <Box>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    <strong>Certificate Options:</strong> You can upload your own .pfx certificate or use the default certificate. 
+                    If uploading, provide both the certificate file and password.
+                  </Alert>
+                  
+                  <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      fullWidth
+                      sx={{ py: 1.5 }}
+                    >
+                      {credentialsData.certificateFile ? 
+                        `Selected: ${credentialsData.certificateFile.name}` : 
+                        'Upload Certificate (.pfx)'
+                      }
+                      <input
+                        type="file"
+                        hidden
+                        accept=".pfx,.p12"
+                        onChange={(e) => {
+                          const file = e.target.files[0];
+                          setCredentialsData({...credentialsData, certificateFile: file});
+                        }}
+                      />
+                    </Button>
+                    {credentialsData.certificateFile && (
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        onClick={() => setCredentialsData({
+                          ...credentialsData, 
+                          certificateFile: null, 
+                          certificatePassword: ''
+                        })}
+                      >
+                        Remove
+                      </Button>
+                    )}
+                  </Box>
+
+                  {credentialsData.certificateFile && (
+                    <TextField
+                      label="Certificate Password"
+                      fullWidth
+                      margin="normal"
+                      type="password"
+                      value={credentialsData.certificatePassword}
+                      onChange={(e) => setCredentialsData({...credentialsData, certificatePassword: e.target.value})}
+                      placeholder="Enter certificate password"
+                      helperText="Password for the uploaded .pfx certificate"
+                      required
+                    />
+                  )}
+
+                  <TextField
+                    label="Certificate Thumbprint (Optional)"
+                    fullWidth
+                    margin="normal"
+                    value={credentialsData.certificateThumbprint}
+                    onChange={(e) => setCredentialsData({...credentialsData, certificateThumbprint: e.target.value})}
+                    placeholder="Leave empty to use default certificate"
+                    helperText="Optional: Only provide if using a custom certificate"
+                  />
+                </Box>
               )}
 
               <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
@@ -477,12 +536,30 @@ const Onboarding = () => {
                       // Save credentials to user preferences
                       try {
                         setLoading(true)
+                        
+                        // Upload certificate first if provided
+                        let certificateUploadResult = null;
+                        if (credentialsData.certificateFile && credentialsData.certificatePassword) {
+                          const formData = new FormData();
+                          formData.append('certificate', credentialsData.certificateFile);
+                          formData.append('password', credentialsData.certificatePassword);
+                          formData.append('organizationId', organizationData.tenantId || 'default');
+                          
+                          certificateUploadResult = await axios.post('/api/user/certificate', formData, {
+                            headers: { 'Content-Type': 'multipart/form-data' }
+                          });
+                        }
+                        
                         const preferences = {
                           tenantId: organizationData.tenantId,
                           fqdn: organizationData.fqdn,
                           applicationId: credentialsData.applicationId || '574cfe92-60a1-4271-9c80-8aba00070e67',
                           ...(credentialsData.clientSecret && { clientSecret: credentialsData.clientSecret }),
                           ...(credentialsData.certificateThumbprint && { certificateThumbprint: credentialsData.certificateThumbprint }),
+                          ...(certificateUploadResult && { 
+                            certificateFilePath: certificateUploadResult.data.certificatePath,
+                            certificatePassword: credentialsData.certificatePassword
+                          }),
                           credentialsConfiguredAt: new Date().toISOString()
                         }
                         
@@ -490,7 +567,7 @@ const Onboarding = () => {
                         setSuccess('Credentials saved successfully!')
                         setTimeout(() => handleNext(), 1500)
                       } catch (error) {
-                        setError('Failed to save credentials')
+                        setError(error.response?.data?.error || 'Failed to save credentials')
                       } finally {
                         setLoading(false)
                       }
@@ -802,10 +879,60 @@ const Onboarding = () => {
               <Box>
                 <Alert severity="info" sx={{ mb: 2 }}>
                   <Typography variant="body2">
-                    <strong>Certificate Thumbprint is Optional!</strong> The extractor service includes pre-configured certificates (app.pfx, app.crt). 
-                    You can leave this field empty to use the default certificate, or provide your own certificate thumbprint.
+                    <strong>Certificate Options:</strong> You can upload your own .pfx certificate or use the default certificate. 
+                    Upload option allows for organization-specific certificates.
                   </Typography>
                 </Alert>
+                
+                <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    fullWidth
+                    sx={{ py: 1.5 }}
+                  >
+                    {credentialsData.certificateFile ? 
+                      `Selected: ${credentialsData.certificateFile.name}` : 
+                      'Upload Certificate (.pfx)'
+                    }
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pfx,.p12"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        setCredentialsData({...credentialsData, certificateFile: file});
+                      }}
+                    />
+                  </Button>
+                  {credentialsData.certificateFile && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={() => setCredentialsData({
+                        ...credentialsData, 
+                        certificateFile: null, 
+                        certificatePassword: ''
+                      })}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </Box>
+
+                {credentialsData.certificateFile && (
+                  <TextField
+                    label="Certificate Password"
+                    fullWidth
+                    margin="normal"
+                    type="password"
+                    value={credentialsData.certificatePassword}
+                    onChange={(e) => setCredentialsData({...credentialsData, certificatePassword: e.target.value})}
+                    placeholder="Enter certificate password"
+                    helperText="Password for the uploaded .pfx certificate"
+                    required
+                  />
+                )}
                 
                 <Box sx={{ mb: 2 }}>
                   <Button
@@ -815,10 +942,10 @@ const Onboarding = () => {
                     size="small"
                     color="primary"
                   >
-                    Download Certificate (app.crt)
+                    Download Default Certificate (app.crt)
                   </Button>
                   <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
-                    Download this certificate to upload to your Azure App Registration
+                    Download the default certificate to upload to your Azure App Registration (if not using custom certificate)
                   </Typography>
                 </Box>
                 

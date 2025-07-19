@@ -2,6 +2,7 @@ const { Worker, Queue } = require('bullmq');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const crypto = require('crypto');
 const { logger, createExtractionLogger } = require('./logger');
 const { updateExtractionProgress } = require('./progressMonitor');
@@ -49,7 +50,7 @@ const processExtractionJob = async (job) => {
     progressMonitor = updateExtractionProgress(extractionId, job);
     
     // Prepare PowerShell command based on extraction type
-    const psCommand = buildPowerShellCommand(type, parameters, credentials);
+    const psCommand = await buildPowerShellCommand(type, parameters, credentials, extractionId);
     
     // Log the command for debugging (sanitize sensitive data)
     const sanitizedCommand = psCommand.replace(/ConvertTo-SecureString\s+'[^']+'/g, 'ConvertTo-SecureString ***');
@@ -138,8 +139,8 @@ const processTestConnectionJob = async (job) => {
     // Update job progress
     await job.updateProgress(50);
     
-    // Build test connection command
-    const testCommand = buildTestConnectionCommand(parameters);
+    // Build test connection command  
+    const testCommand = await buildTestConnectionCommand(parameters);
     
     // Execute PowerShell test
     const result = await executePowerShell(testCommand, job);
@@ -189,8 +190,96 @@ const extractionWorker = new Worker('extraction-jobs', async (job) => {
   }
 }, { connection: redisConnection });
 
+// Helper function to decrypt password via API
+async function decryptPassword(encryptedPassword) {
+  try {
+    const apiUrl = process.env.API_URL || 'http://api:3000';
+    const serviceToken = process.env.SERVICE_AUTH_TOKEN;
+    
+    const response = await axios.post(
+      `${apiUrl}/api/internal/decrypt`,
+      { encryptedData: encryptedPassword },
+      {
+        headers: {
+          'x-service-token': serviceToken,
+          'Content-Type': 'application/json'
+        },
+        timeout: 5000
+      }
+    );
+    
+    if (response.data && response.data.success) {
+      return response.data.decrypted;
+    }
+    
+    return null;
+  } catch (error) {
+    logger.error('Failed to decrypt password via API:', error.message);
+    return null;
+  }
+}
+
+// Helper function to get user certificate info (path and password)
+async function getUserCertificateInfo(organizationId, userId) {
+  try {
+    const apiUrl = process.env.API_URL || 'http://api:3000';
+    const serviceToken = process.env.SERVICE_AUTH_TOKEN;
+    
+    if (!serviceToken) {
+      logger.warn('SERVICE_AUTH_TOKEN not set, skipping user certificate lookup');
+      return null;
+    }
+
+    const response = await axios.get(
+      `${apiUrl}/api/user/certificates?organizationId=${organizationId || 'default'}`,
+      {
+        headers: {
+          'x-service-token': serviceToken,
+          'x-user-id': userId || '1' // Default user ID for compatibility
+        },
+        timeout: 5000
+      }
+    );
+
+    if (response.data && response.data.success && response.data.certificates) {
+      // Find the active certificate for this organization
+      const activeCert = response.data.certificates.find(cert => 
+        cert.isActive && cert.organizationId === (organizationId || 'default')
+      );
+      
+      if (activeCert) {
+        // Return the path to the uploaded certificate in the shared volume
+        const certPath = path.join('/user_certificates', path.basename(activeCert.filePath));
+        logger.info(`Found user certificate: ${activeCert.filename} (${activeCert.thumbprint})`);
+        logger.info(`User certificate path: ${certPath}`);
+        
+        // Check if the file exists
+        if (fsSync.existsSync(certPath)) {
+          logger.info(`User certificate file verified at: ${certPath}`);
+          
+          return {
+            path: certPath,
+            encryptedPassword: activeCert.encryptedPassword,
+            thumbprint: activeCert.thumbprint,
+            filename: activeCert.filename
+          };
+        } else {
+          logger.warn(`User certificate file not found at: ${certPath}, falling back to default`);
+          return null;
+        }
+      }
+    }
+    
+    logger.info('No active user certificate found, will use default certificate');
+    return null;
+  } catch (error) {
+    logger.warn('Failed to fetch user certificate, falling back to default:', error.message);
+    return null;
+  }
+}
+
 // Build PowerShell command based on extraction type
-function buildPowerShellCommand(type, parameters, credentials) {
+async function buildPowerShellCommand(type, parameters, credentials, extractionId) {
   const baseCommand = `
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft-Extractor-Suite module...";
     Import-Module Microsoft-Extractor-Suite -Force;
@@ -234,40 +323,119 @@ function buildPowerShellCommand(type, parameters, credentials) {
   
   // Always use certificate file authentication (PFX) - thumbprint is optional
   if (credentials.applicationId) {
+    // First, try to get user-uploaded certificate
+    logger.info(`Looking for user certificate for organization: ${parameters.organizationId || 'default'}, user: ${credentials.userId || '1'}`);
+    const userCertInfo = await getUserCertificateInfo(parameters.organizationId || 'default', credentials.userId || '1');
+    
     // Certificate-based authentication with PFX file - cross-platform-safe certificate loading
     const mountedCertPath = '/certs/app.pfx';
     const fallbackCertPath = '/output/app.pfx';
-    const certPath = credentials.certificateFilePath || mountedCertPath;
-    const certPassword = credentials.certificatePassword || 'Password123';
+    let certPath = mountedCertPath;
+    let certPassword = 'Password123'; // Default password
+    
+    // Use user certificate if available
+    if (userCertInfo) {
+      certPath = userCertInfo.path;
+      
+      // Decrypt user certificate password if available
+      if (userCertInfo.encryptedPassword) {
+        const decryptedPassword = await decryptPassword(userCertInfo.encryptedPassword);
+        if (decryptedPassword) {
+          certPassword = decryptedPassword;
+          logger.info(`Using user certificate with custom password: ${userCertInfo.filename}`);
+        } else {
+          logger.warn(`Failed to decrypt password for user certificate: ${userCertInfo.filename}, using default password`);
+        }
+      } else {
+        logger.info(`Using user certificate with default password: ${userCertInfo.filename}`);
+      }
+    } else {
+      certPath = credentials.certificateFilePath || mountedCertPath;
+      certPassword = credentials.certificatePassword || 'Password123';
+      logger.info(`Using default certificate: ${certPath}`);
+    }
     command += `
       Write-Host 'Connecting to Microsoft 365 using certificate file...';
       try {
-        # Path to PFX file
+        # Certificate loading with enhanced debugging
+        Write-Host 'Certificate selection process:';
+        ${userCertInfo ? `Write-Host 'User certificate specified: ${userCertInfo.filename}';` : `Write-Host 'No user certificate found, using default';`}
+        
+        # Path to PFX file with fallback logic
         if (Test-Path '${certPath}') { 
           $pfxPath = '${certPath}';
-          Write-Host 'Using mounted certificate: ${certPath}';
+          Write-Host "Using certificate: $pfxPath";
+          ${userCertInfo ? `Write-Host 'Certificate source: User-uploaded';` : `Write-Host 'Certificate source: Default system certificate';`}
         } else { 
           $pfxPath = '${fallbackCertPath}';
-          Write-Host 'Using fallback certificate: ${fallbackCertPath}';
+          Write-Host "Primary certificate not found, using fallback: $pfxPath";
+          Write-Host 'Certificate source: Fallback system certificate';
         }
         
         # Ensure the file exists
         if (-not (Test-Path $pfxPath)) {
+          Write-Error "CERTIFICATE_ERROR: PFX file not found at: $pfxPath";
+          Write-Host 'Certificate search paths checked:';
+          Write-Host "  - Primary: ${certPath}";
+          Write-Host "  - Fallback: ${fallbackCertPath}";
+          ${userCertInfo ? `Write-Host "  - User cert: ${userCertInfo.path}";` : ''}
           throw "PFX file not found at: $pfxPath";
         }
         
+        # Log certificate file details
+        $certFileInfo = Get-Item $pfxPath;
+        Write-Host "Certificate file details:";
+        Write-Host "  - Path: $($certFileInfo.FullName)";
+        Write-Host "  - Size: $($certFileInfo.Length) bytes";
+        Write-Host "  - Modified: $($certFileInfo.LastWriteTime)";
+        
         # PFX password
         $securePwd = ConvertTo-SecureString '${certPassword}' -AsPlainText -Force;
+        Write-Host 'Loading certificate with password...';
         
         # Load the certificate (cross-platform-safe overload)
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-          $pfxPath,
-          $securePwd,
-          [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
-        );
+        try {
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+            $pfxPath,
+            $securePwd,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+          );
+          Write-Host 'Certificate loaded successfully';
+        } catch {
+          Write-Error "CERTIFICATE_LOAD_ERROR: Failed to load certificate from $pfxPath - $_";
+          Write-Host 'This could indicate:';
+          Write-Host '  - Incorrect certificate password';
+          Write-Host '  - Corrupted certificate file';
+          Write-Host '  - Invalid certificate format (must be .pfx/.p12)';
+          throw "Certificate loading failed: $_";
+        }
+        
+        # Validate certificate details
+        Write-Host 'Certificate validation:';
+        Write-Host "  - Subject: $($cert.Subject)";
+        Write-Host "  - Issuer: $($cert.Issuer)";
+        Write-Host "  - Valid From: $($cert.NotBefore)";
+        Write-Host "  - Valid Until: $($cert.NotAfter)";
+        Write-Host "  - Has Private Key: $($cert.HasPrivateKey)";
+        
+        # Check if certificate is still valid
+        $now = Get-Date;
+        if ($cert.NotAfter -lt $now) {
+          Write-Warning "CERTIFICATE_EXPIRED: Certificate expired on $($cert.NotAfter)";
+        } elseif ($cert.NotBefore -gt $now) {
+          Write-Warning "CERTIFICATE_NOT_YET_VALID: Certificate not valid until $($cert.NotBefore)";
+        } else {
+          Write-Host "Certificate is valid (expires: $($cert.NotAfter))";
+        }
+        
+        if (-not $cert.HasPrivateKey) {
+          Write-Error "CERTIFICATE_NO_PRIVATE_KEY: Certificate does not contain a private key";
+          throw "Certificate must contain a private key for authentication";
+        }
         
         # Output the thumbprint
         Write-Output ("Certificate: {0}" -f $cert.Thumbprint);
+        Write-Host "Certificate thumbprint: $($cert.Thumbprint)";
         
         # Connect to Exchange Online (Connect-M365) using that cert
         Write-Host "Executing Connect-M365 with AppId: ${credentials.applicationId}, Organization: ${parameters.fqdn || parameters.organization}";
@@ -436,7 +604,7 @@ function buildPowerShellCommand(type, parameters, credentials) {
 }
 
 // Build PowerShell command for connection testing
-function buildTestConnectionCommand(parameters) {
+async function buildTestConnectionCommand(parameters) {
   const baseCommand = `
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft-Extractor-Suite module...";
     Import-Module Microsoft-Extractor-Suite -Force;
@@ -447,9 +615,33 @@ function buildTestConnectionCommand(parameters) {
   
   // Always use certificate-based authentication for connection testing
   if (parameters.applicationId) {
-    const certPath = '/certs/app.pfx';
+    // Check for user-uploaded certificate first
+    logger.info(`Testing connection - looking for user certificate for organization: ${parameters.organizationId || 'default'}`);
+    const userCertInfo = await getUserCertificateInfo(parameters.organizationId || 'default', '1');
+    
+    let certPath = '/certs/app.pfx';
     const fallbackCertPath = '/output/app.pfx';
-    const certPassword = 'Password123';
+    let certPassword = 'Password123';
+    
+    // Use user certificate if available
+    if (userCertInfo) {
+      certPath = userCertInfo.path;
+      
+      // Decrypt user certificate password if available
+      if (userCertInfo.encryptedPassword) {
+        const decryptedPassword = await decryptPassword(userCertInfo.encryptedPassword);
+        if (decryptedPassword) {
+          certPassword = decryptedPassword;
+          logger.info(`Connection test using user certificate with custom password: ${userCertInfo.filename}`);
+        } else {
+          logger.warn(`Failed to decrypt password for user certificate: ${userCertInfo.filename}, using default password`);
+        }
+      } else {
+        logger.info(`Connection test using user certificate with default password: ${userCertInfo.filename}`);
+      }
+    } else {
+      logger.info(`Connection test using default certificate: ${certPath}`);
+    }
     command += `try {
       Write-Host 'Testing connection with certificate file...';
       $CertPwd = ConvertTo-SecureString -String '${certPassword}' -AsPlainText -Force;
