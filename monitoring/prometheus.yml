@@ -1,0 +1,50 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # MAES Platform Services
+  - job_name: 'maes-api'
+    static_configs:
+      - targets: ['api:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'maes-extractor'
+    static_configs:
+      - targets: ['extractor:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'maes-analyzer'
+    static_configs:
+      - targets: ['analyzer:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Container and System Metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+
+  # Database Metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    scrape_interval: 30s
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    scrape_interval: 30s
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 15s

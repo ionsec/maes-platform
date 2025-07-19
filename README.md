@@ -20,7 +20,7 @@
 - **M365 Data Extraction**: Audit logs, Azure AD, Exchange, SharePoint, Teams
 - **Advanced Analytics**: MITRE ATT&CK mapping, behavioral analysis, threat hunting
 - **Upload & Analyze**: Support for pre-extracted log files (JSON, CSV, TXT, LOG)
-- **Elasticsearch Integration**: Full-text search and real-time analytics
+- **Monitoring & Observability**: Prometheus, Grafana, Loki stack with pre-built dashboards
 - **Security & Compliance**: Multi-tenant, RBAC, audit logging
 - **Enterprise-Ready**: Docker containerization, microservices architecture
 - **Real-time Progress**: Live analysis progress tracking with WebSocket updates
@@ -71,6 +71,7 @@ cp .env.example .env
    - **Web Interface**: https://localhost (dev) or https://yourdomain.com (prod)
    - **API Documentation**: https://localhost/api/docs (proxied via nginx)
    - **Default Login**: admin@maes.local / admin123
+   - **Monitoring**: https://localhost/grafana/ (admin / admin) - [📊 Monitoring Guide](docs/MONITORING.md)
 
 ## 🔒 SSL & Domain Configuration
 
@@ -288,7 +289,110 @@ docker exec maes-postgres pg_dump -U maes_user maes_db > backup.sql
 docker exec -i maes-postgres psql -U maes_user maes_db < backup.sql
 ```
 
-### Health Monitoring
+## 📊 Monitoring & Observability
+
+MAES includes a comprehensive monitoring stack with Prometheus, Grafana, Loki, and cAdvisor for real-time metrics, logs, and system monitoring.
+
+### 🔍 Monitoring Services
+
+All monitoring services are accessible through nginx reverse proxy at:
+
+| Service | URL | Default Credentials | Purpose |
+|---------|-----|-------------------|---------|
+| **Grafana** | https://localhost/grafana/ | admin / admin | Dashboards & visualization |
+| **Prometheus** | https://localhost/prometheus/ | No auth | Metrics collection |
+| **Loki** | https://localhost/loki/ | No auth | Log aggregation |
+| **cAdvisor** | https://localhost/cadvisor/ | No auth | Container metrics |
+
+### 🎯 Quick Access
+
+Access monitoring from the MAES Dashboard:
+- Click **"Grafana"** button to open pre-configured dashboards
+- Click **"Prometheus"** button to access metrics directly
+- View live container logs in the Dashboard's "Live Container Logs" section
+
+### 📈 Available Dashboards
+
+**MAES Platform Overview** (Pre-configured):
+- Service CPU usage (API, Extractor, Analyzer)
+- Job statistics (Total extractions, analyses, alerts)
+- HTTP request rates and response times
+- Queue lengths for extraction and analysis jobs
+- System resource utilization
+
+### 🔧 Default Credentials
+
+**Important**: Change default passwords in production!
+
+#### Grafana
+- **Username**: `admin`
+- **Password**: `admin`
+- **Environment Variables**:
+  ```bash
+  GRAFANA_USER=your_username      # Default: admin
+  GRAFANA_PASSWORD=your_password  # Default: admin
+  ```
+
+#### Other Services
+- **Prometheus**: No authentication (internal use)
+- **Loki**: No authentication (internal use)
+- **cAdvisor**: No authentication (internal use)
+
+### 🔒 Security Configuration
+
+For production deployments, secure your monitoring stack:
+
+```bash
+# Add to your .env file
+GRAFANA_USER=secure_admin_username
+GRAFANA_PASSWORD=secure_random_password_here
+```
+
+### 📊 Available Metrics
+
+**System Metrics**:
+- CPU, Memory, Disk, Network usage
+- Container resource consumption
+- Docker container statistics
+
+**Application Metrics**:
+- HTTP request rates and latencies
+- Job queue lengths and processing times
+- Database connection pools
+- Redis connection statistics
+- Custom MAES business metrics
+
+**Log Aggregation**:
+- Structured logs from all services
+- Real-time log streaming
+- Searchable log history
+- Error tracking and alerting
+
+### 🛠️ Advanced Monitoring Setup
+
+#### Custom Metrics
+Add custom metrics to your services by using the Prometheus client:
+```javascript
+// In API service - already implemented
+const { metrics } = require('./utils/metrics');
+metrics.extractionJobsTotal.inc({ type: 'ual', status: 'completed' });
+```
+
+#### Custom Dashboards
+1. Access Grafana at https://localhost/grafana/
+2. Login with admin credentials
+3. Create new dashboard or modify existing ones
+4. Dashboards are automatically provisioned from `/monitoring/grafana/dashboards/`
+
+#### Log Queries
+Use Loki to query logs:
+```logql
+{container="maes-api"} |= "error"
+{container=~"maes-.*"} | json | level="error"
+```
+
+### 🔍 Health Monitoring
+
 ```bash
 # Check all services status
 docker compose ps
@@ -298,6 +402,30 @@ docker compose logs -f <service-name>
 
 # Monitor resource usage
 docker stats
+
+# Check specific monitoring services
+docker compose logs grafana
+docker compose logs prometheus
+docker compose logs loki
+```
+
+### 🚨 Alerting (Optional)
+
+To set up alerting, configure Alertmanager:
+1. Add alertmanager service to docker-compose.yml
+2. Configure alert rules in Prometheus
+3. Set up notification channels (email, Slack, etc.)
+
+Example alert rule for high error rates:
+```yaml
+groups:
+  - name: maes_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) > 0.1
+        for: 5m
+        annotations:
+          summary: "High error rate detected"
 ```
 
 ### Cleanup
