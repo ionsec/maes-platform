@@ -579,7 +579,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
       Write-Host "Starting UAL extraction via Graph...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
       try {
-        Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+        Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -OutputDir '${OUTPUT_PATH}';
         Write-Host "UAL Graph extraction completed successfully.";
       } catch {
         Write-Error "UAL Graph extraction failed: $_";
