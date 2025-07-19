@@ -17,13 +17,14 @@
 
 ## 🚀 Features
 
-- **M365 Data Extraction**: Audit logs, Azure AD, Exchange, SharePoint, Teams
+- **M365 Data Extraction**: Audit logs, Azure AD, Exchange, SharePoint, Teams, UAL Graph, Licenses
 - **Advanced Analytics**: MITRE ATT&CK mapping, behavioral analysis, threat hunting
 - **Upload & Analyze**: Support for pre-extracted log files (JSON, CSV, TXT, LOG)
-- **Real-time Alerts**: Comprehensive alert system with severity levels and notifications
+- **Real-time Status Sync**: Robust service communication with exponential backoff retry logic
+- **System Logs Management**: Real-time container log access with advanced filtering and raw log viewing
 - **Monitoring & Observability**: Prometheus, Grafana, Loki, cAdvisor with integrated access
-- **Security & Compliance**: Multi-tenant, RBAC, audit logging
-- **Enterprise-Ready**: Docker containerization, microservices architecture
+- **Security & Compliance**: Multi-tenant, RBAC, audit logging, IPv6/IPv4 network support
+- **Enterprise-Ready**: Docker containerization, microservices architecture with service mesh communication
 - **Real-time Progress**: Live analysis progress tracking with WebSocket updates
 
 ## 🚦 Quick Start
@@ -233,6 +234,30 @@ docker push your-registry/maes-extractor:latest
 docker push your-registry/maes-analyzer:latest
 ```
 
+## 🔄 Recent Platform Enhancements
+
+### Service Communication & Status Synchronization
+- **Fixed Extractor Status Sync**: Resolved critical issue where completed extractions remained stuck in "pending" status
+- **IPv6/IPv4 Network Support**: Enhanced container networking with proper IPv6-mapped IPv4 address handling
+- **Exponential Backoff Retry**: Implemented robust retry logic (3 attempts, 2-second delays) for failed API communications
+- **Service Token Security**: Strengthened internal service authentication with timing-safe token validation
+
+### System Logs Infrastructure  
+- **Real-time Container Logs**: New SystemLogs page with live access to all container logs
+- **Advanced Log Filtering**: Search by container, log level, time range, and content with pagination
+- **Raw Log Viewing**: Complete unprocessed log data with JSON parsing and metadata display
+- **Secure Access Control**: Requires `canManageSystemSettings` permission for administrative log access
+
+### Database Enhancements
+- **Extended Extraction Types**: Added support for 'ual_graph' and 'licenses' extraction types
+- **Improved Data Integrity**: Fixed PostgreSQL enum validation errors for new extraction types
+- **Status Synchronization**: Real-time database updates reflecting extraction job completion states
+
+### Architecture Improvements
+- **Microservices Communication**: Enhanced service-to-service API communication with robust error handling
+- **Container Orchestration**: Improved Docker networking and service discovery
+- **Performance Optimization**: Efficient log pagination and caching for large data volumes
+
 ## 🔧 Troubleshooting
 
 ### Services Not Starting
@@ -256,10 +281,21 @@ docker push your-registry/maes-analyzer:latest
   4. Add the user or service principal to this role
 - **Alternative**: Use Global Administrator role (not recommended for production)
 
+### Extraction Status Issues
+- **Issue**: Extractions stuck in "pending" status despite completion
+- **Solution**: Status synchronization has been enhanced with retry logic
+- **Check**: Monitor SystemLogs page for service communication errors
+- **Debug**: Verify service token authentication between containers
+
 ### Analysis Not Showing Progress
 - Check that analysis jobs are created in database
 - Verify analyzer service is processing jobs
 - Check WebSocket connection in browser dev tools
+
+### System Logs Access
+- **Permission Required**: `canManageSystemSettings` role permission
+- **Access Path**: Dashboard → System Logs or direct navigation
+- **Features**: Container filtering, log level filtering, raw log viewing
 
 ### Performance Issues
 - Adjust Elasticsearch memory: Update `ES_JAVA_OPTS` in docker-compose
