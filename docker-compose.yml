@@ -165,7 +165,7 @@ services:
       - '--storage.tsdb.retention.time=30d'
       - '--web.enable-lifecycle'
       - '--web.external-url=https://localhost/prometheus/'
-      - '--web.route-prefix=/prometheus/'
+      - '--web.route-prefix=/'
     ports:
       - "9090:9090"
     volumes:
@@ -188,6 +188,8 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=https://localhost/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_STATIC_ROOT_PATH=/usr/share/grafana/public
+      - GF_SERVER_ENABLE_GZIP=true
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     ports:
       - "3001:3000"
