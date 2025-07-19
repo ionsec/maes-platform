@@ -1,5 +1,5 @@
 const express = require('express');
-const { encrypt, decrypt } = require('../utils/encryption');
+const EncryptionUtil = require('../utils/encryption');
 const { logger } = require('../utils/logger');
 
 const router = express.Router();
@@ -35,7 +35,7 @@ router.post('/decrypt', async (req, res) => {
       return res.status(400).json({ error: 'Missing encrypted data' });
     }
     
-    const decrypted = decrypt(encryptedData);
+    const decrypted = EncryptionUtil.decrypt(encryptedData);
     
     res.json({
       success: true,
@@ -59,7 +59,7 @@ router.post('/encrypt', async (req, res) => {
       return res.status(400).json({ error: 'Missing data to encrypt' });
     }
     
-    const encrypted = encrypt(data);
+    const encrypted = EncryptionUtil.encrypt(data);
     
     res.json({
       success: true,
