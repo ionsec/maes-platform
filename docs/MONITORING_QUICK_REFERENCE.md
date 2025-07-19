@@ -67,32 +67,82 @@ Access via Grafana → Explore → Loki:
 
 ## 🚨 Common Issues & Quick Fixes
 
-### Grafana Won't Load
+### Service Links Not Working
+If clicking Grafana/Prometheus buttons opens empty pages:
+
 ```bash
-# Check Grafana status
+# 1. Check all monitoring services are running
+docker ps | grep -E "(grafana|prometheus|loki|cadvisor)"
+
+# 2. Restart nginx if needed
+docker restart maes-frontend
+
+# 3. Check nginx configuration syntax
+docker exec maes-frontend nginx -t
+
+# 4. Check if services are accessible directly (for debugging)
+curl -f http://localhost:3001  # Grafana direct port
+curl -f http://localhost:9090  # Prometheus direct port
+```
+
+### Grafana Shows "Bad Gateway" or Won't Load
+```bash
+# Check Grafana status and logs
 docker logs maes-grafana
+
+# Verify Grafana is responding
+docker exec maes-grafana curl localhost:3000/api/health
 
 # Restart if needed
 docker restart maes-grafana
 ```
 
-### Missing Metrics
+### Prometheus Not Accessible
 ```bash
-# Check Prometheus targets
-# Go to: https://localhost/prometheus/targets
-# All targets should show "UP"
+# Check Prometheus status
+docker logs maes-prometheus
 
-# Test API metrics endpoint
+# Verify Prometheus web interface
+docker exec maes-prometheus curl localhost:9090/-/healthy
+
+# Check configuration
+docker exec maes-prometheus promtool check config /etc/prometheus/prometheus.yml
+```
+
+### Missing Metrics in Prometheus
+```bash
+# Check Prometheus targets status
+# Go to: https://localhost/prometheus/targets
+# All targets should show "UP" in green
+
+# Test API metrics endpoint directly
 docker exec maes-api curl localhost:3000/metrics
+
+# Check if services are exposing metrics
+docker exec maes-extractor curl localhost:3000/metrics 2>/dev/null || echo "Extractor metrics not available"
+docker exec maes-analyzer curl localhost:3000/metrics 2>/dev/null || echo "Analyzer metrics not available"
 ```
 
 ### No Logs in Grafana
 ```bash
-# Check Loki logs
+# Check Loki status
 docker logs maes-loki
 
 # Check Promtail (log collector)
 docker logs maes-promtail
+
+# Test Loki API directly
+docker exec maes-loki curl localhost:3100/ready
+```
+
+### Network/Proxy Issues
+```bash
+# Check if nginx can reach monitoring services
+docker exec maes-frontend ping maes-grafana
+docker exec maes-frontend ping maes-prometheus
+
+# Verify Docker network connectivity
+docker network inspect maes-platform_maes-network
 ```
 
 ## ⚡ Performance Tips

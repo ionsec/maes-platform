@@ -1,6 +1,17 @@
 import React, { useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { Container, Box } from '@mui/material'
+
+// Component to handle external redirects
+const ExternalRedirect = ({ url }) => {
+  useEffect(() => {
+    window.open(url, '_blank')
+    // Redirect back to dashboard after opening external link
+    window.location.href = '/dashboard'
+  }, [url])
+  
+  return <div>Redirecting to monitoring service...</div>
+}
 import { useAuthStore } from './stores/authStore'
 import { setNavigate } from './utils/axios'
 import Header from './components/Header'
@@ -109,6 +120,11 @@ function App() {
               <Route path="/reports" element={<Reports />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/siem" element={<SIEMConfiguration />} />
+              {/* Redirect monitoring service routes to external tabs */}
+              <Route path="/grafana/*" element={<ExternalRedirect url="/grafana/" />} />
+              <Route path="/prometheus/*" element={<ExternalRedirect url="/prometheus/" />} />
+              <Route path="/loki/*" element={<ExternalRedirect url="/loki/" />} />
+              <Route path="/cadvisor/*" element={<ExternalRedirect url="/cadvisor/" />} />
             </Routes>
           </Box>
           <Footer />

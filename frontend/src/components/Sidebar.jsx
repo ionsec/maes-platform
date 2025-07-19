@@ -27,7 +27,10 @@ import {
   BugReport,
   Visibility,
   Storage,
-  ConnectedTv
+  ConnectedTv,
+  TrendingUp,
+  Memory,
+  Speed
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getApiUrl } from '../config/api'
@@ -84,8 +87,13 @@ const Sidebar = ({ open, onClose }) => {
   const location = useLocation()
 
   const handleNavigation = (path) => {
-    if (path.startsWith('http')) {
-      // External link - open in new tab
+    // Check if it's an external link or monitoring service
+    if (path.startsWith('http') || 
+        path.startsWith('/grafana/') || 
+        path.startsWith('/prometheus/') || 
+        path.startsWith('/loki/') || 
+        path.startsWith('/cadvisor/')) {
+      // External link or monitoring service - open in new tab
       window.open(path, '_blank')
     } else {
       navigate(path)
@@ -145,6 +153,88 @@ const Sidebar = ({ open, onClose }) => {
         ))}
       </List>
       <Divider />
+      
+      {/* Monitoring Services Section */}
+      <List>
+        <ListItem>
+          <ListItemText 
+            primary="System Monitoring"
+            primaryTypographyProps={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              color: 'text.secondary',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}
+          />
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={() => handleNavigation('/grafana/')}
+            sx={{ pl: 4 }}
+          >
+            <ListItemIcon sx={{ minWidth: 32 }}>
+              <TrendingUp fontSize="small" />
+            </ListItemIcon>
+            <ListItemText 
+              primary="Grafana"
+              secondary="Dashboards & Visualization"
+              primaryTypographyProps={{ fontSize: '0.875rem' }}
+              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={() => handleNavigation('/prometheus/')}
+            sx={{ pl: 4 }}
+          >
+            <ListItemIcon sx={{ minWidth: 32 }}>
+              <Speed fontSize="small" />
+            </ListItemIcon>
+            <ListItemText 
+              primary="Prometheus"
+              secondary="Metrics Collection"
+              primaryTypographyProps={{ fontSize: '0.875rem' }}
+              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={() => handleNavigation('/loki/')}
+            sx={{ pl: 4 }}
+          >
+            <ListItemIcon sx={{ minWidth: 32 }}>
+              <Visibility fontSize="small" />
+            </ListItemIcon>
+            <ListItemText 
+              primary="Loki"
+              secondary="Log Aggregation"
+              primaryTypographyProps={{ fontSize: '0.875rem' }}
+              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding>
+          <ListItemButton
+            onClick={() => handleNavigation('/cadvisor/')}
+            sx={{ pl: 4 }}
+          >
+            <ListItemIcon sx={{ minWidth: 32 }}>
+              <Memory fontSize="small" />
+            </ListItemIcon>
+            <ListItemText 
+              primary="cAdvisor"
+              secondary="Container Metrics"
+              primaryTypographyProps={{ fontSize: '0.875rem' }}
+              secondaryTypographyProps={{ fontSize: '0.75rem' }}
+            />
+          </ListItemButton>
+        </ListItem>
+      </List>
+      <Divider />
+      
       <List>
         <ListItem disablePadding>
           <ListItemButton
