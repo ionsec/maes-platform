@@ -3,43 +3,86 @@ const bcrypt = require('bcryptjs');
 const { User, Organization, AuditLog } = require('../services/models');
 const { authenticateToken, requirePermission, requireOrganizationAccess } = require('../middleware/auth');
 const { logger } = require('../utils/logger');
+const { pool } = require('../services/database');
 
 const router = express.Router();
 
 // Get users for organization
 router.get('/', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
+  
   try {
     const { page = 1, limit = 20, role, search, isActive } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const whereClause = { organizationId: req.organizationId };
+    let whereConditions = ['u.organization_id = $1'];
+    let queryParams = [req.organizationId];
+    let paramCount = 1;
 
-    if (role) whereClause.role = role;
-    if (isActive !== undefined) whereClause.isActive = isActive === 'true';
-
-    if (search) {
-      whereClause[sequelize.Op.or] = [
-        { firstName: { [sequelize.Op.iLike]: `%${search}%` } },
-        { lastName: { [sequelize.Op.iLike]: `%${search}%` } },
-        { email: { [sequelize.Op.iLike]: `%${search}%` } },
-        { username: { [sequelize.Op.iLike]: `%${search}%` } }
-      ];
+    if (role) {
+      paramCount++;
+      whereConditions.push(`u.role = $${paramCount}`);
+      queryParams.push(role);
     }
 
-    const users = await User.findAndCountAll({
-      where: whereClause,
-      limit: parseInt(limit),
-      offset: (parseInt(page) - 1) * parseInt(limit),
-      order: [['createdAt', 'DESC']]
-    });
+    if (isActive !== undefined) {
+      paramCount++;
+      whereConditions.push(`u.is_active = $${paramCount}`);
+      queryParams.push(isActive === 'true');
+    }
+
+    if (search) {
+      paramCount++;
+      whereConditions.push(`(
+        u.first_name ILIKE $${paramCount} OR 
+        u.last_name ILIKE $${paramCount} OR 
+        u.email ILIKE $${paramCount} OR 
+        u.username ILIKE $${paramCount}
+      )`);
+      queryParams.push(`%${search}%`);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total 
+      FROM maes.users u 
+      WHERE ${whereClause}
+    `;
+    const countResult = await pool.query(countQuery, queryParams);
+    const total = parseInt(countResult.rows[0].total);
+
+    // Get paginated users
+    paramCount++;
+    const usersQuery = `
+      SELECT 
+        u.id, u.email, u.username, u.first_name, u.last_name,
+        u.role, u.permissions, u.is_active, u.last_login,
+        u.created_at, u.updated_at
+      FROM maes.users u
+      WHERE ${whereClause}
+      ORDER BY u.created_at DESC
+      LIMIT $${paramCount} OFFSET $${paramCount + 1}
+    `;
+    queryParams.push(parseInt(limit), offset);
+    
+    const usersResult = await pool.query(usersQuery, queryParams);
 
     res.json({
       success: true,
-      users: users.rows,
+      users: usersResult.rows.map(user => ({
+        ...user,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        isActive: user.is_active,
+        lastLoginAt: user.last_login,
+        createdAt: user.created_at
+      })),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
-        total: users.count,
-        pages: Math.ceil(users.count / parseInt(limit))
+        total: total,
+        totalPages: Math.ceil(total / parseInt(limit))
       }
     });
 
@@ -206,7 +249,8 @@ router.put('/:userId', authenticateToken, requirePermission('canManageUsers'), a
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
-        isActive: user.isActive
+        isActive: user.isActive,
+        permissions: user.permissions
       }
     });
 
@@ -285,6 +329,52 @@ router.patch('/:userId/deactivate', authenticateToken, requirePermission('canMan
 });
 
 // Reactivate user
+router.patch('/:userId/permissions', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { permissions } = req.body;
+
+    // Validate permissions object
+    if (!permissions || typeof permissions !== 'object') {
+      return res.status(400).json({ error: 'Invalid permissions object' });
+    }
+
+    const user = await User.findOne({
+      where: { id: userId, organizationId: req.organizationId }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Don't allow users to modify their own permissions
+    if (userId === req.user.id) {
+      return res.status(403).json({ error: 'Cannot modify your own permissions' });
+    }
+
+    // Update user permissions
+    await user.update({ permissions });
+
+    logger.info(`Updated permissions for user: ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'User permissions updated successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        permissions: user.permissions
+      }
+    });
+
+  } catch (error) {
+    logger.error('Update user permissions error:', error);
+    res.status(500).json({ error: 'Failed to update user permissions' });
+  }
+});
+
 router.patch('/:userId/reactivate', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
   try {
     const { userId } = req.params;

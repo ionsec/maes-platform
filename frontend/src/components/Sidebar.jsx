@@ -30,7 +30,8 @@ import {
   ConnectedTv,
   TrendingUp,
   Memory,
-  Speed
+  Speed,
+  People
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getApiUrl } from '../config/api'
@@ -79,6 +80,12 @@ const menuItems = [
     icon: <Settings />, 
     path: '/settings',
     description: 'Platform Settings'
+  },
+  { 
+    text: 'User Management', 
+    icon: <People />, 
+    path: '/users',
+    description: 'Manage Users & Permissions'
   }
 ]
 

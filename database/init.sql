@@ -261,7 +261,7 @@ INSERT INTO users (organization_id, email, username, password, role, permissions
      'admin', 
      '$2a$10$TVQSYBn13hZpQ9O/uXKsTu32UmErtxG3m2FHUDL7DOhBLwUS7l1fm', -- bcrypt hash of 'admin123'
      'admin',
-     '{"canManageExtractions": true, "canRunAnalysis": true, "canViewReports": true, "canManageAlerts": true, "canManageUsers": true, "canManageOrganization": true}');
+     '{"canManageExtractions": true, "canRunAnalysis": true, "canViewReports": true, "canManageAlerts": true, "canManageUsers": true, "canManageOrganization": true, "canManageSystemSettings": true}');
 
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA maes TO maes_user;
