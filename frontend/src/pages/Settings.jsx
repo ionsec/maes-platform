@@ -52,6 +52,8 @@ import { useTheme } from '../theme/ThemeProvider';
 const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [organization, setOrganization] = useState(null);
+  const [userOrganizations, setUserOrganizations] = useState([]);
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
   const { currentTheme } = useTheme();
   const [tabValue, setTabValue] = useState(0);
   const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
@@ -73,10 +75,26 @@ const Settings = () => {
   const watchedClientSecret = watchCredentials('clientSecret');
   const watchedCertificateThumbprint = watchCredentials('certificateThumbprint');
 
-  const fetchOrganization = async () => {
+  const fetchUserOrganizations = async () => {
+    try {
+      const response = await axios.get('/api/user/organizations');
+      setUserOrganizations(response.data.organizations || []);
+      
+      // Set the first organization as selected if none is selected
+      if (!selectedOrgId && response.data.organizations?.length > 0) {
+        setSelectedOrgId(response.data.organizations[0].id);
+      }
+    } catch (error) {
+      enqueueSnackbar('Failed to fetch user organizations', { variant: 'error' });
+    }
+  };
+
+  const fetchOrganization = async (orgId = selectedOrgId) => {
+    if (!orgId) return;
+    
     setLoading(true);
     try {
-      const response = await axios.get('/api/organizations/current');
+      const response = await axios.get(`/api/organizations/${orgId}`);
       setOrganization(response.data.organization);
       
       // Set form values
@@ -100,8 +118,14 @@ const Settings = () => {
   };
 
   useEffect(() => {
-    fetchOrganization();
+    fetchUserOrganizations();
   }, []);
+
+  useEffect(() => {
+    if (selectedOrgId) {
+      fetchOrganization(selectedOrgId);
+    }
+  }, [selectedOrgId]);
 
   const onSubmit = async (data) => {
     try {
@@ -129,9 +153,9 @@ const Settings = () => {
         }
       };
 
-      await axios.put('/api/organizations/current', payload);
+      await axios.put(`/api/organizations/${selectedOrgId}`, payload);
       enqueueSnackbar('Settings saved successfully', { variant: 'success' });
-      fetchOrganization();
+      fetchOrganization(selectedOrgId);
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to save settings', { variant: 'error' });
     }
@@ -308,8 +332,50 @@ const Settings = () => {
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
-        {organization?.id === 'individual' ? 'User Settings' : 'Organization Settings'}
+        Organization Settings
       </Typography>
+
+      {/* Organization Selector */}
+      {userOrganizations.length > 1 && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <FormControl fullWidth>
+            <InputLabel>Select Organization</InputLabel>
+            <Select
+              value={selectedOrgId || ''}
+              label="Select Organization"
+              onChange={(e) => setSelectedOrgId(e.target.value)}
+            >
+              {userOrganizations.map((org) => (
+                <MenuItem key={org.id} value={org.id}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography>{org.name}</Typography>
+                    <Chip 
+                      label={org.fqdn} 
+                      size="small" 
+                      variant="outlined" 
+                      sx={{ ml: 1 }}
+                    />
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          
+          {/* Add New Organization Button */}
+          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                // Navigate to onboarding to add new organization
+                window.location.href = '/onboarding';
+              }}
+            >
+              Add New Organization
+            </Button>
+          </Box>
+        </Paper>
+      )}
 
       <Paper sx={{ mb: 3 }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
