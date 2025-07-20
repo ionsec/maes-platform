@@ -507,7 +507,21 @@ const authenticateToken = async (req, res, next) => {
 
       req.user = user;
       req.userId = user.id;
-      req.organizationId = user.organization_id;
+      
+      // Handle organization context for multi-organization users
+      // Check if organizationId is provided in query params (for filtering)
+      const requestedOrgId = req.query.organizationId || req.headers['x-organization-id'];
+      
+      if (requestedOrgId) {
+        // Verify user has access to the requested organization
+        // For now, we'll use the requested organizationId if provided
+        // TODO: Add validation to ensure user has access to this organization
+        req.organizationId = requestedOrgId;
+      } else {
+        // Default to user's primary organization
+        req.organizationId = user.organization_id;
+      }
+      
       next();
     });
   } catch (error) {

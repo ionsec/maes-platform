@@ -1041,4 +1041,35 @@ router.post('/certificates/:certificateId/activate', async (req, res) => {
   }
 });
 
+// Get user's accessible organizations
+router.get('/organizations', async (req, res) => {
+  try {
+    const { getRows } = require('../services/database');
+    
+    const userOrganizations = await getRows(`
+      SELECT 
+        uo.organization_id,
+        uo.role,
+        uo.permissions,
+        uo.is_primary,
+        o.name as organization_name,
+        o.fqdn as organization_fqdn,
+        o.tenant_id as organization_tenant_id
+      FROM maes.user_organizations uo
+      LEFT JOIN maes.organizations o ON uo.organization_id = o.id
+      WHERE uo.user_id = $1
+      ORDER BY uo.is_primary DESC, o.name ASC
+    `, [req.userId]);
+
+    res.json({
+      success: true,
+      organizations: userOrganizations
+    });
+
+  } catch (error) {
+    logger.error('Get user organizations error:', error);
+    res.status(500).json({ error: 'Failed to fetch user organizations' });
+  }
+});
+
 module.exports = router;

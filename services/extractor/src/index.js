@@ -32,13 +32,13 @@ const OUTPUT_PATH = '/output';
 
 // Process extraction jobs with proper error handling
 const processExtractionJob = async (job) => {
-  const { extractionId, type, parameters, credentials } = job.data;
+  const { extractionId, type, parameters, credentials, organizationId, organizationName } = job.data;
   
   // Create extraction-specific logger
   const extractionLogger = createExtractionLogger(extractionId);
   
-  logger.info(`Starting extraction job ${extractionId} of type ${type}`);
-  extractionLogger.info(`Starting extraction job of type ${type}`);
+  logger.info(`Starting extraction job ${extractionId} of type ${type} for organization ${organizationName || organizationId || 'default'}`);
+  extractionLogger.info(`Starting extraction job of type ${type} for organization: ${organizationName || organizationId || 'default'}`);
   
   let progressMonitor = null;
   

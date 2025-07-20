@@ -63,6 +63,10 @@ const Onboarding = () => {
     tenantId: ''
   })
   
+  const [organizations, setOrganizations] = useState([])
+  const [currentOrgIndex, setCurrentOrgIndex] = useState(0)
+  const [isAddingMultipleOrgs, setIsAddingMultipleOrgs] = useState(false)
+  
   const [credentialsData, setCredentialsData] = useState({
     applicationId: '',
     clientSecret: '',
@@ -179,24 +183,53 @@ const Onboarding = () => {
 
     setLoading(true)
     try {
-      const updateData = {
+      const orgData = {
         name: organizationData.name,
         fqdn: organizationData.fqdn
       }
       
       // Only include tenantId if it's provided and looks like a UUID
       if (organizationData.tenantId && organizationData.tenantId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        updateData.tenantId = organizationData.tenantId
+        orgData.tenantId = organizationData.tenantId
       }
       
-      await axios.put('/api/organizations/current', updateData)
-      setSuccess('Organization details updated successfully!')
-      setTimeout(() => handleNext(), 2000)
+      if (isAddingMultipleOrgs) {
+        // Add organization to user's accessible organizations
+        await axios.post('/api/user/organizations', orgData)
+        
+        // Add to local state
+        setOrganizations([...organizations, { ...orgData, id: Date.now() }])
+        
+        // Reset form for next organization
+        setOrganizationData({ name: '', fqdn: '', tenantId: '' })
+        setSuccess(`Organization "${orgData.name}" added successfully! Add another or continue.`)
+      } else {
+        // Update current organization (legacy single-org mode)
+        await axios.put('/api/organizations/current', orgData)
+        setSuccess('Organization details updated successfully!')
+        setTimeout(() => handleNext(), 2000)
+      }
     } catch (error) {
-      setError(error.response?.data?.error || 'Failed to update organization')
+      setError(error.response?.data?.error || 'Failed to save organization')
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleAddAnotherOrg = () => {
+    setIsAddingMultipleOrgs(true)
+    setOrganizationData({ name: '', fqdn: '', tenantId: '' })
+    setError('')
+    setSuccess('')
+  }
+
+  const handleFinishAddingOrgs = () => {
+    if (organizations.length === 0) {
+      setError('Please add at least one organization')
+      return
+    }
+    setSuccess(`${organizations.length} organization(s) configured successfully!`)
+    setTimeout(() => handleNext(), 2000)
   }
 
   const handleCredentialsSetup = async () => {
@@ -436,7 +469,7 @@ const Onboarding = () => {
                   <Alert severity="info" sx={{ mt: 2 }}>
                     <Typography variant="body2">
                       As an individual user, you can use MAES for analysis and reporting. 
-                      You can optionally configure Microsoft 365 credentials later to enable data extraction.
+                      You can configure credentials for multiple Microsoft 365 organizations to enable comprehensive data extraction and monitoring.
                     </Typography>
                   </Alert>
                 </CardContent>
@@ -962,9 +995,29 @@ const Onboarding = () => {
           <Box>
             <Alert severity="info" sx={{ mb: 3 }}>
               <Typography variant="body2">
-                Configure your organization details to connect to Microsoft 365. The FQDN is typically your tenant domain (e.g., yourcompany.onmicrosoft.com).
+                Configure organization details to connect to Microsoft 365. You can add multiple organizations for comprehensive monitoring across your managed clients.
               </Typography>
             </Alert>
+
+            {/* Show added organizations */}
+            {organizations.length > 0 && (
+              <Card sx={{ mb: 3 }}>
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>Added Organizations ({organizations.length})</Typography>
+                  <List>
+                    {organizations.map((org, index) => (
+                      <ListItem key={index}>
+                        <ListItemIcon><Business /></ListItemIcon>
+                        <ListItemText 
+                          primary={org.name}
+                          secondary={`${org.fqdn}${org.tenantId ? ` (${org.tenantId})` : ''}`}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </CardContent>
+              </Card>
+            )}
 
             <TextField
               label="Organization Name"
@@ -972,7 +1025,7 @@ const Onboarding = () => {
               margin="normal"
               value={organizationData.name}
               onChange={(e) => setOrganizationData({...organizationData, name: e.target.value})}
-              placeholder="Your Company Name"
+              placeholder="Your Client Organization Name"
               required
             />
             <TextField
@@ -981,9 +1034,9 @@ const Onboarding = () => {
               margin="normal"
               value={organizationData.fqdn}
               onChange={(e) => setOrganizationData({...organizationData, fqdn: e.target.value})}
-              placeholder="yourcompany.onmicrosoft.com"
+              placeholder="clientcompany.onmicrosoft.com"
               required
-              helperText="Your Microsoft 365 tenant domain (FQDN)"
+              helperText="Microsoft 365 tenant domain (FQDN)"
             />
             <TextField
               label="Tenant ID (Optional)"
@@ -995,15 +1048,40 @@ const Onboarding = () => {
               helperText="Azure AD Tenant ID (GUID) - Optional if FQDN is provided"
             />
 
-            <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+            <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Button
                 variant="contained"
                 onClick={handleOrganizationSetup}
                 disabled={loading || !organizationData.name || !organizationData.fqdn}
                 startIcon={loading ? <CircularProgress size={20} /> : <Business />}
               >
-                {loading ? 'Saving...' : 'Save Organization Details'}
+                {loading ? 'Adding...' : isAddingMultipleOrgs ? 'Add Organization' : 'Save Organization'}
               </Button>
+              
+              {!isAddingMultipleOrgs && (
+                <Button
+                  variant="outlined"
+                  onClick={handleAddAnotherOrg}
+                  disabled={loading}
+                  startIcon={<Business />}
+                  color="primary"
+                >
+                  Add Multiple Organizations
+                </Button>
+              )}
+              
+              {isAddingMultipleOrgs && organizations.length > 0 && (
+                <Button
+                  variant="contained"
+                  onClick={handleFinishAddingOrgs}
+                  disabled={loading}
+                  startIcon={<CheckCircle />}
+                  color="success"
+                >
+                  Finish Adding Organizations
+                </Button>
+              )}
+              
               <Button
                 variant="outlined"
                 onClick={handleNext}

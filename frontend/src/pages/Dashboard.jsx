@@ -29,7 +29,8 @@ import {
   MenuItem,
   Switch,
   FormControlLabel,
-  Fab
+  Fab,
+  Divider
 } from '@mui/material'
 import {
   CloudDownload,
@@ -62,6 +63,7 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 import { useAlerts } from '../hooks/useAlerts'
 import TourButton from '../components/TourButton'
 import { useTour } from '../contexts/TourContext'
+import { useAuth } from '../contexts/AuthContext'
 
 dayjs.extend(relativeTime)
 
@@ -70,6 +72,13 @@ const ResponsiveGridLayout = WidthProvider(Responsive)
 const Dashboard = () => {
   const { alertStats } = useAlerts()
   const { startTour, isTourCompleted } = useTour()
+  const { user } = useAuth()
+  
+  // Organization state
+  const [userOrganizations, setUserOrganizations] = useState([])
+  const [selectedOrgId, setSelectedOrgId] = useState(null)
+  const [selectedOrgName, setSelectedOrgName] = useState('All Organizations')
+  
   const [stats, setStats] = useState({
     extractions: { total: 0, active: 0, completed: 0, failed: 0 },
     analyses: { total: 0, completed: 0, running: 0, failed: 0 },
@@ -189,12 +198,51 @@ const Dashboard = () => {
     setLayouts(layouts)
   }, [])
 
+  // Fetch user organizations
+  const fetchUserOrganizations = async () => {
+    try {
+      const response = await axios.get('/api/user/organizations')
+      if (response.data.success) {
+        const orgs = response.data.organizations || []
+        setUserOrganizations(orgs)
+        
+        // Set default organization if not already set
+        if (!selectedOrgId && orgs.length > 0) {
+          const primaryOrg = orgs.find(org => org.is_primary) || orgs[0]
+          setSelectedOrgId(primaryOrg.organization_id)
+          setSelectedOrgName(primaryOrg.organization_name || primaryOrg.organization_id)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch user organizations:', error)
+    }
+  }
+
+  // Handle organization change
+  const handleOrganizationChange = (orgId) => {
+    setSelectedOrgId(orgId)
+    if (orgId === 'all') {
+      setSelectedOrgName('All Organizations')
+    } else {
+      const org = userOrganizations.find(org => org.organization_id === orgId)
+      setSelectedOrgName(org?.organization_name || orgId)
+    }
+  }
+
   const fetchDashboardData = async () => {
     try {
+      // Build API URLs with organization filter if selected
+      const extractionsUrl = selectedOrgId && selectedOrgId !== 'all' 
+        ? `/api/extractions?organizationId=${selectedOrgId}` 
+        : '/api/extractions'
+      const analysisUrl = selectedOrgId && selectedOrgId !== 'all' 
+        ? `/api/analysis?organizationId=${selectedOrgId}` 
+        : '/api/analysis'
+      
       // Fetch basic stats (alerts are now handled by useAlerts hook)
       const [extractionsRes, analysisRes] = await Promise.all([
-        axios.get('/api/extractions'),
-        axios.get('/api/analysis')
+        axios.get(extractionsUrl),
+        axios.get(analysisUrl)
       ])
 
       const extractions = extractionsRes.data.extractions || []
@@ -313,11 +361,18 @@ const Dashboard = () => {
     }
   }
 
+  // Fetch user organizations on mount
+  useEffect(() => {
+    if (user) {
+      fetchUserOrganizations()
+    }
+  }, [user])
+
   useEffect(() => {
     fetchDashboardData()
     const interval = setInterval(fetchDashboardData, refreshInterval * 1000)
     return () => clearInterval(interval)
-  }, [refreshInterval, alertStats])
+  }, [refreshInterval, alertStats, selectedOrgId])
 
   // Generate activity data for charts
   const activityData = []
@@ -797,6 +852,14 @@ const Dashboard = () => {
           }}
         >
           System Monitoring Dashboard
+          {selectedOrgName !== 'All Organizations' && (
+            <Chip 
+              label={selectedOrgName} 
+              size="small" 
+              color="primary" 
+              sx={{ ml: 2 }}
+            />
+          )}
         </Typography>
         <Box sx={{ 
           display: 'flex', 
@@ -804,6 +867,27 @@ const Dashboard = () => {
           gap: { xs: 1, sm: 2 },
           flexWrap: { xs: 'wrap', sm: 'nowrap' }
         }}>
+          {/* Organization Selector */}
+          {userOrganizations.length > 1 && (
+            <FormControl size="small" sx={{ minWidth: 200 }}>
+              <InputLabel>Organization</InputLabel>
+              <Select
+                value={selectedOrgId || 'all'}
+                label="Organization"
+                onChange={(e) => handleOrganizationChange(e.target.value)}
+              >
+                <MenuItem value="all">All Organizations</MenuItem>
+                <Divider />
+                {userOrganizations.map((org) => (
+                  <MenuItem key={org.organization_id} value={org.organization_id}>
+                    {org.organization_name || org.organization_id}
+                    {org.is_primary && <Chip label="Primary" size="small" sx={{ ml: 1 }} />}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          
           <FormControl size="small" sx={{ minWidth: 120 }}>
             <InputLabel>Refresh</InputLabel>
             <Select
