@@ -95,7 +95,7 @@ const UserProfile = () => {
       lastName: user?.lastName || '',
       email: user?.email || '',
       phone: user?.phone || '',
-      organization: user?.organization || '',
+      organization: user?.organization?.name || user?.organization || '',
       department: user?.department || '',
       jobTitle: user?.jobTitle || '',
       location: user?.location || '',
@@ -246,6 +246,16 @@ const UserProfile = () => {
     </div>
   );
 
+  if (!user) {
+    return (
+      <Box sx={{ p: 3, textAlign: 'center' }}>
+        <Typography variant="h6" color="text.secondary">
+          Loading user profile...
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
@@ -308,7 +318,7 @@ const UserProfile = () => {
                       sx={{ width: 120, height: 120, mx: 'auto', mb: 2 }}
                       src={user?.profilePicture}
                     >
-                      {user?.firstName?.[0]}{user?.lastName?.[0]}
+                      {(user?.firstName?.[0] || '?')}{(user?.lastName?.[0] || '?')}
                     </Avatar>
                     {editMode && (
                       <IconButton
@@ -339,7 +349,7 @@ const UserProfile = () => {
                     {user?.jobTitle || 'Security Analyst'}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    {user?.organization || 'IONSEC Organization'}
+                    {user?.organization?.name || user?.organization || 'IONSEC Organization'}
                   </Typography>
                   
                   <Divider sx={{ my: 2 }} />
@@ -354,10 +364,10 @@ const UserProfile = () => {
                       sx={{ mb: 1 }}
                     />
                     <Typography variant="caption" display="block" color="text.secondary">
-                      Member since {dayjs(user?.createdAt).format('MMMM YYYY')}
+                      Member since {user?.createdAt ? dayjs(user.createdAt).format('MMMM YYYY') : 'N/A'}
                     </Typography>
                     <Typography variant="caption" display="block" color="text.secondary">
-                      Last login: {dayjs(user?.lastLoginAt).format('MMM DD, YYYY HH:mm')}
+                      Last login: {user?.lastLoginAt ? dayjs(user.lastLoginAt).format('MMM DD, YYYY HH:mm') : 'N/A'}
                     </Typography>
                   </Box>
                 </CardContent>

@@ -357,7 +357,7 @@ const ROLE_PERMISSIONS = {
     canManageIntegrations: false,
     canExportData: true,
     canViewAuditLogs: false,
-    canManageSystemSettings: false,
+    canManageSystemSettings: true,
     canAccessApi: false
   },
   analyst: {

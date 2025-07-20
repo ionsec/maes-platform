@@ -66,6 +66,10 @@ cp .env.example .env
 
 1. **Apply database migrations** (if needed):
    ```bash
+   # For existing deployments - add system settings permission to admin users
+   docker exec -i maes-postgres psql -U maes_user -d maes_db < database/migrations/add_system_settings_permission.sql
+   
+   # If you have other pending migrations
    docker exec -i maes-postgres psql -U maes_user -d maes_db < database/migrations/update_user_roles_fixed.sql
    ```
 
