@@ -102,8 +102,16 @@ router.put('/current',
 
     } catch (error) {
       logger.error('Update organization error:', error);
+      
+      // Return specific error message for known errors
+      if (error.message && error.message.includes('already exists')) {
+        return res.status(409).json({
+          error: error.message
+        });
+      }
+      
       res.status(500).json({
-        error: 'Internal server error'
+        error: error.message || 'Internal server error'
       });
     }
   }
@@ -169,7 +177,7 @@ router.put('/current/credentials',
     } catch (error) {
       logger.error('Update organization credentials error:', error);
       res.status(500).json({
-        error: 'Internal server error'
+        error: error.message || 'Internal server error'
       });
     }
   }
