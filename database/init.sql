@@ -31,6 +31,12 @@ CREATE TYPE priority_level AS ENUM ('low', 'medium', 'high', 'critical');
 CREATE TYPE alert_severity AS ENUM ('low', 'medium', 'high', 'critical');
 CREATE TYPE alert_status AS ENUM ('new', 'acknowledged', 'investigating', 'resolved', 'false_positive');
 
+-- Compliance assessment enum types
+CREATE TYPE assessment_type AS ENUM ('cis_v400', 'cis_v300', 'custom', 'orca_style');
+CREATE TYPE control_severity AS ENUM ('level1', 'level2');
+CREATE TYPE compliance_status AS ENUM ('compliant', 'non_compliant', 'manual_review', 'not_applicable', 'error');
+CREATE TYPE schedule_frequency AS ENUM ('daily', 'weekly', 'monthly', 'quarterly');
+
 -- Create tables
 CREATE TABLE IF NOT EXISTS organizations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -368,10 +374,112 @@ SET current_organization_id = organization_id
 WHERE current_organization_id IS NULL 
 AND organization_id IS NOT NULL;
 
+-- Create compliance assessment tables
+CREATE TABLE IF NOT EXISTS compliance_assessments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    assessment_type assessment_type NOT NULL DEFAULT 'cis_v400',
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    status job_status NOT NULL DEFAULT 'pending',
+    progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
+    total_controls INTEGER DEFAULT 0,
+    compliant_controls INTEGER DEFAULT 0,
+    non_compliant_controls INTEGER DEFAULT 0,
+    manual_review_controls INTEGER DEFAULT 0,
+    not_applicable_controls INTEGER DEFAULT 0,
+    error_controls INTEGER DEFAULT 0,
+    compliance_score DECIMAL(5,2) DEFAULT 0.00 CHECK (compliance_score >= 0 AND compliance_score <= 100),
+    weighted_score DECIMAL(5,2) DEFAULT 0.00 CHECK (weighted_score >= 0 AND weighted_score <= 100),
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    duration INTEGER,
+    error_message TEXT,
+    error_details JSONB,
+    metadata JSONB DEFAULT '{}',
+    parameters JSONB DEFAULT '{}',
+    triggered_by UUID REFERENCES users(id),
+    is_scheduled BOOLEAN DEFAULT false,
+    is_baseline BOOLEAN DEFAULT false,
+    parent_schedule_id UUID,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS compliance_controls (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    assessment_type assessment_type NOT NULL DEFAULT 'cis_v400',
+    control_id VARCHAR(50) NOT NULL,
+    section VARCHAR(100) NOT NULL,
+    title VARCHAR(500) NOT NULL,
+    description TEXT NOT NULL,
+    rationale TEXT,
+    impact TEXT,
+    remediation TEXT,
+    severity control_severity NOT NULL DEFAULT 'level1',
+    weight DECIMAL(3,2) DEFAULT 1.00 CHECK (weight > 0),
+    graph_api_endpoint TEXT,
+    check_method TEXT,
+    expected_result JSONB,
+    is_active BOOLEAN DEFAULT true,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(assessment_type, control_id)
+);
+
+CREATE TABLE IF NOT EXISTS compliance_results (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    assessment_id UUID NOT NULL REFERENCES compliance_assessments(id) ON DELETE CASCADE,
+    control_id UUID NOT NULL REFERENCES compliance_controls(id) ON DELETE CASCADE,
+    status compliance_status NOT NULL,
+    score DECIMAL(5,2) DEFAULT 0.00 CHECK (score >= 0 AND score <= 100),
+    actual_result JSONB,
+    expected_result JSONB,
+    evidence JSONB,
+    remediation_guidance TEXT,
+    error_message TEXT,
+    error_details JSONB,
+    checked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS compliance_schedules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    assessment_type assessment_type NOT NULL DEFAULT 'cis_v400',
+    frequency schedule_frequency NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    next_run_at TIMESTAMP WITH TIME ZONE,
+    last_run_at TIMESTAMP WITH TIME ZONE,
+    last_assessment_id UUID REFERENCES compliance_assessments(id),
+    parameters JSONB DEFAULT '{}',
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for compliance tables
+CREATE INDEX IF NOT EXISTS idx_compliance_assessments_org_id ON compliance_assessments(organization_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_assessments_status ON compliance_assessments(status);
+CREATE INDEX IF NOT EXISTS idx_compliance_assessments_created_at ON compliance_assessments(created_at);
+CREATE INDEX IF NOT EXISTS idx_compliance_assessments_baseline ON compliance_assessments(organization_id, is_baseline) WHERE is_baseline = true;
+CREATE INDEX IF NOT EXISTS idx_compliance_results_assessment_id ON compliance_results(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_results_control_id ON compliance_results(control_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_results_status ON compliance_results(status);
+CREATE INDEX IF NOT EXISTS idx_compliance_controls_assessment_type ON compliance_controls(assessment_type);
+CREATE INDEX IF NOT EXISTS idx_compliance_controls_active ON compliance_controls(is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_compliance_schedules_org_id ON compliance_schedules(organization_id);
+CREATE INDEX IF NOT EXISTS idx_compliance_schedules_next_run ON compliance_schedules(next_run_at) WHERE is_active = true;
+
 -- Record applied migrations
 INSERT INTO migrations (filename) VALUES 
     ('001_initial_schema.sql'),
-    ('004_add_user_organization_support.sql')
+    ('004_add_user_organization_support.sql'),
+    ('006_add_compliance_assessment.sql')
 ON CONFLICT (filename) DO NOTHING;
 
 -- Grant permissions

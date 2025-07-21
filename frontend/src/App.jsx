@@ -34,6 +34,7 @@ import Onboarding from './pages/Onboarding'
 import SystemLogs from './pages/SystemLogs'
 import UserProfile from './pages/UserProfile'
 import UserManagement from './pages/UserManagement'
+import Compliance from './pages/Compliance'
 
 function App() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -131,6 +132,7 @@ function App() {
                 <Route path="/system-logs" element={<SystemLogs />} />
                 <Route path="/profile" element={<UserProfile />} />
                 <Route path="/users" element={<UserManagement />} />
+                <Route path="/compliance" element={<Compliance />} />
                 {/* Redirect monitoring service routes to external tabs */}
                 <Route path="/grafana/*" element={<ExternalRedirect url="/grafana/" />} />
                 <Route path="/prometheus/*" element={<ExternalRedirect url="/prometheus/" />} />

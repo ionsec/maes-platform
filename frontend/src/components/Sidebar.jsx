@@ -76,6 +76,12 @@ const menuItems = [
     description: 'External Security Systems'
   },
   { 
+    text: 'Compliance Assessment', 
+    icon: <Security />, 
+    path: '/compliance',
+    description: 'CIS Benchmark & Security Controls'
+  },
+  { 
     text: 'System Configuration', 
     icon: <Settings />, 
     path: '/settings',
