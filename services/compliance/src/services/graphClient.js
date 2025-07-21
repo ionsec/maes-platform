@@ -1,5 +1,8 @@
 const { Client } = require('@microsoft/microsoft-graph-client');
 const { ConfidentialClientApplication } = require('@azure/msal-node');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { logger } = require('../logger');
 
 class GraphClientService {
@@ -8,34 +11,68 @@ class GraphClientService {
   }
 
   /**
-   * Create Microsoft Graph client for an organization
+   * Create Microsoft Graph client for an organization using certificate authentication
    * @param {Object} credentials - Organization credentials
    * @param {string} credentials.tenantId - Azure AD tenant ID
    * @param {string} credentials.clientId - Application (client) ID
-   * @param {string} credentials.clientSecret - Client secret
    * @returns {Client} Microsoft Graph client
    */
   async createGraphClient(credentials) {
-    const { tenantId, clientId, clientSecret } = credentials;
+    const { tenantId, clientId } = credentials;
     
-    if (!tenantId || !clientId || !clientSecret) {
-      throw new Error('Missing required credentials: tenantId, clientId, and clientSecret are required');
+    if (!tenantId || !clientId) {
+      throw new Error('Missing required credentials: tenantId and clientId are required');
     }
 
-    // Create MSAL configuration
-    const msalConfig = {
-      auth: {
-        clientId: clientId,
-        clientSecret: clientSecret,
-        authority: `https://login.microsoftonline.com/${tenantId}`
-      }
-    };
-
-    const clientCredentialRequest = {
-      scopes: ['https://graph.microsoft.com/.default']
-    };
+    // Certificate-based authentication using PEM files
+    const keyPath = '/certs/app.key';
+    const certPath = '/certs/app.crt';
 
     try {
+      // Check if certificate files exist
+      if (!fs.existsSync(keyPath)) {
+        throw new Error(`Private key file not found at: ${keyPath}`);
+      }
+      if (!fs.existsSync(certPath)) {
+        throw new Error(`Certificate file not found at: ${certPath}`);
+      }
+
+      logger.info(`Loading certificate from: ${certPath} and key from: ${keyPath}`);
+
+      // Read certificate and private key files
+      const privateKey = fs.readFileSync(keyPath, 'utf8');
+      const certificatePem = fs.readFileSync(certPath, 'utf8');
+      
+      // Extract the certificate content between BEGIN and END tags
+      const certMatch = certificatePem.match(/-----BEGIN CERTIFICATE-----\n([\s\S]+?)\n-----END CERTIFICATE-----/);
+      if (!certMatch) {
+        throw new Error('Invalid certificate format - could not find certificate data');
+      }
+      const certBase64 = certMatch[1].replace(/\n/g, '');
+      
+      // Calculate certificate thumbprint (SHA1 hash of DER-encoded certificate)
+      const certBuffer = Buffer.from(certBase64, 'base64');
+      const thumbprint = crypto.createHash('sha1').update(certBuffer).digest('hex').toUpperCase();
+      
+      logger.info(`Calculated certificate thumbprint: ${thumbprint}`);
+      
+      // MSAL configuration with certificate
+      const msalConfig = {
+        auth: {
+          clientId: clientId,
+          authority: `https://login.microsoftonline.com/${tenantId}`,
+          clientCertificate: {
+            thumbprint: thumbprint,
+            privateKey: privateKey,
+            x5c: certBase64 // Just the base64 content without headers
+          }
+        }
+      };
+
+      const clientCredentialRequest = {
+        scopes: ['https://graph.microsoft.com/.default']
+      };
+
       // Create MSAL instance
       const cca = new ConfidentialClientApplication(msalConfig);
       
@@ -53,12 +90,12 @@ class GraphClientService {
         }
       });
 
-      logger.info(`Graph client created successfully for tenant: ${tenantId}`);
+      logger.info(`Graph client created successfully for tenant: ${tenantId} using certificate authentication`);
       return graphClient;
 
     } catch (error) {
       logger.error(`Failed to create Graph client for tenant ${tenantId}:`, error);
-      throw new Error(`Graph authentication failed: ${error.message}`);
+      throw new Error(`Graph certificate authentication failed: ${error.message}`);
     }
   }
 
