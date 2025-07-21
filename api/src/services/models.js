@@ -240,7 +240,7 @@ const OrganizationModel = {
 
     // Map camelCase to snake_case for database columns
     const fieldMapping = {
-      organizationName: 'name',
+      name: 'name',
       tenantId: 'tenant_id',
       fqdn: 'fqdn',
       subscriptionId: 'subscription_id',
@@ -279,7 +279,19 @@ const OrganizationModel = {
     `;
     
     logger.info('Organization update query:', { query, values });
-    return await update(query, values);
+    
+    try {
+      return await update(query, values);
+    } catch (error) {
+      // Handle unique constraint violations
+      if (error.code === '23505') { // PostgreSQL unique violation error code
+        if (error.constraint === 'organizations_tenant_id_key') {
+          throw new Error('Tenant ID already exists for another organization');
+        }
+        throw new Error('Duplicate value: ' + error.detail);
+      }
+      throw error;
+    }
   },
 
   findByPk: async (id) => {
