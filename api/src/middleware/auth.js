@@ -130,7 +130,17 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: true,
     canManageSystemSettings: true,
-    canAccessApi: true
+    canAccessApi: true,
+    canCreateOrganizations: true,
+    canDeleteOrganizations: true,
+    canManageAllUsers: true,
+    canImpersonateUsers: true,
+    canViewSystemLogs: true,
+    canManageApiKeys: true,
+    canManageLicenses: true,
+    canConfigureGlobalSettings: true,
+    canManageBackups: true,
+    canAccessDeveloperTools: true
   },
   mssp_admin: {
     canManageExtractions: true,
@@ -343,22 +353,32 @@ const ROLE_PERMISSIONS = {
     canManageAlerts: true,
     canManageUsers: true,
     canManageOrganization: true,
-    canManageClients: false,
-    canAccessAllClients: false,
-    canManageMsspSettings: false,
-    canViewBilling: false,
-    canManageSubscriptions: false,
+    canManageClients: true,
+    canAccessAllClients: true,
+    canManageMsspSettings: true,
+    canViewBilling: true,
+    canManageSubscriptions: true,
     canCreateIncidents: true,
     canManageIncidents: true,
-    canEscalateIncidents: false,
-    canCloseIncidents: false,
-    canUseAdvancedAnalytics: false,
-    canAccessThreatIntel: false,
-    canManageIntegrations: false,
+    canEscalateIncidents: true,
+    canCloseIncidents: true,
+    canUseAdvancedAnalytics: true,
+    canAccessThreatIntel: true,
+    canManageIntegrations: true,
     canExportData: true,
-    canViewAuditLogs: false,
+    canViewAuditLogs: true,
     canManageSystemSettings: true,
-    canAccessApi: false
+    canAccessApi: true,
+    canCreateOrganizations: true,
+    canDeleteOrganizations: true,
+    canManageAllUsers: true,
+    canImpersonateUsers: true,
+    canViewSystemLogs: true,
+    canManageApiKeys: true,
+    canManageLicenses: true,
+    canConfigureGlobalSettings: true,
+    canManageBackups: true,
+    canAccessDeveloperTools: true
   },
   analyst: {
     canManageExtractions: true,
@@ -513,23 +533,31 @@ const authenticateToken = async (req, res, next) => {
       const requestedOrgId = req.query.organizationId || req.headers['x-organization-id'];
       
       if (requestedOrgId) {
-        // Verify user has access to the requested organization
-        try {
-          const hasAccess = await getRow(
-            'SELECT 1 FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
-            [user.id, requestedOrgId]
-          );
-          
-          if (hasAccess) {
-            req.organizationId = requestedOrgId;
-          } else {
-            logger.warn(`User ${user.id} attempted to access organization ${requestedOrgId} without permission`);
-            return res.status(403).json({ error: 'Access denied to requested organization' });
+        // Super admins and admins can access any organization
+        const isSuperAdmin = user.role === 'admin' || user.role === 'super_admin';
+        
+        if (isSuperAdmin) {
+          req.organizationId = requestedOrgId;
+          req.isCrossOrganizationAccess = requestedOrgId !== user.organization_id;
+        } else {
+          // Verify user has access to the requested organization
+          try {
+            const hasAccess = await getRow(
+              'SELECT 1 FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
+              [user.id, requestedOrgId]
+            );
+            
+            if (hasAccess) {
+              req.organizationId = requestedOrgId;
+            } else {
+              logger.warn(`User ${user.id} attempted to access organization ${requestedOrgId} without permission`);
+              return res.status(403).json({ error: 'Access denied to requested organization' });
+            }
+          } catch (dbError) {
+            logger.error('Error checking organization access:', dbError);
+            // Fall back to user's primary organization on DB error
+            req.organizationId = user.organization_id;
           }
-        } catch (dbError) {
-          logger.error('Error checking organization access:', dbError);
-          // Fall back to user's primary organization on DB error
-          req.organizationId = user.organization_id;
         }
       } else {
         // Default to user's primary organization
@@ -592,6 +620,24 @@ const requireRole = (roles) => {
   };
 };
 
+// Super admin access control - for cross-organization operations
+const requireSuperAdmin = () => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    
+    if (!isSuperAdmin) {
+      logger.warn(`User ${req.user.id} with role ${req.user.role} attempted to access super admin resource`);
+      return res.status(403).json({ error: 'Super admin access required' });
+    }
+
+    next();
+  };
+};
+
 // Log audit trail
 const auditLog = async (userId, organizationId, action, details = {}) => {
   try {
@@ -621,6 +667,7 @@ module.exports = {
   authenticateService,
   requirePermission,
   requireRole,
+  requireSuperAdmin,
   auditLog,
   blacklistToken,
   ROLE_PERMISSIONS

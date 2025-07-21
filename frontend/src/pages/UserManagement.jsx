@@ -71,6 +71,17 @@ const UserManagement = () => {
   const [createDialog, setCreateDialog] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [organizations, setOrganizations] = useState([]);
+  const [showAllOrganizations, setShowAllOrganizations] = useState(false);
+  const [createUserData, setCreateUserData] = useState({
+    email: '',
+    username: '',
+    firstName: '',
+    lastName: '',
+    password: '',
+    role: 'viewer',
+    organizationId: ''
+  });
 
   // Available permissions based on the backend ROLE_PERMISSIONS
   const availablePermissions = {
@@ -80,17 +91,42 @@ const UserManagement = () => {
     canManageAlerts: 'Manage Alerts',
     canManageUsers: 'Manage Users',
     canManageOrganization: 'Manage Organization',
-    canManageSystemSettings: 'Manage System Settings',
+    canManageClients: 'Manage Clients',
+    canAccessAllClients: 'Access All Clients',
+    canManageMsspSettings: 'Manage MSSP Settings',
+    canViewBilling: 'View Billing',
+    canManageSubscriptions: 'Manage Subscriptions',
+    canUseAdvancedAnalytics: 'Use Advanced Analytics',
+    canAccessThreatIntel: 'Access Threat Intelligence',
+    canManageIntegrations: 'Manage Integrations',
     canExportData: 'Export Data',
     canViewAuditLogs: 'View Audit Logs',
-    canAccessApi: 'Access API'
+    canManageSystemSettings: 'Manage System Settings',
+    canAccessApi: 'Access API',
+    canCreateOrganizations: 'Create Organizations',
+    canDeleteOrganizations: 'Delete Organizations',
+    canManageAllUsers: 'Manage All Users',
+    canImpersonateUsers: 'Impersonate Users',
+    canViewSystemLogs: 'View System Logs',
+    canManageApiKeys: 'Manage API Keys',
+    canManageLicenses: 'Manage Licenses',
+    canConfigureGlobalSettings: 'Configure Global Settings',
+    canManageBackups: 'Manage Backups',
+    canAccessDeveloperTools: 'Access Developer Tools'
   };
 
   const roles = ['admin', 'analyst', 'viewer'];
+  const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
 
   useEffect(() => {
     fetchUsers();
-  }, [page, searchQuery, roleFilter, statusFilter]);
+  }, [page, searchQuery, roleFilter, statusFilter, showAllOrganizations]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchOrganizations();
+    }
+  }, [isSuperAdmin]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -100,7 +136,8 @@ const UserManagement = () => {
         limit: 10,
         search: searchQuery,
         role: roleFilter !== 'all' ? roleFilter : undefined,
-        isActive: statusFilter !== 'all' ? statusFilter === 'active' : undefined
+        isActive: statusFilter !== 'all' ? statusFilter === 'active' : undefined,
+        allOrganizations: isSuperAdmin && showAllOrganizations
       };
 
       const response = await axios.get('/api/users', { params });
@@ -111,6 +148,15 @@ const UserManagement = () => {
       console.error('Failed to fetch users:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchOrganizations = async () => {
+    try {
+      const response = await axios.get('/api/users/organizations/all');
+      setOrganizations(response.data.organizations);
+    } catch (error) {
+      console.error('Failed to fetch organizations:', error);
     }
   };
 
@@ -142,11 +188,20 @@ const UserManagement = () => {
     }
   };
 
-  const handleCreateUser = async (userData) => {
+  const handleCreateUser = async () => {
     try {
-      await axios.post('/api/users', userData);
+      await axios.post('/api/users', createUserData);
       enqueueSnackbar('User created successfully', { variant: 'success' });
       setCreateDialog(false);
+      setCreateUserData({
+        email: '',
+        username: '',
+        firstName: '',
+        lastName: '',
+        password: '',
+        role: 'viewer',
+        organizationId: ''
+      });
       fetchUsers();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to create user', { variant: 'error' });
@@ -223,7 +278,29 @@ const UserManagement = () => {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">User Management</Typography>
+        <Box>
+          <Typography variant="h4">User Management</Typography>
+          {isSuperAdmin && (
+            <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={showAllOrganizations}
+                    onChange={(e) => setShowAllOrganizations(e.target.checked)}
+                    size="small"
+                  />
+                }
+                label="Show users from all organizations"
+              />
+              <Chip 
+                label="Super Admin" 
+                color="error" 
+                size="small" 
+                icon={<ShieldIcon />}
+              />
+            </Box>
+          )}
+        </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant="outlined"
@@ -316,6 +393,7 @@ const UserManagement = () => {
             <TableRow>
               <TableCell>User</TableCell>
               <TableCell>Role</TableCell>
+              {showAllOrganizations && <TableCell>Organization</TableCell>}
               <TableCell>Status</TableCell>
               <TableCell>Permissions</TableCell>
               <TableCell>Last Login</TableCell>
@@ -348,6 +426,18 @@ const UserManagement = () => {
                     color={user.role === 'admin' ? 'error' : user.role === 'analyst' ? 'warning' : 'default'}
                   />
                 </TableCell>
+                {showAllOrganizations && (
+                  <TableCell>
+                    <Box>
+                      <Typography variant="body2" fontWeight={500}>
+                        {user.organizationName}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {user.organizationType}
+                      </Typography>
+                    </Box>
+                  </TableCell>
+                )}
                 <TableCell>
                   <Chip
                     icon={user.isActive ? <CheckCircleIcon /> : <BlockIcon />}
@@ -574,35 +664,46 @@ const UserManagement = () => {
               fullWidth
               label="Email"
               type="email"
+              value={createUserData.email}
+              onChange={(e) => setCreateUserData({ ...createUserData, email: e.target.value })}
               required
             />
             <TextField
               fullWidth
               label="Username"
+              value={createUserData.username}
+              onChange={(e) => setCreateUserData({ ...createUserData, username: e.target.value })}
               required
             />
             <TextField
               fullWidth
               label="First Name"
+              value={createUserData.firstName}
+              onChange={(e) => setCreateUserData({ ...createUserData, firstName: e.target.value })}
               required
             />
             <TextField
               fullWidth
               label="Last Name"
+              value={createUserData.lastName}
+              onChange={(e) => setCreateUserData({ ...createUserData, lastName: e.target.value })}
               required
             />
             <TextField
               fullWidth
               label="Password"
               type="password"
+              value={createUserData.password}
+              onChange={(e) => setCreateUserData({ ...createUserData, password: e.target.value })}
               required
               helperText="Minimum 8 characters"
             />
             <FormControl fullWidth>
               <InputLabel>Role</InputLabel>
               <Select
-                defaultValue="viewer"
+                value={createUserData.role}
                 label="Role"
+                onChange={(e) => setCreateUserData({ ...createUserData, role: e.target.value })}
               >
                 {roles.map(role => (
                   <MenuItem key={role} value={role}>
@@ -611,11 +712,28 @@ const UserManagement = () => {
                 ))}
               </Select>
             </FormControl>
+            {isSuperAdmin && (
+              <FormControl fullWidth>
+                <InputLabel>Organization</InputLabel>
+                <Select
+                  value={createUserData.organizationId}
+                  label="Organization"
+                  onChange={(e) => setCreateUserData({ ...createUserData, organizationId: e.target.value })}
+                >
+                  <MenuItem value="">Current Organization</MenuItem>
+                  {organizations.map(org => (
+                    <MenuItem key={org.id} value={org.id}>
+                      {org.name} ({org.organizationType})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateDialog(false)}>Cancel</Button>
-          <Button variant="contained">Create User</Button>
+          <Button variant="contained" onClick={handleCreateUser}>Create User</Button>
         </DialogActions>
       </Dialog>
     </Box>
