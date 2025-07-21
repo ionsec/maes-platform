@@ -417,9 +417,9 @@ const Settings = () => {
       </Typography>
 
       {/* Organization Selector */}
-      {userOrganizations.length > 1 && (
-        <Paper sx={{ p: 2, mb: 3 }}>
-          <FormControl fullWidth>
+      <Paper sx={{ p: 2, mb: 3 }}>
+        {userOrganizations.length > 1 && (
+          <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Select Organization</InputLabel>
             <Select
               value={selectedOrgId || ''}
@@ -441,9 +441,11 @@ const Settings = () => {
               ))}
             </Select>
           </FormControl>
-          
-          {/* Add New Organization Button */}
-          <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+        )}
+        
+        {/* Add New Organization Button - Always show for admins */}
+        {user?.role === 'admin' && (
+          <Box sx={{ display: 'flex', gap: 2 }}>
             <Button
               variant="outlined"
               startIcon={<AddIcon />}
@@ -459,8 +461,8 @@ const Settings = () => {
               Add New Organization
             </Button>
           </Box>
-        </Paper>
-      )}
+        )}
+      </Paper>
 
       <Paper sx={{ mb: 3 }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
