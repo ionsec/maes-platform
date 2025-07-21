@@ -32,10 +32,15 @@ async function getOrganizationCredentials(req, res, next) {
     const organization = result.rows[0];
     const credentials = organization.credentials;
 
-    if (!credentials || !credentials.clientId || !credentials.clientSecret || !credentials.tenantId) {
+    if (!credentials || !credentials.clientId || !credentials.clientSecret) {
       return res.status(400).json({ 
         error: 'Organization credentials are not properly configured',
-        details: 'Missing clientId, clientSecret, or tenantId'
+        details: 'This organization does not have Microsoft 365 credentials configured. Please configure Azure AD app credentials in the organization settings before running compliance assessments.',
+        missingFields: {
+          clientId: !credentials?.clientId,
+          clientSecret: !credentials?.clientSecret,
+          tenantId: !credentials?.tenantId && !organization.tenant_id
+        }
       });
     }
 
