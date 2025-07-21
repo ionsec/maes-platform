@@ -48,6 +48,7 @@ import { useSnackbar } from 'notistack';
 import axios from '../utils/axios';
 import ThemeSelector from '../components/ThemeSelector';
 import { useTheme } from '../theme/ThemeProvider';
+import { useAuth } from '../contexts/AuthContext';
 
 const Settings = () => {
   const [loading, setLoading] = useState(false);
@@ -55,6 +56,7 @@ const Settings = () => {
   const [userOrganizations, setUserOrganizations] = useState([]);
   const [selectedOrgId, setSelectedOrgId] = useState(null);
   const { currentTheme } = useTheme();
+  const { user } = useAuth();
   const [tabValue, setTabValue] = useState(0);
   const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
   const [showCredentials, setShowCredentials] = useState({});
@@ -64,6 +66,9 @@ const Settings = () => {
   const [connectionTestResult, setConnectionTestResult] = useState(null);
   const [certificateFile, setCertificateFile] = useState(null);
   const [certificatePassword, setCertificatePassword] = useState('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [certificateUploadLoading, setCertificateUploadLoading] = useState(false);
   const [userCertificates, setUserCertificates] = useState([]);
   const [addOrgDialogOpen, setAddOrgDialogOpen] = useState(false);
@@ -121,6 +126,31 @@ const Settings = () => {
       enqueueSnackbar('Failed to fetch organization settings', { variant: 'error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteOrganization = async () => {
+    if (deleteConfirmation !== organization?.name) {
+      enqueueSnackbar('Organization name does not match', { variant: 'error' });
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      await axios.delete(`/api/organizations/${selectedOrgId}`);
+      enqueueSnackbar('Organization deleted successfully', { variant: 'success' });
+      setDeleteDialogOpen(false);
+      setDeleteConfirmation('');
+      // Refresh organizations and select a different one
+      await fetchUserOrganizations();
+      const remainingOrgs = userOrganizations.filter(org => org.organization_id !== selectedOrgId);
+      if (remainingOrgs.length > 0) {
+        setSelectedOrgId(remainingOrgs[0].organization_id);
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.error || 'Failed to delete organization', { variant: 'error' });
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -450,7 +480,20 @@ const Settings = () => {
           <Grid container spacing={3}>
             <Grid item xs={12} md={8}>
               <Card>
-                <CardHeader title={organization?.id === 'individual' ? 'User Information' : 'Organization Information'} />
+                <CardHeader 
+                  title={organization?.id === 'individual' ? 'User Information' : 'Organization Information'}
+                  action={
+                    user?.role === 'admin' && selectedOrgId !== '00000000-0000-0000-0000-000000000001' && (
+                      <IconButton
+                        color="error"
+                        onClick={() => setDeleteDialogOpen(true)}
+                        disabled={loading}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    )
+                  }
+                />
                 <CardContent>
                   <Grid container spacing={3}>
                     <Grid item xs={12}>
@@ -1370,6 +1413,54 @@ const Settings = () => {
             </Button>
           </DialogActions>
         </form>
+      </Dialog>
+
+      {/* Delete Organization Dialog */}
+      <Dialog 
+        open={deleteDialogOpen} 
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setDeleteConfirmation('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle color="error">Delete Organization</DialogTitle>
+        <DialogContent>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            <strong>Warning:</strong> This action cannot be undone. All data associated with this organization will be permanently deleted.
+          </Alert>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            To confirm deletion, please type the organization name: <strong>{organization?.name}</strong>
+          </Typography>
+          <TextField
+            fullWidth
+            label="Organization Name"
+            value={deleteConfirmation}
+            onChange={(e) => setDeleteConfirmation(e.target.value)}
+            error={deleteConfirmation !== '' && deleteConfirmation !== organization?.name}
+            helperText={deleteConfirmation !== '' && deleteConfirmation !== organization?.name ? 'Name does not match' : ''}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => {
+              setDeleteDialogOpen(false);
+              setDeleteConfirmation('');
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleDeleteOrganization}
+            color="error"
+            variant="contained"
+            disabled={deleteLoading || deleteConfirmation !== organization?.name}
+            startIcon={deleteLoading ? <CircularProgress size={16} /> : <DeleteIcon />}
+          >
+            {deleteLoading ? 'Deleting...' : 'Delete Organization'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

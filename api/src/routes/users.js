@@ -339,11 +339,9 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
       return res.status(400).json({ error: 'Invalid permissions object' });
     }
 
-    const user = await User.findOne({
-      where: { id: userId, organizationId: req.organizationId }
-    });
+    const user = await User.findById(userId);
 
-    if (!user) {
+    if (!user || user.organization_id !== req.organizationId) {
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -353,7 +351,7 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
     }
 
     // Update user permissions
-    await user.update({ permissions });
+    const updatedUser = await User.update(userId, { permissions });
 
     logger.info(`Updated permissions for user: ${userId}`);
 
@@ -361,11 +359,11 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
       success: true,
       message: 'User permissions updated successfully',
       user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        permissions: user.permissions
+        id: updatedUser.id,
+        email: updatedUser.email,
+        username: updatedUser.username,
+        role: updatedUser.role,
+        permissions: updatedUser.permissions
       }
     });
 
