@@ -845,18 +845,24 @@ if (!isMainThread && workerData.type === 'job_processor') {
         const path = require('path');
         const csvParser = require('csv-parser');
         
-        // Check common output directories
+        // Check common output directories (including organization-scoped paths)
+        const safeOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '');
         const possiblePaths = [
-          `/output/${extractionId}`,
-          `/extractor_output/${extractionId}`,
-          `/app/output/${extractionId}`,
-          `/shared/output/${extractionId}`
+          `/output/orgs/${safeOrgId}/${extractionId}`, // Organization-scoped path (primary)
+          `/output/${extractionId}`, // Legacy path for backward compatibility
+          `/extractor_output/orgs/${safeOrgId}/${extractionId}`, // Organization-scoped alternative
+          `/extractor_output/${extractionId}`, // Legacy alternative
+          `/app/output/orgs/${safeOrgId}/${extractionId}`, // Docker mounted org-scoped
+          `/app/output/${extractionId}`, // Docker mounted legacy
+          `/shared/output/orgs/${safeOrgId}/${extractionId}`, // Shared volume org-scoped
+          `/shared/output/${extractionId}` // Shared volume legacy
         ];
         
         let dataFound = false;
         
         // Log all paths being checked
-        logger.info(`Looking for extraction data in paths: ${possiblePaths.join(', ')}`);
+        logger.info(`Looking for extraction data for organization ${organizationId} (safe: ${safeOrgId}), extraction ${extractionId}`);
+        logger.info(`Checking paths: ${possiblePaths.join(', ')}`);
         
         for (const basePath of possiblePaths) {
           logger.info(`Checking path: ${basePath}`);
