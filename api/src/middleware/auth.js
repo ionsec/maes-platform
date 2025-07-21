@@ -514,9 +514,23 @@ const authenticateToken = async (req, res, next) => {
       
       if (requestedOrgId) {
         // Verify user has access to the requested organization
-        // For now, we'll use the requested organizationId if provided
-        // TODO: Add validation to ensure user has access to this organization
-        req.organizationId = requestedOrgId;
+        try {
+          const hasAccess = await getRow(
+            'SELECT 1 FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
+            [user.id, requestedOrgId]
+          );
+          
+          if (hasAccess) {
+            req.organizationId = requestedOrgId;
+          } else {
+            logger.warn(`User ${user.id} attempted to access organization ${requestedOrgId} without permission`);
+            return res.status(403).json({ error: 'Access denied to requested organization' });
+          }
+        } catch (dbError) {
+          logger.error('Error checking organization access:', dbError);
+          // Fall back to user's primary organization on DB error
+          req.organizationId = user.organization_id;
+        }
       } else {
         // Default to user's primary organization
         req.organizationId = user.organization_id;

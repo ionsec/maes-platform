@@ -196,7 +196,11 @@ const Extractions = () => {
     try {
       const progressPromises = runningExtractions.map(async (extraction) => {
         try {
-          const response = await axios.get(`/api/extractions/${extraction.id}/progress`);
+          const response = await axios.get(`/api/extractions/${extraction.id}/progress`, {
+            headers: {
+              'x-organization-id': selectedOrganizationId
+            }
+          });
           return { id: extraction.id, progress: response.data.progress };
         } catch (error) {
           return { id: extraction.id, progress: null };
@@ -240,7 +244,6 @@ const Extractions = () => {
         startDate: data.startDate.toISOString(),
         endDate: data.endDate.toISOString(),
         priority: data.priority,
-        organizationId: selectedOrganizationId,
         parameters: {
           includeDeleted: data.includeDeleted,
           filterUsers: data.filterUsers ? data.filterUsers.split(',').map(u => u.trim()) : [],
@@ -249,7 +252,11 @@ const Extractions = () => {
         }
       };
 
-      await axios.post('/api/extractions', payload);
+      await axios.post('/api/extractions', payload, {
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
+      });
       enqueueSnackbar('Extraction job created successfully', { variant: 'success' });
       setDialogOpen(false);
       reset();
@@ -261,7 +268,11 @@ const Extractions = () => {
 
   const cancelExtraction = async (id) => {
     try {
-      await axios.post(`/api/extractions/${id}/cancel`);
+      await axios.post(`/api/extractions/${id}/cancel`, {}, {
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
+      });
       enqueueSnackbar('Extraction cancelled', { variant: 'success' });
       fetchExtractions();
     } catch (error) {
@@ -271,7 +282,11 @@ const Extractions = () => {
 
   const viewLogs = async (id) => {
     try {
-      const response = await axios.get(`/api/extractions/${id}/logs`);
+      const response = await axios.get(`/api/extractions/${id}/logs`, {
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
+      });
       setSelectedExtraction({ id, logs: response.data.logs });
       setLogsDialogOpen(true);
       
@@ -293,7 +308,10 @@ const Extractions = () => {
   const downloadResults = async (extractionId) => {
     try {
       const response = await axios.get(`/api/extractions/${extractionId}/download`, {
-        responseType: 'blob'
+        responseType: 'blob',
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
       });
       
       // Create blob URL and trigger download
@@ -332,7 +350,11 @@ const Extractions = () => {
     const interval = setInterval(async () => {
       if (autoRefreshLogs && selectedExtraction && selectedExtraction.id === id) {
         try {
-          const response = await axios.get(`/api/extractions/${id}/logs`);
+          const response = await axios.get(`/api/extractions/${id}/logs`, {
+            headers: {
+              'x-organization-id': selectedOrganizationId
+            }
+          });
           setSelectedExtraction(prev => ({ ...prev, logs: response.data.logs }));
           
           // Check if extraction is still running or recently completed
