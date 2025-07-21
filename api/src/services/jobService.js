@@ -24,18 +24,46 @@ const createExtractionJob = async (extraction) => {
     // Get organization credentials
     const organization = await Organization.findById(extraction.organization_id);
     
+    if (!organization) {
+      throw new Error(`Organization not found: ${extraction.organization_id}`);
+    }
+    
+    // Validate that organization has proper credentials configured
+    const credentials = organization.credentials || {};
+    
+    // Check if required credentials are present
+    const requiredFields = ['applicationId', 'certificateThumbprint'];
+    const missingFields = requiredFields.filter(field => !credentials[field]);
+    
+    if (missingFields.length > 0) {
+      throw new Error(`Organization '${organization.name}' is not properly configured. Missing credentials: ${missingFields.join(', ')}. Please complete organization onboarding before running extractions.`);
+    }
+    
+    // Check if organization is active
+    if (!organization.is_active) {
+      throw new Error(`Organization '${organization.name}' is inactive. Please contact an administrator.`);
+    }
+    
+    // Additional validation for tenant-specific requirements
+    if (!organization.tenant_id) {
+      throw new Error(`Organization '${organization.name}' is missing tenant_id. Please complete organization configuration.`);
+    }
+    
     const jobData = {
       extractionId: extraction.id,
       organizationId: extraction.organization_id,
+      organizationName: organization.name,
       type: extraction.type,
       parameters: {
         startDate: extraction.start_date,
         endDate: extraction.end_date,
         tenantId: organization.tenant_id,
+        fqdn: organization.fqdn,
         organization: organization.fqdn || organization.tenant_id, // Use FQDN if available, fallback to tenant_id
+        organizationId: extraction.organization_id,
         ...extraction.parameters
       },
-      credentials: organization.credentials
+      credentials: credentials
     };
 
     const jobOptions = {

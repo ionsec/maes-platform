@@ -54,6 +54,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
 import dayjs from 'dayjs';
 import axios from '../utils/axios';
+import { useOrganization } from '../contexts/OrganizationContext';
 
 const extractionTypes = [
   { value: 'unified_audit_log', label: 'Unified Audit Log', description: 'Microsoft 365 audit events (Exchange Online)' },
@@ -80,6 +81,8 @@ const statusColors = {
 };
 
 const Extractions = () => {
+  const { selectedOrganizationId } = useOrganization();
+  
   // Tour steps configuration
   const extractionsTourSteps = [
     {
@@ -112,6 +115,7 @@ const Extractions = () => {
   const [autoRefreshLogs, setAutoRefreshLogs] = useState(true);
   const [statsDialogOpen, setStatsDialogOpen] = useState(false);
   const [selectedStats, setSelectedStats] = useState(null);
+  const [orgConfigStatus, setOrgConfigStatus] = useState({ isConfigured: true, missingRequirements: [] });
   const { control, handleSubmit, reset, watch } = useForm({
     defaultValues: {
       type: 'unified_audit_log',
@@ -131,7 +135,10 @@ const Extractions = () => {
   const fetchExtractions = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/extractions');
+      const url = selectedOrganizationId 
+        ? `/api/extractions?organizationId=${selectedOrganizationId}`
+        : '/api/extractions';
+      const response = await axios.get(url);
       setExtractions(response.data.extractions);
       
       // Debug logging for download button visibility
@@ -153,6 +160,35 @@ const Extractions = () => {
       enqueueSnackbar('Failed to fetch extractions', { variant: 'error' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchOrgConfigStatus = async () => {
+    if (!selectedOrganizationId) {
+      setOrgConfigStatus({ isConfigured: true, missingRequirements: [] });
+      return;
+    }
+
+    try {
+      const response = await axios.get('/api/organizations/configuration-status', {
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
+      });
+      
+      setOrgConfigStatus({
+        isConfigured: response.data.isConfigured,
+        missingRequirements: response.data.missingRequirements || [],
+        canRunExtractions: response.data.canRunExtractions
+      });
+    } catch (error) {
+      console.error('Failed to fetch organization configuration status:', error);
+      // On error, assume not configured to be safe
+      setOrgConfigStatus({
+        isConfigured: false,
+        missingRequirements: ['Unable to verify organization configuration'],
+        canRunExtractions: false
+      });
     }
   };
 
@@ -183,17 +219,28 @@ const Extractions = () => {
 
   useEffect(() => {
     fetchExtractions();
+    fetchOrgConfigStatus();
     const interval = setInterval(fetchExtractions, 15000); // Refresh every 15 seconds (further reduced frequency)
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedOrganizationId]);
 
   const onSubmit = async (data) => {
+    // Check if organization is properly configured before creating extraction
+    if (!orgConfigStatus.canRunExtractions) {
+      enqueueSnackbar(
+        `Cannot create extraction: Organization is not properly configured. Missing: ${orgConfigStatus.missingRequirements.join(', ')}`, 
+        { variant: 'error', autoHideDuration: 8000 }
+      );
+      return;
+    }
+
     try {
       const payload = {
         type: data.type,
         startDate: data.startDate.toISOString(),
         endDate: data.endDate.toISOString(),
         priority: data.priority,
+        organizationId: selectedOrganizationId,
         parameters: {
           includeDeleted: data.includeDeleted,
           filterUsers: data.filterUsers ? data.filterUsers.split(',').map(u => u.trim()) : [],
@@ -384,18 +431,44 @@ const Extractions = () => {
             <IconButton onClick={fetchExtractions} disabled={loading}>
               <RefreshIcon />
             </IconButton>
-            <Fab 
-              color="primary" 
-              sx={{ ml: 1 }}
-              onClick={() => setDialogOpen(true)}
-              data-tour="new-extraction-button"
+            <Tooltip 
+              title={!orgConfigStatus.canRunExtractions 
+                ? `Organization not configured: ${orgConfigStatus.missingRequirements.join(', ')}`
+                : "Create new extraction"
+              }
             >
-              <AddIcon />
-            </Fab>
+              <span>
+                <Fab 
+                  color="primary" 
+                  sx={{ ml: 1 }}
+                  onClick={() => setDialogOpen(true)}
+                  disabled={!orgConfigStatus.canRunExtractions}
+                  data-tour="new-extraction-button"
+                >
+                  <AddIcon />
+                </Fab>
+              </span>
+            </Tooltip>
           </Box>
         </Box>
 
         {loading && <LinearProgress sx={{ mb: 2 }} />}
+
+        {/* Organization Configuration Alert */}
+        {!orgConfigStatus.canRunExtractions && (
+          <Alert 
+            severity="error" 
+            sx={{ mb: 2 }}
+            action={
+              <Button color="inherit" size="small" href="/settings">
+                Configure
+              </Button>
+            }
+          >
+            <strong>Organization Not Configured:</strong> This organization cannot run extractions. Missing: {orgConfigStatus.missingRequirements.join(', ')}. 
+            Please complete the organization setup in Settings.
+          </Alert>
+        )}
 
         {/* UAL Status Alerts */}
         {extractions.some(e => progressData[e.id]?.ualStatus === 'disabled' && ['unified_audit_log', 'full_extraction'].includes(e.type)) && (

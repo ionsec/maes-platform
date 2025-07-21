@@ -1072,4 +1072,82 @@ router.get('/organizations', async (req, res) => {
   }
 });
 
+// Add organization to user
+router.post('/organizations', 
+  [
+    body('name').isString().isLength({ min: 1 }).withMessage('Organization name is required'),
+    body('fqdn').isString().matches(/^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])*$/).withMessage('Invalid FQDN format'),
+    body('tenantId').isUUID().withMessage('Valid tenant ID is required')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { getRow, query } = require('../services/database');
+      const { name, fqdn, tenantId } = req.body;
+      
+      // Check if organization already exists
+      let organization = await getRow(
+        'SELECT id FROM maes.organizations WHERE tenant_id = $1 OR fqdn = $2',
+        [tenantId, fqdn]
+      );
+      
+      if (!organization) {
+        // Create new organization
+        organization = await getRow(`
+          INSERT INTO maes.organizations (name, fqdn, tenant_id, settings, created_at, updated_at)
+          VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          RETURNING id
+        `, [name, fqdn, tenantId, JSON.stringify({})]);
+      }
+      
+      // Check if user is already associated with this organization
+      const existingRelation = await getRow(
+        'SELECT id FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
+        [req.userId, organization.id]
+      );
+      
+      if (existingRelation) {
+        return res.status(400).json({ error: 'You are already associated with this organization' });
+      }
+      
+      // Add user to organization
+      await query(`
+        INSERT INTO maes.user_organizations (user_id, organization_id, role, permissions, is_primary)
+        VALUES ($1, $2, $3, $4, $5)
+      `, [
+        req.userId, 
+        organization.id, 
+        'admin', 
+        JSON.stringify({
+          canManageUsers: true,
+          canRunAnalysis: true,
+          canViewReports: true,
+          canManageAlerts: true,
+          canManageExtractions: true,
+          canManageOrganization: true,
+          canManageSystemSettings: true
+        }),
+        false // Not primary since user already has organizations
+      ]);
+      
+      res.json({
+        success: true,
+        organizationId: organization.id,
+        message: 'Organization added successfully'
+      });
+      
+    } catch (error) {
+      logger.error('Add user organization error:', error);
+      res.status(500).json({ error: 'Failed to add organization' });
+    }
+  }
+);
+
 module.exports = router;

@@ -30,9 +30,20 @@ const analysisQueue = new Queue('analysis-jobs', {
 const EXTRACTOR_SUITE_PATH = '/extractor-suite';
 const OUTPUT_PATH = '/output';
 
+// Helper function to create organization-scoped output path
+const getOrganizationOutputPath = (organizationId, extractionId) => {
+  // Sanitize organizationId to prevent path traversal
+  const safeOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '');
+  return path.join(OUTPUT_PATH, 'orgs', safeOrgId, extractionId);
+};
+
 // Process extraction jobs with proper error handling
 const processExtractionJob = async (job) => {
   const { extractionId, type, parameters, credentials, organizationId, organizationName } = job.data;
+  
+  // Create organization-scoped output directory
+  const orgOutputPath = getOrganizationOutputPath(organizationId, extractionId);
+  await fs.mkdir(orgOutputPath, { recursive: true });
   
   // Create extraction-specific logger
   const extractionLogger = createExtractionLogger(extractionId);
@@ -66,7 +77,7 @@ const processExtractionJob = async (job) => {
     }
     
     // Parse and store results
-    const outputFiles = await processOutput(extractionId, type);
+    const outputFiles = await processOutput(extractionId, type, organizationId);
     
     logger.info(`Extraction job ${extractionId} completed successfully`);
     extractionLogger.info('Extraction completed successfully');
@@ -539,7 +550,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
       Write-Host "Starting Unified Audit Log extraction...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
       try {
-        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}';
         Write-Host "UAL extraction completed successfully.";
       } catch {
         Write-Error "UAL extraction failed: $_";
@@ -564,7 +575,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+          Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}';
           Write-Host "Graph Sign-In Logs extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -604,7 +615,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-GraphEntraAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}';
+          Get-GraphEntraAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}';
           Write-Host "Graph Audit Logs extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -629,38 +640,38 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'mfa_status': `
       Write-Host "Starting MFA Status extraction via Graph...";
       try {
-        Get-MFA -OutputDir '${OUTPUT_PATH}';
+        Get-MFA -OutputDir '${orgOutputPath}';
         Write-Host "MFA Status extraction completed successfully.";
       } catch {
         Write-Error "MFA Status extraction failed: $_";
         throw;
       }
     `,
-    'oauth_permissions': `Get-OAuthPermissions -OutputDir '${OUTPUT_PATH}'`,
+    'oauth_permissions': `Get-OAuthPermissions -OutputDir '${orgOutputPath}'`,
     'risky_users': `
       Write-Host "Starting Risky Users extraction via Graph...";
       try {
-        Get-Users -OutputDir '${OUTPUT_PATH}';
+        Get-Users -OutputDir '${orgOutputPath}';
         Write-Host "Users extraction completed successfully.";
       } catch {
         Write-Error "Users extraction failed: $_";
         throw;
       }
     `,
-    'risky_detections': `Get-RiskyDetections -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
-    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
-    'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${OUTPUT_PATH}'`,
+    'risky_detections': `Get-RiskyDetections -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
+    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
+    'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
     'devices': `
       Write-Host "Starting Devices extraction via Graph...";
       try {
-        Get-Devices -OutputDir '${OUTPUT_PATH}';
+        Get-Devices -OutputDir '${orgOutputPath}';
         Write-Host "Devices extraction completed successfully.";
       } catch {
         Write-Error "Devices extraction failed: $_";
         throw;
       }
     `,
-    'full_extraction': `Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${OUTPUT_PATH}'`,
+    'full_extraction': `Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${orgOutputPath}'`,
     'ual_graph': `
       Write-Host "Starting UAL extraction via Graph...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
@@ -679,7 +690,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -OutputDir '${OUTPUT_PATH}';
+          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -OutputDir '${orgOutputPath}';
           Write-Host "UAL Graph extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -704,7 +715,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'licenses': `
       Write-Host "Starting Licenses extraction via Graph...";
       try {
-        Get-Licenses -OutputDir '${OUTPUT_PATH}';
+        Get-Licenses -OutputDir '${orgOutputPath}';
         Write-Host "Licenses extraction completed successfully.";
       } catch {
         Write-Error "Licenses extraction failed: $_";
@@ -1044,12 +1055,13 @@ function parseStatistics(output) {
 }
 
 // Process output files
-async function processOutput(extractionId, type) {
+async function processOutput(extractionId, type, organizationId) {
   const outputFiles = [];
   
   try {
-    const files = await fs.readdir(OUTPUT_PATH);
-    logger.info(`Processing output for extraction ${extractionId}, type: ${type}`);
+    const orgOutputPath = getOrganizationOutputPath(organizationId, extractionId);
+    const files = await fs.readdir(orgOutputPath);
+    logger.info(`Processing output for extraction ${extractionId}, type: ${type}, organization: ${organizationId}`);
     logger.info(`Found files in output directory: ${files.join(', ')}`);
     
     for (const file of files) {
@@ -1068,22 +1080,18 @@ async function processOutput(extractionId, type) {
       const isCertFile = file.endsWith('.pfx') || file.endsWith('.crt') || file.endsWith('.key');
       
       if (isDataFile && !isCertFile) {
-        const filePath = path.join(OUTPUT_PATH, file);
+        const filePath = path.join(orgOutputPath, file);
         const stats = await fs.stat(filePath);
         
         logger.info(`Processing data file: ${file} (size: ${stats.size} bytes)`);
         
-        // Move file to extraction-specific directory first
-        const extractionDir = path.join(OUTPUT_PATH, extractionId);
-        await fs.mkdir(extractionDir, { recursive: true });
-        const newPath = path.join(extractionDir, file);
-        await fs.rename(filePath, newPath);
-        logger.info(`Moved ${file} to ${newPath}`);
+        // Files are already in organization-scoped directory, no need to move
+        const finalPath = filePath;
         
         // Add to output files with correct path
         outputFiles.push({
           filename: file,
-          path: newPath,
+          path: finalPath,
           size: stats.size,
           createdAt: stats.birthtime
         });

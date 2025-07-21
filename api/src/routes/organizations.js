@@ -315,4 +315,32 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// Get organization configuration status
+router.get('/configuration-status', async (req, res) => {
+  try {
+    const organization = await Organization.findById(req.organizationId);
+
+    if (!organization) {
+      return res.status(404).json({
+        error: 'Organization not found'
+      });
+    }
+
+    const configStatus = Organization.getConfigurationStatus(organization);
+
+    res.json({
+      success: true,
+      organizationId: organization.id,
+      organizationName: organization.name,
+      ...configStatus
+    });
+
+  } catch (error) {
+    logger.error('Get organization configuration status error:', error);
+    res.status(500).json({
+      error: 'Internal server error'
+    });
+  }
+});
+
 module.exports = router;

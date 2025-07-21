@@ -297,6 +297,12 @@ async function startServer() {
     await pool.query('SELECT NOW()');
     logger.info('Database connection established successfully');
 
+    // Run database migrations
+    logger.info('Running database migrations...');
+    const MigrationManager = require('./utils/migrate');
+    const migrationManager = new MigrationManager();
+    await migrationManager.runPendingMigrations();
+    logger.info('Database migrations completed');
 
     // Start server
     httpServer.listen(PORT, () => {

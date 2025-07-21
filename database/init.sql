@@ -263,6 +263,114 @@ INSERT INTO users (organization_id, email, username, password, role, permissions
      'admin',
      '{"canManageExtractions": true, "canRunAnalysis": true, "canViewReports": true, "canManageAlerts": true, "canManageUsers": true, "canManageOrganization": true, "canManageSystemSettings": true}');
 
+-- Create migrations table for tracking applied migrations
+CREATE TABLE IF NOT EXISTS migrations (
+    id SERIAL PRIMARY KEY,
+    filename VARCHAR(255) UNIQUE NOT NULL,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create user_organizations table for multi-organization support (Migration 004)
+CREATE TABLE IF NOT EXISTS user_organizations (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+    role VARCHAR(50) DEFAULT 'viewer',
+    permissions JSONB DEFAULT '{}',
+    is_primary BOOLEAN DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, organization_id)
+);
+
+-- Add current_organization_id to users table for active organization context
+ALTER TABLE users ADD COLUMN IF NOT EXISTS current_organization_id UUID REFERENCES organizations(id);
+
+-- Add indexes for user_organizations performance
+CREATE INDEX IF NOT EXISTS idx_user_organizations_user_id ON user_organizations(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_organizations_organization_id ON user_organizations(organization_id);
+CREATE INDEX IF NOT EXISTS idx_user_organizations_primary ON user_organizations(user_id, is_primary) WHERE is_primary = true;
+CREATE INDEX IF NOT EXISTS idx_users_current_organization ON users(current_organization_id);
+
+-- Create trigger for user_organizations updated_at
+CREATE TRIGGER update_user_organizations_updated_at 
+    BEFORE UPDATE ON user_organizations
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Create helper functions for multi-organization support
+CREATE OR REPLACE FUNCTION get_user_accessible_organizations(p_user_id UUID)
+RETURNS UUID[] AS $$
+BEGIN
+    RETURN ARRAY(
+        SELECT uo.organization_id 
+        FROM user_organizations uo 
+        WHERE uo.user_id = p_user_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION user_has_organization_access(p_user_id UUID, p_organization_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS(
+        SELECT 1 
+        FROM user_organizations uo 
+        WHERE uo.user_id = p_user_id 
+        AND uo.organization_id = p_organization_id
+    );
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION get_user_primary_organization(p_user_id UUID)
+RETURNS UUID AS $$
+DECLARE
+    primary_org_id UUID;
+BEGIN
+    SELECT uo.organization_id INTO primary_org_id
+    FROM user_organizations uo 
+    WHERE uo.user_id = p_user_id 
+    AND uo.is_primary = true;
+    
+    -- If no primary organization, return the first one
+    IF primary_org_id IS NULL THEN
+        SELECT uo.organization_id INTO primary_org_id
+        FROM user_organizations uo 
+        WHERE uo.user_id = p_user_id 
+        ORDER BY uo.created_at ASC
+        LIMIT 1;
+    END IF;
+    
+    RETURN primary_org_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Migrate existing admin user to the new structure
+INSERT INTO user_organizations (user_id, organization_id, role, is_primary, permissions)
+SELECT 
+    u.id, 
+    u.organization_id, 
+    u.role::text,
+    true, -- Set as primary organization
+    u.permissions
+FROM users u 
+WHERE u.organization_id IS NOT NULL
+AND NOT EXISTS (
+    SELECT 1 FROM user_organizations uo 
+    WHERE uo.user_id = u.id AND uo.organization_id = u.organization_id
+);
+
+-- Update current_organization_id to match their primary organization
+UPDATE users 
+SET current_organization_id = organization_id 
+WHERE current_organization_id IS NULL 
+AND organization_id IS NOT NULL;
+
+-- Record applied migrations
+INSERT INTO migrations (filename) VALUES 
+    ('001_initial_schema.sql'),
+    ('004_add_user_organization_support.sql')
+ON CONFLICT (filename) DO NOTHING;
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA maes TO maes_user;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA maes TO maes_user;
