@@ -413,8 +413,9 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Don't allow users to modify their own permissions
-    if (userId === req.user.id) {
+    // Don't allow users to modify their own permissions unless they are super admin
+    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    if (userId === req.user.id && !isSuperAdmin) {
       return res.status(403).json({ error: 'Cannot modify your own permissions' });
     }
 
@@ -465,6 +466,59 @@ router.patch('/:userId/reactivate', authenticateToken, requirePermission('canMan
   } catch (error) {
     logger.error('Reactivate user error:', error);
     res.status(500).json({ error: 'Failed to reactivate user' });
+  }
+});
+
+// Update user organization access
+router.patch('/:userId/organization-access', authenticateToken, requireSuperAdmin(), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { accessibleOrganizations } = req.body;
+
+    // Validate accessibleOrganizations is an array
+    if (!Array.isArray(accessibleOrganizations)) {
+      return res.status(400).json({ error: 'accessibleOrganizations must be an array' });
+    }
+
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Verify all organizations exist
+    for (const orgId of accessibleOrganizations) {
+      const orgQuery = `SELECT id FROM maes.organizations WHERE id = $1`;
+      const orgResult = await pool.query(orgQuery, [orgId]);
+      if (orgResult.rows.length === 0) {
+        return res.status(400).json({ error: `Organization ${orgId} not found` });
+      }
+    }
+
+    // Clear existing organization access
+    const deleteQuery = `DELETE FROM maes.user_organizations WHERE user_id = $1`;
+    await pool.query(deleteQuery, [userId]);
+
+    // Add new organization access
+    for (const orgId of accessibleOrganizations) {
+      const insertQuery = `
+        INSERT INTO maes.user_organizations (id, user_id, organization_id, role, created_at, updated_at)
+        VALUES (gen_random_uuid(), $1, $2, 'viewer', NOW(), NOW())
+        ON CONFLICT (user_id, organization_id) DO NOTHING
+      `;
+      await pool.query(insertQuery, [userId, orgId]);
+    }
+
+    logger.info(`Updated organization access for user: ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Organization access updated successfully'
+    });
+
+  } catch (error) {
+    logger.error('Update organization access error:', error);
+    res.status(500).json({ error: 'Failed to update organization access' });
   }
 });
 

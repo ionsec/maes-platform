@@ -1530,3 +1530,26 @@ startupCleanup().then(() => {
   logger.error('Startup cleanup failed, but service will continue:', error);
   logger.info('Extractor service started and listening for jobs');
 });
+
+// Add Express server for cleanup API
+const express = require('express');
+const cleanupRouter = require('./cleanup');
+
+const app = express();
+const PORT = process.env.CLEANUP_PORT || 3000;
+
+app.use(express.json());
+app.use('/api/cleanup', cleanupRouter);
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    success: true, 
+    service: 'extractor',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  logger.info(`Extractor cleanup API server listening on port ${PORT}`);
+});

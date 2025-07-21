@@ -242,10 +242,43 @@ const cleanupJobs = async () => {
 // Schedule periodic cleanup
 setInterval(cleanupJobs, 6 * 60 * 60 * 1000); // Every 6 hours
 
+// Create offboarding job
+const createOffboardingJob = async (organizationId, scheduledDate) => {
+  try {
+    const jobData = {
+      organizationId,
+      scheduledDate,
+      type: 'organization-offboarding'
+    };
+
+    const jobOptions = {
+      priority: 2, // Medium priority
+      attempts: 3,
+      delay: new Date(scheduledDate).getTime() - Date.now(), // Delay until scheduled date
+      backoff: {
+        type: 'exponential',
+        delay: 30000 // 30 seconds
+      },
+      removeOnComplete: 5,
+      removeOnFail: 5
+    };
+
+    const job = await extractionQueue.add('offboard-organization', jobData, jobOptions);
+    
+    logger.info(`Offboarding job scheduled for organization ${organizationId} with job ID ${job.id}`);
+    
+    return job;
+  } catch (error) {
+    logger.error('Failed to create offboarding job:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   createExtractionJob,
   createTestConnectionJob,
   createAnalysisJob,
+  createOffboardingJob,
   getQueueStats,
   cancelJob,
   cleanupJobs,

@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS organizations (
     credentials JSONB DEFAULT '{}',
     is_active BOOLEAN DEFAULT true,
     metadata JSONB DEFAULT '{}',
+    offboard_scheduled_at TIMESTAMP WITH TIME ZONE,
+    offboard_reason TEXT,
+    offboard_grace_period_days INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
