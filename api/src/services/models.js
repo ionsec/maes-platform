@@ -165,6 +165,58 @@ const OrganizationModel = {
     ]);
   },
 
+  // Check if organization is properly configured for extractions
+  isConfiguredForExtractions: (organization) => {
+    if (!organization) return false;
+    if (!organization.is_active) return false;
+    if (!organization.tenant_id) return false;
+    
+    const credentials = organization.credentials || {};
+    const requiredFields = ['applicationId', 'certificateThumbprint'];
+    
+    return requiredFields.every(field => credentials[field]);
+  },
+
+  // Get configuration status with detailed information
+  getConfigurationStatus: (organization) => {
+    if (!organization) {
+      return {
+        isConfigured: false,
+        missingRequirements: ['Organization not found'],
+        canRunExtractions: false
+      };
+    }
+
+    const missingRequirements = [];
+    
+    if (!organization.is_active) {
+      missingRequirements.push('Organization is inactive');
+    }
+    
+    if (!organization.tenant_id) {
+      missingRequirements.push('Tenant ID not configured');
+    }
+    
+    if (!organization.fqdn) {
+      missingRequirements.push('Organization domain (FQDN) not configured');
+    }
+    
+    const credentials = organization.credentials || {};
+    const requiredCredentials = ['applicationId', 'certificateThumbprint'];
+    
+    requiredCredentials.forEach(field => {
+      if (!credentials[field]) {
+        missingRequirements.push(`Missing credential: ${field}`);
+      }
+    });
+
+    return {
+      isConfigured: missingRequirements.length === 0,
+      missingRequirements,
+      canRunExtractions: missingRequirements.length === 0
+    };
+  },
+
   update: async (id, updates) => {
     const fields = [];
     const values = [];

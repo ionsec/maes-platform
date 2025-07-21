@@ -66,8 +66,11 @@ const Settings = () => {
   const [certificatePassword, setCertificatePassword] = useState('');
   const [certificateUploadLoading, setCertificateUploadLoading] = useState(false);
   const [userCertificates, setUserCertificates] = useState([]);
+  const [addOrgDialogOpen, setAddOrgDialogOpen] = useState(false);
+  const [addOrgLoading, setAddOrgLoading] = useState(false);
   const { control, handleSubmit, reset, setValue } = useForm();
   const { control: credentialsControl, handleSubmit: handleCredentialsSubmit, reset: resetCredentials, watch: watchCredentials } = useForm();
+  const { control: addOrgControl, handleSubmit: handleAddOrgSubmit, reset: resetAddOrg } = useForm();
   const { enqueueSnackbar } = useSnackbar();
   
   const watchedApplicationId = watchCredentials('applicationId');
@@ -82,7 +85,7 @@ const Settings = () => {
       
       // Set the first organization as selected if none is selected
       if (!selectedOrgId && response.data.organizations?.length > 0) {
-        setSelectedOrgId(response.data.organizations[0].id);
+        setSelectedOrgId(response.data.organizations[0].organization_id);
       }
     } catch (error) {
       enqueueSnackbar('Failed to fetch user organizations', { variant: 'error' });
@@ -94,7 +97,11 @@ const Settings = () => {
     
     setLoading(true);
     try {
-      const response = await axios.get(`/api/organizations/${orgId}`);
+      const response = await axios.get('/api/organizations/current', {
+        headers: {
+          'x-organization-id': orgId
+        }
+      });
       setOrganization(response.data.organization);
       
       // Set form values
@@ -153,7 +160,11 @@ const Settings = () => {
         }
       };
 
-      await axios.put(`/api/organizations/${selectedOrgId}`, payload);
+      await axios.put('/api/organizations/current', payload, {
+        headers: {
+          'x-organization-id': selectedOrgId
+        }
+      });
       enqueueSnackbar('Settings saved successfully', { variant: 'success' });
       fetchOrganization(selectedOrgId);
     } catch (error) {
@@ -172,7 +183,11 @@ const Settings = () => {
     // If we're showing credentials and don't have them cached, fetch them
     if (newShowState && !actualCredentials[key]) {
       try {
-        const response = await axios.get('/api/organizations/current?showCredentials=true');
+        const response = await axios.get('/api/organizations/current?showCredentials=true', {
+          headers: {
+            'x-organization-id': selectedOrgId
+          }
+        });
         setActualCredentials(response.data.organization.credentials || {});
       } catch (error) {
         console.error('Failed to fetch actual credentials:', error);
@@ -253,7 +268,11 @@ const Settings = () => {
         }
       });
 
-      await axios.put('/api/organizations/current/credentials', credentialsPayload);
+      await axios.put('/api/organizations/current/credentials', credentialsPayload, {
+        headers: {
+          'x-organization-id': selectedOrgId
+        }
+      });
 
       // Update tenant ID and FQDN if they were changed
       if ((data.credentialsTenantId && data.credentialsTenantId !== organization?.tenantId) || 
@@ -262,7 +281,11 @@ const Settings = () => {
           tenantId: data.credentialsTenantId,
           fqdn: data.fqdn
         };
-        await axios.put('/api/organizations/current', orgPayload);
+        await axios.put('/api/organizations/current', orgPayload, {
+          headers: {
+            'x-organization-id': selectedOrgId
+          }
+        });
       }
 
       enqueueSnackbar('Credentials and tenant information saved successfully', { variant: 'success' });
@@ -329,6 +352,34 @@ const Settings = () => {
     fetchUserCertificates();
   }, []);
 
+  const onAddOrganization = async (data) => {
+    setAddOrgLoading(true);
+    try {
+      // Create the new organization
+      const response = await axios.post('/api/user/organizations', {
+        name: data.organizationName,
+        tenantId: data.tenantId,
+        fqdn: data.fqdn
+      });
+
+      enqueueSnackbar('Organization added successfully', { variant: 'success' });
+      setAddOrgDialogOpen(false);
+      resetAddOrg();
+      
+      // Refresh the organizations list
+      await fetchUserOrganizations();
+      
+      // Select the newly added organization
+      if (response.data.organizationId) {
+        setSelectedOrgId(response.data.organizationId);
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.error || 'Failed to add organization', { variant: 'error' });
+    } finally {
+      setAddOrgLoading(false);
+    }
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
@@ -346,11 +397,11 @@ const Settings = () => {
               onChange={(e) => setSelectedOrgId(e.target.value)}
             >
               {userOrganizations.map((org) => (
-                <MenuItem key={org.id} value={org.id}>
+                <MenuItem key={org.organization_id} value={org.organization_id}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography>{org.name}</Typography>
+                    <Typography>{org.organization_name}</Typography>
                     <Chip 
-                      label={org.fqdn} 
+                      label={org.organization_fqdn} 
                       size="small" 
                       variant="outlined" 
                       sx={{ ml: 1 }}
@@ -367,8 +418,12 @@ const Settings = () => {
               variant="outlined"
               startIcon={<AddIcon />}
               onClick={() => {
-                // Navigate to onboarding to add new organization
-                window.location.href = '/onboarding';
+                setAddOrgDialogOpen(true);
+                resetAddOrg({
+                  organizationName: '',
+                  tenantId: '',
+                  fqdn: ''
+                });
               }}
             >
               Add New Organization
@@ -1214,6 +1269,105 @@ const Settings = () => {
                 {credentialsLoading ? 'Saving...' : 'Save Credentials'}
               </Button>
             </Box>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* Add Organization Dialog */}
+      <Dialog open={addOrgDialogOpen} onClose={() => setAddOrgDialogOpen(false)} maxWidth="sm" fullWidth>
+        <form onSubmit={handleAddOrgSubmit(onAddOrganization)}>
+          <DialogTitle>Add New Organization</DialogTitle>
+          <DialogContent>
+            <Alert severity="info" sx={{ mb: 3 }}>
+              Add a new Microsoft 365 organization to manage through MAES. You'll be able to configure credentials and extract data from this organization.
+            </Alert>
+            
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <Controller
+                  name="organizationName"
+                  control={addOrgControl}
+                  rules={{ required: 'Organization name is required' }}
+                  render={({ field, fieldState }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Organization Name"
+                      placeholder="e.g., Contoso Corporation"
+                      helperText={fieldState.error?.message || "Display name for this organization"}
+                      error={fieldState.invalid}
+                      margin="normal"
+                    />
+                  )}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <Controller
+                  name="fqdn"
+                  control={addOrgControl}
+                  rules={{ 
+                    required: 'FQDN is required',
+                    pattern: {
+                      value: /^[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9](\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9])*$/,
+                      message: 'Invalid FQDN format (e.g., contoso.onmicrosoft.com)'
+                    }
+                  }}
+                  render={({ field, fieldState }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Organization FQDN"
+                      placeholder="contoso.onmicrosoft.com"
+                      helperText={fieldState.error?.message || "Microsoft 365 tenant domain"}
+                      error={fieldState.invalid}
+                      margin="normal"
+                    />
+                  )}
+                />
+              </Grid>
+              
+              <Grid item xs={12}>
+                <Controller
+                  name="tenantId"
+                  control={addOrgControl}
+                  rules={{ 
+                    required: 'Tenant ID is required',
+                    pattern: {
+                      value: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+                      message: 'Invalid Tenant ID format (must be a valid UUID)'
+                    }
+                  }}
+                  render={({ field, fieldState }) => (
+                    <TextField
+                      {...field}
+                      fullWidth
+                      label="Tenant ID"
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      helperText={fieldState.error?.message || "Azure AD tenant identifier"}
+                      error={fieldState.invalid}
+                      margin="normal"
+                    />
+                  )}
+                />
+              </Grid>
+            </Grid>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => {
+              setAddOrgDialogOpen(false);
+              resetAddOrg();
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              type="submit"
+              variant="contained"
+              disabled={addOrgLoading}
+              startIcon={addOrgLoading ? <CircularProgress size={16} /> : <AddIcon />}
+            >
+              {addOrgLoading ? 'Adding...' : 'Add Organization'}
+            </Button>
           </DialogActions>
         </form>
       </Dialog>

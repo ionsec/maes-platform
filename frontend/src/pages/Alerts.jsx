@@ -69,6 +69,7 @@ import axios from '../utils/axios';
 import TourButton from '../components/TourButton';
 import TourResetButton from '../components/TourResetButton';
 import { useAuth } from '../contexts/AuthContext';
+import { useOrganization } from '../contexts/OrganizationContext';
 
 dayjs.extend(relativeTime);
 
@@ -108,6 +109,7 @@ const categories = [
 
 const Alerts = () => {
   const { user } = useAuth()
+  const { selectedOrganization, selectedOrganizationId } = useOrganization()
   
   // Tour steps configuration
   const alertsTourSteps = [
@@ -150,10 +152,6 @@ const Alerts = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
   
-  // Organization state
-  const [userOrganizations, setUserOrganizations] = useState([]);
-  const [selectedOrgId, setSelectedOrgId] = useState(null);
-  const [selectedOrgName, setSelectedOrgName] = useState('All Organizations');
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -168,37 +166,6 @@ const Alerts = () => {
   const { control, handleSubmit, reset } = useForm();
   const { enqueueSnackbar } = useSnackbar();
 
-  // Fetch user organizations
-  const fetchUserOrganizations = async () => {
-    try {
-      const response = await axios.get('/api/user/organizations')
-      if (response.data.success) {
-        const orgs = response.data.organizations || []
-        setUserOrganizations(orgs)
-        
-        // Set default organization if not already set
-        if (!selectedOrgId && orgs.length > 0) {
-          const primaryOrg = orgs.find(org => org.is_primary) || orgs[0]
-          setSelectedOrgId(primaryOrg.organization_id)
-          setSelectedOrgName(primaryOrg.organization_name || primaryOrg.organization_id)
-        }
-      }
-    } catch (error) {
-      console.error('Failed to fetch user organizations:', error)
-    }
-  }
-
-  // Handle organization change
-  const handleOrganizationChange = (orgId) => {
-    setSelectedOrgId(orgId)
-    if (orgId === 'all') {
-      setSelectedOrgName('All Organizations')
-    } else {
-      const org = userOrganizations.find(org => org.organization_id === orgId)
-      setSelectedOrgName(org?.organization_name || orgId)
-    }
-    setPage(1) // Reset to first page when changing organization
-  }
 
   const fetchAlerts = useCallback(async () => {
     setLoading(true);
@@ -206,7 +173,7 @@ const Alerts = () => {
       const params = new URLSearchParams();
       if (filterStatus !== 'all') params.append('status', filterStatus);
       if (filterSeverity !== 'all') params.append('severity', filterSeverity);
-      if (selectedOrgId && selectedOrgId !== 'all') params.append('organizationId', selectedOrgId);
+      if (selectedOrganizationId) params.append('organizationId', selectedOrganizationId);
       params.append('limit', '20'); // Show 20 alerts per page
       params.append('page', page.toString());
       
@@ -219,14 +186,8 @@ const Alerts = () => {
     } finally {
       setLoading(false);
     }
-  }, [filterStatus, filterSeverity, selectedOrgId, page, enqueueSnackbar]);
+  }, [filterStatus, filterSeverity, selectedOrganizationId, page, enqueueSnackbar]);
 
-  // Fetch user organizations on mount
-  useEffect(() => {
-    if (user) {
-      fetchUserOrganizations()
-    }
-  }, [user])
 
   useEffect(() => {
     fetchAlerts();
@@ -393,36 +354,15 @@ const Alerts = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Typography variant="h4" data-tour="alerts-title">Security Alerts</Typography>
-          {selectedOrgName !== 'All Organizations' && (
+          {selectedOrganization && (
             <Chip 
-              label={selectedOrgName} 
+              label={selectedOrganization.organization_name} 
               size="small" 
               color="primary" 
             />
           )}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {/* Organization Selector */}
-          {userOrganizations.length > 1 && (
-            <FormControl size="small" sx={{ minWidth: 200 }}>
-              <InputLabel>Organization</InputLabel>
-              <Select
-                value={selectedOrgId || 'all'}
-                label="Organization"
-                onChange={(e) => handleOrganizationChange(e.target.value)}
-              >
-                <MenuItem value="all">All Organizations</MenuItem>
-                <Divider />
-                {userOrganizations.map((org) => (
-                  <MenuItem key={org.organization_id} value={org.organization_id}>
-                    {org.organization_name || org.organization_id}
-                    {org.is_primary && <Chip label="Primary" size="small" sx={{ ml: 1 }} />}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          
           <TourButton 
             tourSteps={alertsTourSteps}
             tourId="alerts-tour"

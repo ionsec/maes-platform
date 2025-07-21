@@ -318,11 +318,19 @@ router.patch('/:id/status', async (req, res) => {
     if (errorMessage) updateData.errorMessage = errorMessage;
     if (progress !== undefined) updateData.progress = progress;
 
+    // First verify the extraction exists and belongs to the organization
+    const existingExtraction = await Extraction.findById(req.params.id, req.organizationId);
+    if (!existingExtraction) {
+      return res.status(404).json({
+        error: 'Extraction not found or access denied'
+      });
+    }
+
     const extraction = await Extraction.update(req.params.id, updateData);
 
     if (!extraction) {
       return res.status(404).json({
-        error: 'Extraction not found'
+        error: 'Failed to update extraction'
       });
     }
 

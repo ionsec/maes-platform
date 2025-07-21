@@ -15,6 +15,7 @@ const ExternalRedirect = ({ url }) => {
 import { useAuthStore } from './stores/authStore'
 import { setNavigate } from './utils/axios'
 import { TourProvider } from './contexts/TourContext'
+import { OrganizationProvider } from './contexts/OrganizationContext'
 import Header from './components/Header'
 import Sidebar from './components/Sidebar'
 import SOSButton from './components/SOSButton'
@@ -100,12 +101,13 @@ function App() {
   }
 
   return (
-    <TourProvider>
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-        <Header onMenuClick={toggleSidebar} />
-        <div style={{ display: 'flex', flex: 1 }}>
-          <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-          <Container 
+    <OrganizationProvider>
+      <TourProvider>
+        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Header onMenuClick={toggleSidebar} />
+          <div style={{ display: 'flex', flex: 1 }}>
+            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+            <Container 
             maxWidth={false} 
             sx={{ 
               mt: 8, 
@@ -143,6 +145,7 @@ function App() {
         <Tour />
       </div>
     </TourProvider>
+  </OrganizationProvider>
   )
 }
 

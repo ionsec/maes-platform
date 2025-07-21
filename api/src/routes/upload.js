@@ -111,17 +111,33 @@ router.get('/data/:extractionId',
         error: 'Service authentication required'
       });
     }
+    
+    // Set organization context from service request header
+    const organizationId = req.headers['x-organization-id'];
+    if (!organizationId) {
+      return res.status(400).json({
+        error: 'Organization ID required for service requests'
+      });
+    }
+    req.organizationId = organizationId;
     try {
       const { extractionId } = req.params;
       
-      // First check memory cache
+      // First check memory cache with organization validation
       const uploadedExtractions = req.app.locals.uploadedExtractions || {};
       let extraction = uploadedExtractions[extractionId];
       
+      // Validate organization access for memory cached extractions
+      if (extraction && (!req.organizationId || extraction.organizationId !== req.organizationId)) {
+        return res.status(404).json({
+          error: 'Uploaded extraction not found'
+        });
+      }
+      
       if (!extraction) {
-        // Check database for the extraction
+        // Check database for the extraction with organization validation
         const { Extraction } = require('../services/models');
-        const dbExtraction = await Extraction.findById(extractionId, null);
+        const dbExtraction = await Extraction.findById(extractionId, req.organizationId);
         
         if (!dbExtraction || !dbExtraction.parameters?.isUpload) {
           return res.status(404).json({
@@ -251,6 +267,7 @@ router.post('/logs',
       req.app.locals.uploadedExtractions = req.app.locals.uploadedExtractions || {};
       req.app.locals.uploadedExtractions[extraction.id] = {
         extractionId: extraction.id,
+        organizationId: req.organizationId, // Add organization context
         data: parsedData,
         uploadedFile: {
           path: req.file.path,

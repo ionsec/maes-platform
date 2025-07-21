@@ -17,7 +17,9 @@ import {
   ListItemText,
   ListItemIcon,
   Divider,
-  Button
+  Button,
+  FormControl,
+  Select
 } from '@mui/material'
 import {
   Menu as MenuIcon,
@@ -40,6 +42,7 @@ import {
 import { useAuthStore } from '../stores/authStore'
 import { useAlerts } from '../hooks/useAlerts'
 import { useNavigate } from 'react-router-dom'
+import { useOrganization } from '../contexts/OrganizationContext'
 import ThemeSelector from './ThemeSelector'
 import dayjs from 'dayjs'
 import axios from '../utils/axios'
@@ -47,6 +50,7 @@ import axios from '../utils/axios'
 const Header = ({ onMenuClick }) => {
   const { user, logout } = useAuthStore()
   const { alerts, alertStats, markAsRead, markAllAsRead, dismissAlert } = useAlerts()
+  const { organizations, selectedOrganization, selectOrganization } = useOrganization()
   const navigate = useNavigate()
   const [anchorEl, setAnchorEl] = React.useState(null)
   const [alertsAnchorEl, setAlertsAnchorEl] = React.useState(null)
@@ -241,6 +245,50 @@ const Header = ({ onMenuClick }) => {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          {/* Organization Selector */}
+          {organizations.length > 1 && (
+            <FormControl 
+              size="small" 
+              sx={{ 
+                mr: 2, 
+                minWidth: 200,
+                '& .MuiSelect-select': {
+                  py: 0.5,
+                  fontSize: '0.875rem'
+                }
+              }}
+            >
+              <Select
+                value={selectedOrganization?.organization_id || ''}
+                onChange={(e) => selectOrganization(e.target.value)}
+                displayEmpty
+                sx={{
+                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                  '& .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.2)'
+                  },
+                  '&:hover .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'rgba(255, 255, 255, 0.4)'
+                  },
+                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
+                    borderColor: 'primary.main'
+                  }
+                }}
+              >
+                {organizations.map((org) => (
+                  <MenuItem key={org.organization_id} value={org.organization_id}>
+                    <Box>
+                      <Typography variant="body2">{org.organization_name}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {org.organization_fqdn}
+                      </Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          
           <ThemeSelector variant="icon" sx={{ mr: 1 }} />
           <Tooltip title={`Security Alerts (${alertStats.unread} unread)`}>
             <IconButton 

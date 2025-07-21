@@ -46,6 +46,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { useSnackbar } from 'notistack';
 import dayjs from 'dayjs';
 import axios from '../utils/axios';
+import { useOrganization } from '../contexts/OrganizationContext';
 import TourButton from '../components/TourButton';
 import TourResetButton from '../components/TourResetButton';
 import { analysisTourSteps } from '../utils/tourConfigs';
@@ -87,6 +88,7 @@ const statusColors = {
 };
 
 const Analysis = () => {
+  const { selectedOrganizationId } = useOrganization();
   const [analysisJobs, setAnalysisJobs] = useState([]);
   const [extractions, setExtractions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -126,7 +128,10 @@ const Analysis = () => {
   const fetchAnalysisJobs = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/analysis');
+      const url = selectedOrganizationId 
+        ? `/api/analysis?organizationId=${selectedOrganizationId}`
+        : '/api/analysis';
+      const response = await axios.get(url);
       setAnalysisJobs(response.data.analysisJobs);
     } catch (error) {
       enqueueSnackbar('Failed to fetch analysis jobs', { variant: 'error' });
@@ -137,7 +142,10 @@ const Analysis = () => {
 
   const fetchExtractions = async () => {
     try {
-      const response = await axios.get('/api/extractions?status=completed');
+      const url = selectedOrganizationId 
+        ? `/api/extractions?status=completed&organizationId=${selectedOrganizationId}`
+        : '/api/extractions?status=completed';
+      const response = await axios.get(url);
       setExtractions(response.data.extractions);
     } catch (error) {
       console.error('Failed to fetch extractions:', error);
@@ -153,7 +161,7 @@ const Analysis = () => {
     // Extractions don't change as frequently, so we don't need to poll them
     const interval = setInterval(fetchAnalysisJobs, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedOrganizationId]);
 
   const onSubmit = async (data) => {
     try {
@@ -161,6 +169,7 @@ const Analysis = () => {
         extractionId: data.extractionId,
         type: data.type,
         priority: data.priority,
+        organizationId: selectedOrganizationId,
         parameters: {
           enableThreatIntel: data.enableThreatIntel,
           enablePatternDetection: data.enablePatternDetection,
