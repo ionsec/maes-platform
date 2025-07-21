@@ -138,6 +138,27 @@ services:
       - maes-network
     restart: unless-stopped
 
+  compliance:
+    build: ./services/compliance
+    image: maes-compliance:latest
+    container_name: maes-compliance
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
+      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
+      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
+      COMPLIANCE_PORT: 3002
+      LOG_LEVEL: info
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - maes-network
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     image: maes-frontend:latest
