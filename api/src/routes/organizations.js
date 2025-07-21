@@ -7,6 +7,75 @@ const { logger } = require('../utils/logger');
 
 const router = express.Router();
 
+// Organization cleanup function
+async function performOrganizationCleanup(organizationId) {
+  const { pool } = require('../services/database');
+  const axios = require('axios');
+  const serviceToken = process.env.SERVICE_AUTH_TOKEN;
+  
+  logger.info(`Starting organization cleanup for: ${organizationId}`);
+  
+  try {
+    // 1. Clean up Postgres data
+    logger.info(`Cleaning up Postgres data for organization: ${organizationId}`);
+    
+    // Delete extractions and related data
+    await pool.query('DELETE FROM maes.extractions WHERE organization_id = $1', [organizationId]);
+    await pool.query('DELETE FROM maes.analysis_jobs WHERE organization_id = $1', [organizationId]);
+    await pool.query('DELETE FROM maes.alerts WHERE organization_id = $1', [organizationId]);
+    await pool.query('DELETE FROM maes.audit_logs WHERE organization_id = $1', [organizationId]);
+    await pool.query('DELETE FROM maes.user_organizations WHERE organization_id = $1', [organizationId]);
+    await pool.query('DELETE FROM maes.users WHERE organization_id = $1', [organizationId]);
+    
+    // 2. Clean up Redis data
+    logger.info(`Cleaning up Redis data for organization: ${organizationId}`);
+    const redis = require('redis');
+    const redisClient = redis.createClient({
+      url: `redis://${process.env.REDIS_PASSWORD ? `:${process.env.REDIS_PASSWORD}@` : ''}${process.env.REDIS_HOST || 'redis'}:${process.env.REDIS_PORT || 6379}`
+    });
+    
+    await redisClient.connect();
+    
+    // Clean up Redis keys for this organization
+    const pattern = `*${organizationId}*`;
+    const keys = await redisClient.keys(pattern);
+    if (keys.length > 0) {
+      await redisClient.del(keys);
+      logger.info(`Deleted ${keys.length} Redis keys for organization: ${organizationId}`);
+    }
+    
+    await redisClient.disconnect();
+    
+    // 3. Clean up Extractor service data
+    logger.info(`Cleaning up Extractor service data for organization: ${organizationId}`);
+    try {
+      await axios.delete(`http://extractor:3000/api/cleanup/organization/${organizationId}`, {
+        headers: { 'x-service-token': serviceToken },
+        timeout: 30000
+      });
+    } catch (extractorError) {
+      logger.warn(`Extractor cleanup failed (service may be down): ${extractorError.message}`);
+    }
+    
+    // 4. Clean up Analyzer service data
+    logger.info(`Cleaning up Analyzer service data for organization: ${organizationId}`);
+    try {
+      await axios.delete(`http://analyzer:3000/api/cleanup/organization/${organizationId}`, {
+        headers: { 'x-service-token': serviceToken },
+        timeout: 30000
+      });
+    } catch (analyzerError) {
+      logger.warn(`Analyzer cleanup failed (service may be down): ${analyzerError.message}`);
+    }
+    
+    logger.info(`Organization cleanup completed for: ${organizationId}`);
+    
+  } catch (error) {
+    logger.error(`Organization cleanup failed for ${organizationId}:`, error);
+    throw error;
+  }
+}
+
 // Apply authentication and rate limiting to all routes
 router.use(authenticateToken);
 router.use(apiRateLimiter);
@@ -324,11 +393,133 @@ router.get('/stats', async (req, res) => {
 });
 
 // Delete organization (admin only)
+// Offboard organization (soft delete with grace period)
+router.post('/:organizationId/offboard',
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { organizationId } = req.params;
+      const { gracePeriodDays = 7, reason = 'User requested offboarding' } = req.body;
+      
+      // Prevent offboarding of default organization
+      if (organizationId === '00000000-0000-0000-0000-000000000001') {
+        return res.status(403).json({
+          error: 'Cannot offboard the default organization'
+        });
+      }
+      
+      // Check if organization exists
+      const organization = await Organization.findById(organizationId);
+      if (!organization) {
+        return res.status(404).json({
+          error: 'Organization not found'
+        });
+      }
+      
+      // Check if already offboarded
+      if (organization.offboard_scheduled_at) {
+        return res.status(409).json({
+          error: 'Organization is already scheduled for offboarding',
+          scheduledAt: organization.offboard_scheduled_at
+        });
+      }
+      
+      // Schedule offboarding
+      const offboardAt = new Date();
+      offboardAt.setDate(offboardAt.getDate() + gracePeriodDays);
+      
+      const { pool } = require('../services/database');
+      await pool.query(`
+        UPDATE maes.organizations 
+        SET 
+          is_active = false,
+          offboard_scheduled_at = $1,
+          offboard_reason = $2,
+          offboard_grace_period_days = $3,
+          updated_at = NOW()
+        WHERE id = $4
+      `, [offboardAt, reason, gracePeriodDays, organizationId]);
+      
+      // Create offboarding job
+      const { createOffboardingJob } = require('../services/jobService');
+      await createOffboardingJob(organizationId, offboardAt);
+      
+      logger.info(`Organization offboarding scheduled: ${organizationId} by user: ${req.user.id}, cleanup at: ${offboardAt}`);
+      
+      res.json({
+        success: true,
+        message: `Organization offboarding scheduled. Data will be permanently deleted after ${gracePeriodDays} days.`,
+        offboardScheduledAt: offboardAt,
+        gracePeriodDays
+      });
+      
+    } catch (error) {
+      logger.error('Offboard organization error:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to offboard organization'
+      });
+    }
+  }
+);
+
+// Cancel organization offboarding (restore)
+router.post('/:organizationId/restore',
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { organizationId } = req.params;
+      
+      // Check if organization exists
+      const organization = await Organization.findById(organizationId);
+      if (!organization) {
+        return res.status(404).json({
+          error: 'Organization not found'
+        });
+      }
+      
+      // Check if actually scheduled for offboarding
+      if (!organization.offboard_scheduled_at) {
+        return res.status(409).json({
+          error: 'Organization is not scheduled for offboarding'
+        });
+      }
+      
+      // Cancel offboarding
+      const { pool } = require('../services/database');
+      await pool.query(`
+        UPDATE maes.organizations 
+        SET 
+          is_active = true,
+          offboard_scheduled_at = NULL,
+          offboard_reason = NULL,
+          offboard_grace_period_days = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+      `, [organizationId]);
+      
+      logger.info(`Organization offboarding cancelled: ${organizationId} by user: ${req.user.id}`);
+      
+      res.json({
+        success: true,
+        message: 'Organization offboarding cancelled and organization restored'
+      });
+      
+    } catch (error) {
+      logger.error('Restore organization error:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to restore organization'
+      });
+    }
+  }
+);
+
+// Immediate deletion (admin only)
 router.delete('/:organizationId', 
   requireRole('admin'),
   async (req, res) => {
     try {
       const { organizationId } = req.params;
+      const { force = false } = req.query;
       
       // Prevent deletion of default organization
       if (organizationId === '00000000-0000-0000-0000-000000000001') {
@@ -345,26 +536,31 @@ router.delete('/:organizationId',
         });
       }
       
-      // Check if there are any active extractions
-      const { Extraction } = require('../services/models');
-      const activeExtractions = await Extraction.countByOrganization(organizationId, {
-        status: ['pending', 'running']
-      });
-      
-      if (activeExtractions > 0) {
-        return res.status(409).json({
-          error: 'Cannot delete organization with active extractions. Please cancel or wait for them to complete.'
+      // Check if there are any active extractions unless forced
+      if (!force) {
+        const { Extraction } = require('../services/models');
+        const activeExtractions = await Extraction.countByOrganization(organizationId, {
+          status: ['pending', 'running']
         });
+        
+        if (activeExtractions > 0) {
+          return res.status(409).json({
+            error: 'Cannot delete organization with active extractions. Use ?force=true to override or cancel/wait for extractions to complete.'
+          });
+        }
       }
+      
+      // Perform immediate cleanup
+      await performOrganizationCleanup(organizationId);
       
       // Delete the organization (this will cascade delete related data)
       await Organization.delete(organizationId);
       
-      logger.info(`Organization deleted: ${organizationId} by user: ${req.user.id}`);
+      logger.info(`Organization immediately deleted: ${organizationId} by user: ${req.user.id}`);
       
       res.json({
         success: true,
-        message: 'Organization deleted successfully'
+        message: 'Organization and all associated data deleted successfully'
       });
       
     } catch (error) {

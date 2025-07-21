@@ -80,8 +80,10 @@ const UserManagement = () => {
     lastName: '',
     password: '',
     role: 'viewer',
-    organizationId: ''
+    organizationId: '',
+    accessibleOrganizations: []
   });
+  const [organizationAccessDialog, setOrganizationAccessDialog] = useState({ open: false, user: null });
 
   // Available permissions based on the backend ROLE_PERMISSIONS
   const availablePermissions = {
@@ -115,8 +117,8 @@ const UserManagement = () => {
     canAccessDeveloperTools: 'Access Developer Tools'
   };
 
-  const roles = ['admin', 'analyst', 'viewer'];
   const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const roles = isSuperAdmin ? ['super_admin', 'admin', 'analyst', 'viewer'] : ['admin', 'analyst', 'viewer'];
 
   useEffect(() => {
     fetchUsers();
@@ -200,11 +202,23 @@ const UserManagement = () => {
         lastName: '',
         password: '',
         role: 'viewer',
-        organizationId: ''
+        organizationId: '',
+        accessibleOrganizations: []
       });
       fetchUsers();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to create user', { variant: 'error' });
+    }
+  };
+
+  const handleUpdateOrganizationAccess = async (userId, accessibleOrganizations) => {
+    try {
+      await axios.patch(`/api/users/${userId}/organization-access`, { accessibleOrganizations });
+      enqueueSnackbar('Organization access updated successfully', { variant: 'success' });
+      setOrganizationAccessDialog({ open: false, user: null });
+      fetchUsers();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.error || 'Failed to update organization access', { variant: 'error' });
     }
   };
 
@@ -471,7 +485,7 @@ const UserManagement = () => {
                   <IconButton
                     size="small"
                     onClick={(e) => handleMenuOpen(e, user)}
-                    disabled={user.id === currentUser?.id}
+                    disabled={user.id === currentUser?.id && !isSuperAdmin}
                   >
                     <MoreVertIcon />
                   </IconButton>
@@ -514,6 +528,15 @@ const UserManagement = () => {
           <ListItemIcon><ShieldIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Manage Permissions</ListItemText>
         </MenuItem>
+        {isSuperAdmin && (
+          <MenuItem onClick={() => {
+            setOrganizationAccessDialog({ open: true, user: selectedUser });
+            handleMenuClose();
+          }}>
+            <ListItemIcon><AddIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Organization Access</ListItemText>
+          </MenuItem>
+        )}
         <MenuItem onClick={() => {
           handleResetPassword(selectedUser.id);
           handleMenuClose();
@@ -651,6 +674,62 @@ const UserManagement = () => {
             )}
           >
             Save Permissions
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Organization Access Dialog */}
+      <Dialog 
+        open={organizationAccessDialog.open} 
+        onClose={() => setOrganizationAccessDialog({ open: false, user: null })} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle>
+          Organization Access - {organizationAccessDialog.user?.firstName} {organizationAccessDialog.user?.lastName}
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Select which organizations this user can access. This enables cross-organization permissions.
+          </Alert>
+          <FormGroup>
+            {organizations.map((org) => (
+              <FormControlLabel
+                key={org.id}
+                control={
+                  <Switch
+                    checked={organizationAccessDialog.user?.accessibleOrganizations?.includes(org.id) || false}
+                    onChange={(e) => {
+                      const currentAccess = organizationAccessDialog.user?.accessibleOrganizations || [];
+                      const newAccess = e.target.checked
+                        ? [...currentAccess, org.id]
+                        : currentAccess.filter(id => id !== org.id);
+                      
+                      setOrganizationAccessDialog({
+                        ...organizationAccessDialog,
+                        user: {
+                          ...organizationAccessDialog.user,
+                          accessibleOrganizations: newAccess
+                        }
+                      });
+                    }}
+                  />
+                }
+                label={`${org.name} (${org.organizationType})`}
+              />
+            ))}
+          </FormGroup>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOrganizationAccessDialog({ open: false, user: null })}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            onClick={() => handleUpdateOrganizationAccess(
+              organizationAccessDialog.user.id, 
+              organizationAccessDialog.user.accessibleOrganizations
+            )}
+          >
+            Update Access
           </Button>
         </DialogActions>
       </Dialog>
