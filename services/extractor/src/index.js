@@ -111,7 +111,7 @@ const processExtractionJob = async (job) => {
     // Update extraction status to completed via API - critical for UI consistency
     try {
       logger.info(`Attempting to update extraction ${extractionId} status to 'completed'...`);
-      await updateExtractionStatus(extractionId, 'completed', {
+      await updateExtractionStatus(extractionId, organizationId, 'completed', {
         outputFiles,
         statistics: result.statistics,
         completedAt: new Date(),
@@ -147,7 +147,7 @@ const processExtractionJob = async (job) => {
     // Update extraction status to failed via API
     try {
       logger.info(`Updating extraction ${extractionId} status to 'failed' due to error...`);
-      await updateExtractionStatus(extractionId, 'failed', {
+      await updateExtractionStatus(extractionId, organizationId, 'failed', {
         errorMessage: error.message,
         failedAt: new Date(),
         progress: job.progress || 0
@@ -1113,6 +1113,7 @@ extractionWorker.on('failed', async (job, err) => {
   logger.error(`Job ${job.id} failed after ${job.attemptsMade} attempts:`, err);
   
   const extractionId = job.data.extractionId || job.data.testId;
+  const organizationId = job.data.organizationId;
   
   // If job has exceeded max attempts, mark it as permanently failed
   if (job.attemptsMade >= job.opts.attempts) {
@@ -1122,7 +1123,7 @@ extractionWorker.on('failed', async (job, err) => {
     if (extractionId) {
       try {
         logger.info(`Updating extraction ${extractionId} status to 'failed' after max retries exceeded...`);
-        await updateExtractionStatus(extractionId, 'failed', {
+        await updateExtractionStatus(extractionId, organizationId, 'failed', {
           errorMessage: err.message,
           failedAt: new Date(),
           attemptsExhausted: true
@@ -1381,6 +1382,7 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
         {
           headers: {
             'x-service-token': serviceToken,
+            'x-organization-id': organizationId,
             'Content-Type': 'application/json'
           },
           timeout: 10000
@@ -1462,7 +1464,7 @@ async function triggerAnalysis(extractionId, extractionType, organizationId, out
 }
 
 // Helper function to update extraction status via API with retry logic
-async function updateExtractionStatus(extractionId, status, metadata = {}, retryCount = 0) {
+async function updateExtractionStatus(extractionId, organizationId, status, metadata = {}, retryCount = 0) {
   const maxRetries = 3;
   const retryDelay = 2000; // 2 seconds
   
@@ -1474,7 +1476,7 @@ async function updateExtractionStatus(extractionId, status, metadata = {}, retry
       throw new Error('SERVICE_AUTH_TOKEN environment variable is not set');
     }
     
-    logger.info(`Updating extraction ${extractionId} status to '${status}' (attempt ${retryCount + 1})`);
+    logger.info(`Updating extraction ${extractionId} status to '${status}' for organization ${organizationId} (attempt ${retryCount + 1})`);
     
     const response = await axios.patch(
       `${apiUrl}/api/extractions/${extractionId}/status`,
@@ -1485,6 +1487,7 @@ async function updateExtractionStatus(extractionId, status, metadata = {}, retry
       {
         headers: {
           'x-service-token': serviceToken,
+          'x-organization-id': organizationId,
           'Content-Type': 'application/json'
         },
         timeout: 15000 // Increased timeout
@@ -1512,7 +1515,7 @@ async function updateExtractionStatus(extractionId, status, metadata = {}, retry
     if (retryCount < maxRetries) {
       logger.info(`Retrying status update for extraction ${extractionId} in ${retryDelay}ms...`);
       await new Promise(resolve => setTimeout(resolve, retryDelay));
-      return updateExtractionStatus(extractionId, status, metadata, retryCount + 1);
+      return updateExtractionStatus(extractionId, organizationId, status, metadata, retryCount + 1);
     } else {
       logger.error(`Max retries (${maxRetries}) exceeded for updating extraction ${extractionId} status. This may cause UI to show incorrect status.`);
       throw error;
