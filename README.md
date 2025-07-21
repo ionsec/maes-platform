@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 
-**MAES: The M365 Analyzer & Extractor Suite** is an open-source, full-stack SaaS platform for Microsoft 365 forensic data extraction and analysis.
+**MAES: The M365 Analyzer & Extractor Suite** is an open-source, full-stack SaaS platform for Microsoft 365 forensic data extraction, analysis, and comprehensive compliance assessment.
 
 > **⚠️ This project is heavily under development**
 
@@ -17,15 +17,29 @@
 
 ## 🚀 Features
 
+### Core Capabilities
 - **M365 Data Extraction**: Audit logs, Azure AD, Exchange, SharePoint, Teams, UAL Graph, Licenses
 - **Advanced Analytics**: MITRE ATT&CK mapping, behavioral analysis, threat hunting
 - **Upload & Analyze**: Support for pre-extracted log files (JSON, CSV, TXT, LOG)
-- **Real-time Status Sync**: Robust service communication with exponential backoff retry logic
-- **System Logs Management**: Real-time container log access with advanced filtering and raw log viewing
-- **Monitoring & Observability**: Prometheus, Grafana, Loki, cAdvisor with integrated access
-- **Security & Compliance**: Multi-tenant, advanced RBAC with super admin capabilities, audit logging, IPv6/IPv4 network support
-- **Enterprise-Ready**: Docker containerization, microservices architecture with service mesh communication
 - **Real-time Progress**: Live analysis progress tracking with WebSocket updates
+
+### Compliance & Assessment
+- **Comprehensive Compliance Assessment**: CIS Microsoft 365 v4.0.0 benchmark implementation
+- **Certificate-Based Authentication**: Secure Microsoft Graph API integration using X.509 certificates
+- **Detailed Tenant Analysis**: Complete organizational security posture evaluation including:
+  - **Technical Characteristics**: Tenant info, DNS domains, synchronization status, external tenant connections
+  - **Account Analysis**: User types (guests, members, external), password policies, account status breakdown
+  - **Group & Application Inventory**: Security groups, distribution lists, privileged roles, third-party applications
+  - **Failing Entity Identification**: Specific users, groups, and policies that fail compliance requirements
+- **Comprehensive Reporting**: Executive summaries, detailed HTML reports, and failing entity remediation guidance
+- **API Permission Validation**: Pre-assessment validation of required Graph API permissions
+
+### Enterprise Platform
+- **Security & Multi-tenancy**: Advanced RBAC with super admin capabilities, multi-organization support, audit logging
+- **Real-time Status Sync**: Robust service communication with exponential backoff retry logic and IPv6/IPv4 network support
+- **System Logs Management**: Real-time container log access with advanced filtering and raw log viewing
+- **Monitoring & Observability**: Prometheus, Grafana, Loki, cAdvisor with integrated access and real-time alerting
+- **Enterprise Architecture**: Docker containerization, microservices architecture with service mesh communication
 
 ## 🚦 Quick Start
 
@@ -134,14 +148,79 @@ API_URL=https://yourdomain.com  # Frontend API URL (nginx proxies /api/ internal
 VITE_API_URL=https://yourdomain.com
 ```
 
+## 🏗️ High-Level Architecture
+
+MAES follows a modern microservices architecture with specialized services for different aspects of Microsoft 365 security analysis:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              MAES Platform Overview                                 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+                    ┌─────────────────────────────────────────┐
+                    │         Microsoft 365 Cloud            │
+                    │  ┌─────────────┐ ┌─────────────┐        │
+                    │  │Exchange     │ │Graph API    │        │
+                    │  │Online       │ │(Users, MFA, │        │
+                    │  │(UAL Logs)   │ │ Compliance) │        │
+                    │  └─────────────┘ └─────────────┘        │
+                    └─────────────────────────────────────────┘
+                                     │
+                              Certificate Authentication
+                                     │
+            ┌─────────────────────────────────────────────────────────────────────────────────────┐
+            │                           MAES Platform                                             │
+            │                                                                                     │
+            │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐│
+            │  │  React Frontend │  │  Node.js API    │  │  Compliance     │  │  Data Analytics ││
+            │  │                 │  │                 │  │  Service        │  │                 ││
+            │  │ • Multi-tab UI  │  │ • REST/GraphQL  │  │ • CIS Benchmarks│  │ • MITRE Mapping ││
+            │  │ • Real-time     │  │ • WebSocket     │  │ • Assessment    │  │ • Pattern Match ││
+            │  │ • Compliance    │  │ • Authentication│  │ • Reporting     │  │ • Threat Hunt   ││
+            │  │   Reports       │  │ • Multi-tenant  │  │ • Remediation   │  │ • Analysis      ││
+            │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └─────────────────┘│
+            │           │                   │                   │                   │             │
+            │           └───────────────────┼───────────────────┼───────────────────┘             │
+            │                               │                   │                                 │
+            │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐│
+            │  │  Extractor      │  │  Queue System   │  │  TimescaleDB    │  │  Monitoring     ││
+            │  │  Service        │  │                 │  │                 │  │  Stack          ││
+            │  │                 │  │ • BullMQ/Redis  │  │ • Time-series   │  │                 ││
+            │  │ • PowerShell    │  │ • Job Priority  │  │ • Audit Logs    │  │ • Prometheus    ││
+            │  │ • M365 APIs     │  │ • Retry Logic   │  │ • Analysis Data │  │ • Grafana       ││
+            │  │ • Progress      │  │ • Health Checks │  │ • User Sessions │  │ • Alerting      ││
+            │  │   Tracking      │  │                 │  │ • Compliance    │  │ • Log Aggreg   ││
+            │  └─────────────────┘  └─────────────────┘  └─────────────────┘  └─────────────────┘│
+            └─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Key Architectural Components
+
+1. **Frontend Layer**: React-based dashboard with Material-UI, real-time updates, and comprehensive compliance reporting
+2. **API Gateway**: Node.js/Express with JWT authentication, RBAC, and multi-tenant support
+3. **Microservices**:
+   - **Compliance Service**: CIS benchmark assessments with certificate-based Graph API integration
+   - **Extractor Service**: PowerShell-based M365 data extraction with progress monitoring  
+   - **Analytics Service**: Multi-threaded analysis engine with MITRE ATT&CK mapping
+4. **Data Layer**: TimescaleDB for time-series data, Redis for job queues and caching
+5. **Infrastructure**: Docker containers with Nginx reverse proxy, SSL termination, and monitoring stack
+
+For detailed architecture diagrams and service specifications, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## 📊 Using MAES
 
+### Compliance Assessment
+1. **Register an Organization**: Set up Azure AD app registration with certificate authentication
+2. **Configure Credentials**: Add tenant ID, client ID, and upload X.509 certificate
+3. **Run Compliance Assessment**: Execute CIS Microsoft 365 v4.0.0 benchmark evaluation
+4. **Review Results**: Comprehensive reports showing:
+   - **Tenant Overview**: Technical characteristics, user/group analysis, application inventory
+   - **Failing entities**: Specific users/groups/policies that fail compliance checks
+   - **Remediation Guidance**: Actionable steps to address compliance gaps
+   - **Executive Reports**: HTML reports with detailed findings and risk assessments
+
 ### M365 Data Extraction
-1. **Register an Organization**: Set up Azure AD app registration
-2. **Configure Credentials**: Add tenant ID, client ID, and certificate
-3. **Assign API Permissions**:
-   - Navigate to the **API Permissions** section of the application
-   - Click **Add a permission** and assign the following **Graph API permissions** (Application permissions):
+1. **Configure API Permissions**:
 
    | Permission | Description |
    |------------|-------------|
@@ -160,11 +239,11 @@ VITE_API_URL=https://yourdomain.com
    | `Device.Read.All` | Read all device information |
    | `Mail.ReadWrite` (optional) | Read the content of emails in all mailboxes. This method requires write permissions. Alternatively, emails can be acquired by other means. |
 
-4. **Grant Required Permissions**: 
+2. **Grant Required Permissions**: 
    - **Compliance Administrator** role is required for UAL (Unified Audit Log) extraction
    - The user or service principal must be assigned this role in Microsoft 365
-5. **Run Extractions**: Choose data types (UAL, Azure logs, etc.)
-6. **Monitor Progress**: Real-time extraction status
+3. **Run Extractions**: Choose data types (UAL, Azure logs, etc.)
+4. **Monitor Progress**: Real-time extraction status
 
 ### Analysis & Upload Options
 

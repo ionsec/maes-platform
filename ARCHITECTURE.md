@@ -2,7 +2,7 @@
 
 ## Overview
 
-The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive security analytics solution designed to extract, analyze, and monitor security events from Microsoft 365 and Azure environments. The platform follows a microservices architecture with specialized services for data extraction, analysis, and user interface components.
+The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive security analytics solution designed to extract, analyze, monitor, and assess compliance for Microsoft 365 and Azure environments. The platform follows a microservices architecture with specialized services for data extraction, analysis, compliance assessment, and user interface components.
 
 ## High-Level Architecture
 
@@ -65,15 +65,15 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
             │  ┌─────────────────────────────────────────────────────────────────────────────┐    │
             │  │                       Processing Layer                                      │    │
             │  │                                                                             │    │
-            │  │  ┌─────────────────────┐      ┌─────────────────────┐                      │    │
-            │  │  │  Extractor Service  │      │  Analyzer Service   │                      │    │
-            │  │  │                     │      │                     │                      │    │
-            │  │  │  • PowerShell       │      │  • Multi-threaded   │                      │    │
-            │  │  │  • M365 Connection  │      │  • Pattern Analysis │                      │    │
-            │  │  │  • Graph API        │      │  • MITRE ATT&CK     │                      │    │
-            │  │  │  • Data Extraction  │      │  • Alert Generation │                      │    │
-            │  │  │  • Progress Monitor │      │  • Findings Report  │                      │    │
-            │  │  └─────────────────────┘      └─────────────────────┘                      │    │
+            │  │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐│    │
+            │  │  │  Extractor Service  │  │  Analyzer Service   │  │ Compliance Service  ││    │
+            │  │  │                     │  │                     │  │                     ││    │
+            │  │  │  • PowerShell       │  │  • Multi-threaded   │  │  • CIS Benchmarks   ││    │
+            │  │  │  • M365 Connection  │  │  • Pattern Analysis │  │  • Certificate Auth ││    │
+            │  │  │  • Graph API        │  │  • MITRE ATT&CK     │  │  • Tenant Analysis  ││    │
+            │  │  │  • Data Extraction  │  │  • Alert Generation │  │  • Entity Tracking  ││    │
+            │  │  │  • Progress Monitor │  │  • Findings Report  │  │  • HTML Reports     ││    │
+            │  │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘│    │
             │  └─────────────────────────────────────────────────────────────────────────────┘    │
             │                                     │                                                │
             │                                     │ PostgreSQL                                     │
@@ -344,7 +344,84 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 4. Analyzer Service (Node.js Multi-threaded)
+### 4. Compliance Service (Node.js + Certificate Authentication)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           Compliance Service Architecture                           │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                            Certificate Authentication                           │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   X.509 Certificates│  │   Graph API Client  │  │   Token Management  │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • PFX Import       │  │  • MSAL Integration │  │  • Access Tokens    │     │
+    │  │  • Private Key Mgmt │  │  • Thumbprint Auth  │  │  • Token Refresh    │     │
+    │  │  • Certificate      │  │  • Secure Channels  │  │  • Tenant Routing   │     │
+    │  │    Validation       │  │  • Error Handling   │  │  • Permission Scope │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                          Assessment Engine (BullMQ Worker)                     │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   Job Processing    │  │   Control Execution │  │   Progress Tracking │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Queue Consumer   │  │  • CIS v4.0.0       │  │  • Real-time Updates│     │
+    │  │  • Assessment Types │  │    Controls         │  │  • Status Sync      │     │
+    │  │  • Priority Mgmt    │  │  • Automated Checks │  │  • Error Handling   │     │
+    │  │  • Concurrency     │  │  • Manual Reviews   │  │  • API Communication│     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                         Comprehensive Tenant Analysis                          │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   Tenant Information│  │   User Analysis     │  │   Group & Apps      │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Technical Chars  │  │  • Account Types    │  │  • Security Groups  │     │
+    │  │  • DNS Domains      │  │  • Guest/Member     │  │  • Distribution Lists│    │
+    │  │  • Sync Status      │  │  • External Users   │  │  • Privileged Roles │     │
+    │  │  • External Tenants │  │  • Password Policies│  │  • Applications     │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                        Entity-Level Compliance Checking                        │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   MFA Analysis      │  │   Policy Analysis   │  │   Failing Entities  │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Global Admin MFA │  │  • Conditional      │  │  • User Details     │     │
+    │  │  • User MFA Status  │  │    Access Policies  │  │  • Policy Gaps      │     │
+    │  │  • Auth Methods     │  │  • Coverage Gaps    │  │  • Remediation      │     │
+    │  │  • Last Sign-in     │  │  • Trust Settings   │  │    Guidance         │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+                                           │
+                                           │
+    ┌─────────────────────────────────────────────────────────────────────────────────┐
+    │                             Report Generation                                  │
+    │                                                                                 │
+    │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
+    │  │   HTML Reports      │  │   JSON Exports      │  │   Recommendations   │     │
+    │  │                     │  │                     │  │                     │     │
+    │  │  • Executive        │  │  • API Endpoints    │  │  • Risk-based       │     │
+    │  │    Summary          │  │  • Structured Data  │  │    Priority         │     │
+    │  │  • Detailed Results │  │  • Integration      │  │  • Actionable Steps │     │
+    │  │  • Failing Entities │  │    Ready            │  │  • Entity-specific  │     │
+    │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
+    └─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 5. Analyzer Service (Node.js Multi-threaded)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -758,6 +835,7 @@ Frontend Stack                 Backend Stack                  Infrastructure Sta
 | API | 50+ | 5000+ req/min | <100ms | Session Cache |
 | Extractor | 10+ jobs | 1GB/min | 1-30 min | Temporary |
 | Analyzer | 20+ jobs | 10M+ events/min | 30s-5min | Persistent |
+| Compliance | 5+ assessments | 1000+ controls/min | 2-15 min | Assessment Results |
 | Database | 100+ connections | 10K+ queries/sec | <10ms | Petabyte+ |
 
 ## Scalability Considerations
@@ -950,4 +1028,108 @@ The platform now includes integrated access to monitoring tools directly from th
 
 These services are accessible through both the header toolbar and sidebar navigation, with proper nginx proxy configuration to handle routing and static asset serving.
 
-This architecture provides a robust, scalable, and secure foundation for the MAES platform, enabling comprehensive Microsoft 365 security analysis with enterprise-grade capabilities and real-time monitoring integration.
+## Compliance Assessment Architecture
+
+The MAES platform now includes comprehensive compliance assessment capabilities built on industry-standard frameworks with deep Microsoft 365 integration.
+
+### CIS Microsoft 365 v4.0.0 Benchmark Implementation
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                        Compliance Assessment Workflow                              │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    User Request                Assessment Engine               Microsoft Graph API
+         │                           │                               │
+         │                           │                               │
+    ┌─────────────────┐     ┌─────────────────┐              ┌─────────────────┐
+    │                 │     │                 │              │                 │
+    │  1. Initiate    │────►│  2. Validate    │              │  Microsoft 365  │
+    │  Assessment     │     │  Credentials    │              │  Tenant         │
+    │                 │     │                 │              │                 │
+    │  • Select Type  │     │  • Certificate  │              │  • Exchange     │
+    │  • CIS v4.0.0   │     │    Authentication│◄────────────►│    Online       │
+    │  • Organization │     │  • Permissions  │              │  • Graph API    │
+    │                 │     │    Check        │              │  • Users/Groups │
+    └─────────────────┘     │                 │              │  • Policies     │
+                            │  3. Collect     │              │                 │
+                            │  Tenant Data    │              └─────────────────┘
+                            │                 │                       │
+                            │  • Users (999+) │◄──────────────────────┤
+                            │  • Groups       │                       │
+                            │  • Applications │                       │
+                            │  • Domains      │                       │
+                            │  • Licenses     │                       │
+                            │  • Roles        │                       │
+                            └─────────────────┘
+                                     │
+                                     ▼
+                            ┌─────────────────┐
+                            │                 │
+                            │  4. Execute     │
+                            │  Control        │
+                            │  Checks         │
+                            │                 │
+                            │  • MFA Status   │
+                            │  • CA Policies  │
+                            │  • Admin Users  │
+                            │  • App Security │
+                            │  • Entity-level │
+                            │    Details      │
+                            │                 │
+                            └─────────────────┘
+                                     │
+                                     ▼
+                            ┌─────────────────┐              ┌─────────────────┐
+                            │                 │              │                 │
+                            │  5. Generate    │─────────────►│  6. Deliver     │
+                            │  Reports        │              │  Results        │
+                            │                 │              │                 │
+                            │  • Executive    │              │  • Multi-tab UI │
+                            │    Summary      │              │  • HTML Reports │
+                            │  • Failing      │              │  • JSON Export  │
+                            │    Entities     │              │  • Real-time    │
+                            │  • Remediation  │              │    Updates      │
+                            │    Guidance     │              │                 │
+                            │                 │              │                 │
+                            └─────────────────┘              └─────────────────┘
+```
+
+### Key Compliance Features
+
+#### Comprehensive Tenant Analysis
+- **Technical Characteristics**: Complete organizational overview including tenant ID, creation date, regions, and DNS configuration
+- **User Account Analysis**: Detailed breakdown of user types (guests, members, external), password policies, and account status
+- **Group & Application Inventory**: Security groups, distribution lists, privileged roles, and application security assessment
+- **Synchronization Status**: Hybrid vs cloud-only environment detection with sync health monitoring
+
+#### Entity-Level Compliance Tracking
+- **Failing User Identification**: Specific users who fail compliance checks with detailed information:
+  - User Principal Name (UPN), last sign-in details, account status
+  - MFA configuration status and authentication method details
+  - Role assignments and privileged access analysis
+- **Policy Gap Analysis**: Identification of conditional access policy coverage gaps
+- **Remediation Guidance**: Actionable steps for each failing entity with priority classification
+
+#### Advanced Reporting Capabilities
+- **Executive Summary**: High-level compliance metrics with trend analysis
+- **Detailed HTML Reports**: Comprehensive reports with tenant overview, failing entities, and remediation guidance
+- **Multi-format Export**: JSON and HTML formats for integration and presentation
+- **Real-time Progress**: Live assessment progress with WebSocket updates
+
+#### Certificate-Based Security
+- **X.509 Certificate Authentication**: Secure Microsoft Graph API integration using certificates instead of client secrets
+- **MSAL Integration**: Modern authentication with token management and refresh capabilities
+- **Tenant Routing**: Multi-tenant support with proper credential isolation
+
+### Compliance Assessment Database Schema
+
+The platform stores comprehensive compliance data including:
+- **Assessment Records**: Complete audit trail of all assessments with metadata
+- **Control Results**: Detailed results for each CIS control with evidence and remediation
+- **Tenant Information**: Cached organizational data for trending and comparison
+- **Failing Entities**: Detailed entity information for targeted remediation
+
+This compliance architecture provides enterprise-grade security assessment capabilities with deep Microsoft 365 integration, enabling organizations to maintain continuous compliance monitoring and detailed remediation tracking.
+
+This architecture provides a robust, scalable, and secure foundation for the MAES platform, enabling comprehensive Microsoft 365 security analysis with enterprise-grade capabilities, real-time monitoring integration, and industry-standard compliance assessment.
