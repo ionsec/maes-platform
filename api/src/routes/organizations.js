@@ -323,6 +323,59 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// Delete organization (admin only)
+router.delete('/:organizationId', 
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { organizationId } = req.params;
+      
+      // Prevent deletion of default organization
+      if (organizationId === '00000000-0000-0000-0000-000000000001') {
+        return res.status(403).json({
+          error: 'Cannot delete the default organization'
+        });
+      }
+      
+      // Check if organization exists
+      const organization = await Organization.findById(organizationId);
+      if (!organization) {
+        return res.status(404).json({
+          error: 'Organization not found'
+        });
+      }
+      
+      // Check if there are any active extractions
+      const { Extraction } = require('../services/models');
+      const activeExtractions = await Extraction.countByOrganization(organizationId, {
+        status: ['pending', 'running']
+      });
+      
+      if (activeExtractions > 0) {
+        return res.status(409).json({
+          error: 'Cannot delete organization with active extractions. Please cancel or wait for them to complete.'
+        });
+      }
+      
+      // Delete the organization (this will cascade delete related data)
+      await Organization.delete(organizationId);
+      
+      logger.info(`Organization deleted: ${organizationId} by user: ${req.user.id}`);
+      
+      res.json({
+        success: true,
+        message: 'Organization deleted successfully'
+      });
+      
+    } catch (error) {
+      logger.error('Delete organization error:', error);
+      res.status(500).json({
+        error: error.message || 'Failed to delete organization'
+      });
+    }
+  }
+);
+
 // Get organization configuration status
 router.get('/configuration-status', async (req, res) => {
   try {

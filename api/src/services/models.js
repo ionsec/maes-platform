@@ -297,6 +297,11 @@ const OrganizationModel = {
   findByPk: async (id) => {
     return await getRow('SELECT * FROM maes.organizations WHERE id = $1', [id]);
   },
+  
+  delete: async (id) => {
+    const query = 'DELETE FROM maes.organizations WHERE id = $1 RETURNING *';
+    return await remove(query, [id]);
+  },
 
   count: async (conditions = {}) => {
     let whereClause = '';
@@ -432,6 +437,32 @@ const ExtractionModel = {
       RETURNING *
     `;
     return await update(query, values);
+  },
+
+  countByOrganization: async (organizationId, filters = {}) => {
+    let whereClause = 'WHERE organization_id = $1';
+    const values = [organizationId];
+    let paramCount = 2;
+
+    if (filters.status) {
+      if (Array.isArray(filters.status)) {
+        const statusPlaceholders = filters.status.map((_, i) => `$${paramCount + i}`).join(', ');
+        whereClause += ` AND status IN (${statusPlaceholders})`;
+        values.push(...filters.status);
+        paramCount += filters.status.length;
+      } else {
+        whereClause += ` AND status = $${paramCount}`;
+        values.push(filters.status);
+        paramCount++;
+      }
+    }
+
+    const query = `
+      SELECT COUNT(*) FROM maes.extractions 
+      ${whereClause}
+    `;
+    
+    return await count(query, values);
   }
 };
 
