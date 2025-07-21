@@ -61,7 +61,7 @@ const processExtractionJob = async (job) => {
     progressMonitor = updateExtractionProgress(extractionId, job);
     
     // Prepare PowerShell command based on extraction type
-    const psCommand = await buildPowerShellCommand(type, parameters, credentials, extractionId);
+    const psCommand = await buildPowerShellCommand(type, parameters, credentials, extractionId, orgOutputPath);
     
     // Log the command for debugging (sanitize sensitive data)
     const sanitizedCommand = psCommand.replace(/ConvertTo-SecureString\s+'[^']+'/g, 'ConvertTo-SecureString ***');
@@ -318,7 +318,7 @@ async function getUserCertificateInfo(organizationId, userId) {
 }
 
 // Build PowerShell command based on extraction type
-async function buildPowerShellCommand(type, parameters, credentials, extractionId) {
+async function buildPowerShellCommand(type, parameters, credentials, extractionId, orgOutputPath) {
   const baseCommand = `
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Loading Microsoft-Extractor-Suite module...";
     Import-Module Microsoft-Extractor-Suite -Force;
