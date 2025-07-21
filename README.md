@@ -23,7 +23,7 @@
 - **Real-time Status Sync**: Robust service communication with exponential backoff retry logic
 - **System Logs Management**: Real-time container log access with advanced filtering and raw log viewing
 - **Monitoring & Observability**: Prometheus, Grafana, Loki, cAdvisor with integrated access
-- **Security & Compliance**: Multi-tenant, RBAC, audit logging, IPv6/IPv4 network support
+- **Security & Compliance**: Multi-tenant, advanced RBAC with super admin capabilities, audit logging, IPv6/IPv4 network support
 - **Enterprise-Ready**: Docker containerization, microservices architecture with service mesh communication
 - **Real-time Progress**: Live analysis progress tracking with WebSocket updates
 
@@ -240,11 +240,25 @@ docker push your-registry/maes-analyzer:latest
 
 ## 🔄 Recent Platform Enhancements
 
+### Enterprise RBAC & Multi-Organization Support
+- **Super Admin Capabilities**: Enhanced admin users with super admin privileges for complete platform management
+- **Multi-Organization Permissions**: Granular cross-tenant access control (e.g., viewer role across multiple organizations)
+- **Modular Permission System**: Comprehensive permission sets including API access, organization creation, system management
+- **Self-Permission Management**: Fixed restriction preventing super admins from editing their own permissions
+- **Organization Offboarding**: Complete data cleanup system with configurable grace periods and restoration capabilities
+
+### Data Lifecycle Management
+- **Automated Data Cleanup**: Scheduled background jobs for organization data removal after configurable periods (default: 7 days)
+- **Cross-Service Data Wipe**: Comprehensive cleanup across Extractor, Analyzer, Redis, and PostgreSQL services
+- **Organization-Scoped Storage**: Enhanced file storage architecture with proper organization isolation
+- **Grace Period Management**: Soft delete with restoration capabilities before permanent data removal
+
 ### Service Communication & Status Synchronization
 - **Fixed Extractor Status Sync**: Resolved critical issue where completed extractions remained stuck in "pending" status
 - **IPv6/IPv4 Network Support**: Enhanced container networking with proper IPv6-mapped IPv4 address handling
 - **Exponential Backoff Retry**: Implemented robust retry logic (3 attempts, 2-second delays) for failed API communications
 - **Service Token Security**: Strengthened internal service authentication with timing-safe token validation
+- **Service-to-Service APIs**: Added cleanup endpoints in Extractor and Analyzer services for data management
 
 ### System Logs Infrastructure  
 - **Real-time Container Logs**: New SystemLogs page with live access to all container logs
@@ -256,11 +270,14 @@ docker push your-registry/maes-analyzer:latest
 - **Extended Extraction Types**: Added support for 'ual_graph' and 'licenses' extraction types
 - **Improved Data Integrity**: Fixed PostgreSQL enum validation errors for new extraction types
 - **Status Synchronization**: Real-time database updates reflecting extraction job completion states
+- **Migration System**: Complete database migration support for fresh deployments and upgrades
+- **Organization Schema**: Enhanced organization table with offboarding columns and indexing
 
 ### Architecture Improvements
 - **Microservices Communication**: Enhanced service-to-service API communication with robust error handling
 - **Container Orchestration**: Improved Docker networking and service discovery
 - **Performance Optimization**: Efficient log pagination and caching for large data volumes
+- **Express Dependencies**: Added Express.js support to Analyzer and Extractor services for cleanup APIs
 
 ## 🔧 Troubleshooting
 
