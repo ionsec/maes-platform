@@ -120,10 +120,18 @@ const Compliance = () => {
 
     } catch (error) {
       console.error('Error starting assessment:', error);
-      enqueueSnackbar(
-        error.response?.data?.message || 'Failed to start compliance assessment', 
-        { variant: 'error' }
-      );
+      
+      let errorMessage = 'Failed to start compliance assessment';
+      
+      if (error.response?.data?.details) {
+        errorMessage = error.response.data.details;
+      } else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.error) {
+        errorMessage = error.response.data.error;
+      }
+      
+      enqueueSnackbar(errorMessage, { variant: 'error' });
     } finally {
       setLoadingAssessment(false);
     }
@@ -246,14 +254,32 @@ const Compliance = () => {
 
       {/* Action Buttons */}
       <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
-        <Button
-          variant="contained"
-          startIcon={<PlayArrowIcon />}
-          onClick={() => setStartAssessmentDialog(true)}
-          disabled={!selectedOrganizationId || user?.role !== 'admin'}
+        <Tooltip 
+          title={
+            selectedOrganizationId === '00000000-0000-0000-0000-000000000001' 
+              ? "Configure organization credentials first or create a new organization"
+              : !selectedOrganizationId 
+              ? "Select an organization"
+              : user?.role !== 'admin'
+              ? "Admin access required"
+              : "Start compliance assessment"
+          }
         >
-          Start Assessment
-        </Button>
+          <span>
+            <Button
+              variant="contained"
+              startIcon={<PlayArrowIcon />}
+              onClick={() => setStartAssessmentDialog(true)}
+              disabled={
+                !selectedOrganizationId || 
+                user?.role !== 'admin' || 
+                selectedOrganizationId === '00000000-0000-0000-0000-000000000001'
+              }
+            >
+              Start Assessment
+            </Button>
+          </span>
+        </Tooltip>
         
         <Button
           variant="outlined"
@@ -280,6 +306,23 @@ const Compliance = () => {
           <Typography variant="body2">
             <strong>Organization:</strong> {currentOrganization.organization_name} 
             ({currentOrganization.organization_fqdn})
+          </Typography>
+        </Alert>
+      )}
+
+      {/* Credentials Warning for Default Organization */}
+      {selectedOrganizationId === '00000000-0000-0000-0000-000000000001' && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="body2">
+            <strong>Configuration Required:</strong> This is the default MAES organization. 
+            To run compliance assessments, you need to either:
+          </Typography>
+          <ul style={{ marginTop: 8, marginBottom: 0 }}>
+            <li>Create a new organization with proper Microsoft 365 credentials, or</li>
+            <li>Configure Azure AD app credentials for this organization in Settings</li>
+          </ul>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Required: Client ID, Client Secret, and Tenant ID from your Azure AD app registration.
           </Typography>
         </Alert>
       )}
