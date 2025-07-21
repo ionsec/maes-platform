@@ -172,9 +172,18 @@ const OrganizationModel = {
     if (!organization.tenant_id) return false;
     
     const credentials = organization.credentials || {};
-    const requiredFields = ['applicationId', 'certificateThumbprint'];
     
-    return requiredFields.every(field => credentials[field]);
+    // Must have applicationId
+    if (!credentials.applicationId) return false;
+    
+    // Must have either certificateThumbprint OR clientSecret for authentication
+    // Note: clientSecret can be "0" which is falsy but valid
+    const hasCertAuth = credentials.certificateThumbprint;
+    const hasSecretAuth = credentials.clientSecret !== undefined && credentials.clientSecret !== null;
+    
+    if (!hasCertAuth && !hasSecretAuth) return false;
+    
+    return true;
   },
 
   // Get configuration status with detailed information
@@ -202,13 +211,20 @@ const OrganizationModel = {
     }
     
     const credentials = organization.credentials || {};
-    const requiredCredentials = ['applicationId', 'certificateThumbprint'];
     
-    requiredCredentials.forEach(field => {
-      if (!credentials[field]) {
-        missingRequirements.push(`Missing credential: ${field}`);
-      }
-    });
+    // Check for applicationId (always required)
+    if (!credentials.applicationId) {
+      missingRequirements.push('Missing credential: applicationId');
+    }
+    
+    // Check for authentication method (need either certificate or client secret)
+    // Note: clientSecret can be "0" which is falsy but valid
+    const hasCertAuth = credentials.certificateThumbprint;
+    const hasSecretAuth = credentials.clientSecret !== undefined && credentials.clientSecret !== null;
+    
+    if (!hasCertAuth && !hasSecretAuth) {
+      missingRequirements.push('Missing authentication method: need either certificateThumbprint or clientSecret');
+    }
 
     return {
       isConfigured: missingRequirements.length === 0,

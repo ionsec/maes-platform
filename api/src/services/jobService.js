@@ -31,12 +31,18 @@ const createExtractionJob = async (extraction) => {
     // Validate that organization has proper credentials configured
     const credentials = organization.credentials || {};
     
-    // Check if required credentials are present
-    const requiredFields = ['applicationId', 'certificateThumbprint'];
-    const missingFields = requiredFields.filter(field => !credentials[field]);
+    // Check if applicationId is present (always required)
+    if (!credentials.applicationId) {
+      throw new Error(`Organization '${organization.name}' is not properly configured. Missing required credential: applicationId. Please complete organization onboarding before running extractions.`);
+    }
     
-    if (missingFields.length > 0) {
-      throw new Error(`Organization '${organization.name}' is not properly configured. Missing credentials: ${missingFields.join(', ')}. Please complete organization onboarding before running extractions.`);
+    // Check if authentication method is present (need either certificate or client secret)
+    // Note: clientSecret can be "0" which is falsy but valid
+    const hasCertAuth = credentials.certificateThumbprint;
+    const hasSecretAuth = credentials.clientSecret !== undefined && credentials.clientSecret !== null;
+    
+    if (!hasCertAuth && !hasSecretAuth) {
+      throw new Error(`Organization '${organization.name}' is not properly configured. Missing authentication method: need either certificateThumbprint or clientSecret. Please complete organization onboarding before running extractions.`);
     }
     
     // Check if organization is active
