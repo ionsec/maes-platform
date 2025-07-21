@@ -1,22 +1,59 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { User, Organization, AuditLog } = require('../services/models');
-const { authenticateToken, requirePermission, requireOrganizationAccess } = require('../middleware/auth');
+const { authenticateToken, requirePermission, requireSuperAdmin } = require('../middleware/auth');
 const { logger } = require('../utils/logger');
 const { pool } = require('../services/database');
 
 const router = express.Router();
 
+// Get all organizations (for super admin user management)
+router.get('/organizations/all', authenticateToken, requireSuperAdmin(), async (req, res) => {
+  try {
+    const organizationsQuery = `
+      SELECT id, name, organization_type, is_active, created_at
+      FROM maes.organizations
+      ORDER BY name ASC
+    `;
+    
+    const result = await pool.query(organizationsQuery);
+    
+    res.json({
+      success: true,
+      organizations: result.rows.map(org => ({
+        id: org.id,
+        name: org.name,
+        organizationType: org.organization_type,
+        isActive: org.is_active,
+        createdAt: org.created_at
+      }))
+    });
+  } catch (error) {
+    logger.error('Get all organizations error:', error);
+    res.status(500).json({ error: 'Failed to retrieve organizations' });
+  }
+});
+
 // Get users for organization
 router.get('/', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
   
   try {
-    const { page = 1, limit = 20, role, search, isActive } = req.query;
+    const { page = 1, limit = 20, role, search, isActive, allOrganizations } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    let whereConditions = ['u.organization_id = $1'];
-    let queryParams = [req.organizationId];
-    let paramCount = 1;
+    let whereConditions = [];
+    let queryParams = [];
+    let paramCount = 0;
+
+    // Super admins can see users from all organizations if requested
+    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    
+    if (!allOrganizations || !isSuperAdmin) {
+      // Regular filter by organization
+      paramCount++;
+      whereConditions.push(`u.organization_id = $${paramCount}`);
+      queryParams.push(req.organizationId);
+    }
 
     if (role) {
       paramCount++;
@@ -41,26 +78,28 @@ router.get('/', authenticateToken, requirePermission('canManageUsers'), async (r
       queryParams.push(`%${search}%`);
     }
 
-    const whereClause = whereConditions.join(' AND ');
+    const whereClause = whereConditions.length > 0 ? whereConditions.join(' AND ') : '1=1';
 
     // Get total count
     const countQuery = `
       SELECT COUNT(*) as total 
       FROM maes.users u 
-      WHERE ${whereClause}
+      ${whereConditions.length > 0 ? `WHERE ${whereClause}` : ''}
     `;
     const countResult = await pool.query(countQuery, queryParams);
     const total = parseInt(countResult.rows[0].total);
 
-    // Get paginated users
+    // Get paginated users with organization info for super admins
     paramCount++;
     const usersQuery = `
       SELECT 
         u.id, u.email, u.username, u.first_name, u.last_name,
         u.role, u.permissions, u.is_active, u.last_login,
-        u.created_at, u.updated_at
+        u.created_at, u.updated_at, u.organization_id,
+        o.name as organization_name, o.organization_type
       FROM maes.users u
-      WHERE ${whereClause}
+      LEFT JOIN maes.organizations o ON u.organization_id = o.id
+      ${whereConditions.length > 0 ? `WHERE ${whereClause}` : ''}
       ORDER BY u.created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
@@ -76,14 +115,18 @@ router.get('/', authenticateToken, requirePermission('canManageUsers'), async (r
         lastName: user.last_name,
         isActive: user.is_active,
         lastLoginAt: user.last_login,
-        createdAt: user.created_at
+        createdAt: user.created_at,
+        organizationId: user.organization_id,
+        organizationName: user.organization_name,
+        organizationType: user.organization_type
       })),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
         total: total,
         totalPages: Math.ceil(total / parseInt(limit))
-      }
+      },
+      isSuperAdminView: allOrganizations && isSuperAdmin
     });
 
   } catch (error) {
@@ -133,6 +176,7 @@ router.post('/', authenticateToken, requirePermission('canManageUsers'), async (
       firstName,
       lastName,
       role,
+      organizationId: targetOrgId,
       specialization = [],
       accessibleOrganizations = []
     } = req.body;
@@ -142,46 +186,69 @@ router.post('/', authenticateToken, requirePermission('canManageUsers'), async (
       return res.status(400).json({ error: 'Email, username, password, and role are required' });
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      where: {
-        [sequelize.Op.or]: [{ email }, { username }]
-      }
-    });
+    // Determine target organization
+    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    const finalOrgId = (isSuperAdmin && targetOrgId) ? targetOrgId : req.organizationId;
 
-    if (existingUser) {
+    // Check if user already exists
+    const existingUserQuery = `
+      SELECT id FROM maes.users 
+      WHERE email = $1 OR username = $2
+    `;
+    const existingUser = await pool.query(existingUserQuery, [email, username]);
+
+    if (existingUser.rows.length > 0) {
       return res.status(400).json({ error: 'User with this email or username already exists' });
     }
 
-    // Validate role based on organization type
-    const organization = await Organization.findByPk(req.organizationId);
-    const validRoles = {
-      mssp: ['mssp_admin', 'mssp_analyst', 'mssp_responder'],
-      client: ['client_admin', 'client_analyst', 'client_viewer'],
-      standalone: ['standalone_admin', 'standalone_analyst', 'standalone_viewer']
-    };
+    // Get target organization
+    const orgQuery = `
+      SELECT id, name, organization_type 
+      FROM maes.organizations 
+      WHERE id = $1
+    `;
+    const orgResult = await pool.query(orgQuery, [finalOrgId]);
+    
+    if (orgResult.rows.length === 0) {
+      return res.status(400).json({ error: 'Organization not found' });
+    }
+    
+    const organization = orgResult.rows[0];
 
-    if (!validRoles[organization.organizationType].includes(role)) {
-      return res.status(400).json({ error: `Invalid role for ${organization.organizationType} organization` });
+    // For super admins, allow all roles; otherwise validate based on organization type
+    if (!isSuperAdmin) {
+      const validRoles = {
+        mssp: ['mssp_admin', 'mssp_analyst', 'mssp_responder'],
+        client: ['client_admin', 'client_analyst', 'client_viewer'],
+        standalone: ['standalone_admin', 'standalone_analyst', 'standalone_viewer']
+      };
+
+      if (!validRoles[organization.organization_type]?.includes(role)) {
+        return res.status(400).json({ error: `Invalid role for ${organization.organization_type} organization` });
+      }
     }
 
-    // Create user
-    const user = await User.create({
-      email,
-      username,
-      password,
-      firstName,
-      lastName,
-      role,
-      organizationId: req.organizationId,
-      msspId: req.msspId,
-      userType: organization.organizationType === 'client' ? 'client' : 
-                organization.organizationType === 'mssp' ? 'mssp' : 'standalone',
-      specialization,
-      accessibleOrganizations
-    });
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-    logger.info(`Created user: ${user.id} (${role}) in organization: ${req.organizationId}`);
+    // Create user
+    const createUserQuery = `
+      INSERT INTO maes.users (
+        id, email, username, password_hash, first_name, last_name,
+        role, organization_id, is_active, created_at, updated_at
+      ) VALUES (
+        gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW()
+      )
+      RETURNING id, email, username, first_name, last_name, role, organization_id, is_active, created_at
+    `;
+    
+    const userResult = await pool.query(createUserQuery, [
+      email, username, hashedPassword, firstName, lastName, role, finalOrgId
+    ]);
+    
+    const user = userResult.rows[0];
+
+    logger.info(`Created user: ${user.id} (${role}) in organization: ${finalOrgId}`);
 
     res.status(201).json({
       success: true,
@@ -189,11 +256,12 @@ router.post('/', authenticateToken, requirePermission('canManageUsers'), async (
         id: user.id,
         email: user.email,
         username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        firstName: user.first_name,
+        lastName: user.last_name,
         role: user.role,
-        userType: user.userType,
-        organizationId: user.organizationId
+        organizationId: user.organization_id,
+        isActive: user.is_active,
+        createdAt: user.created_at
       }
     });
 
