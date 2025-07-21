@@ -3,6 +3,7 @@ const express = require('express');
 const { logger } = require('./logger');
 const { sequelize } = require('./models');
 const assessmentEngine = require('./services/assessmentEngine');
+const scheduler = require('./services/scheduler');
 
 // Redis connection configuration
 const redisConnection = {
@@ -127,6 +128,96 @@ app.get('/api/assessment/:assessmentId', validateServiceToken, async (req, res) 
   }
 });
 
+// Schedule management endpoints
+app.post('/api/schedule', validateServiceToken, async (req, res) => {
+  try {
+    const schedule = await scheduler.createSchedule(req.body);
+    res.json({
+      success: true,
+      schedule: schedule
+    });
+  } catch (error) {
+    logger.error('Failed to create schedule:', error);
+    res.status(500).json({
+      error: 'Failed to create schedule',
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/schedules/:organizationId', validateServiceToken, async (req, res) => {
+  try {
+    const { organizationId } = req.params;
+    const { ComplianceSchedule } = require('./models');
+
+    const schedules = await ComplianceSchedule.findAll({
+      where: { organization_id: organizationId },
+      order: [['created_at', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      schedules: schedules
+    });
+  } catch (error) {
+    logger.error('Failed to get schedules:', error);
+    res.status(500).json({
+      error: 'Failed to get schedules',
+      message: error.message
+    });
+  }
+});
+
+app.put('/api/schedule/:scheduleId', validateServiceToken, async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+    const schedule = await scheduler.updateSchedule(scheduleId, req.body);
+    res.json({
+      success: true,
+      schedule: schedule
+    });
+  } catch (error) {
+    logger.error('Failed to update schedule:', error);
+    res.status(500).json({
+      error: 'Failed to update schedule',
+      message: error.message
+    });
+  }
+});
+
+app.delete('/api/schedule/:scheduleId', validateServiceToken, async (req, res) => {
+  try {
+    const { scheduleId } = req.params;
+    await scheduler.deleteSchedule(scheduleId);
+    res.json({
+      success: true,
+      message: 'Schedule deleted successfully'
+    });
+  } catch (error) {
+    logger.error('Failed to delete schedule:', error);
+    res.status(500).json({
+      error: 'Failed to delete schedule',
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/scheduler/stats', validateServiceToken, async (req, res) => {
+  try {
+    const stats = await scheduler.getScheduleStats();
+    res.json({
+      success: true,
+      stats: stats
+    });
+  } catch (error) {
+    logger.error('Failed to get scheduler stats:', error);
+    res.status(500).json({
+      error: 'Failed to get scheduler stats',
+      message: error.message
+    });
+  }
+});
+
 // Initialize the compliance service
 async function initialize() {
   try {
@@ -135,6 +226,10 @@ async function initialize() {
     // Test database connection
     await sequelize.authenticate();
     logger.info('Database connection established');
+
+    // Initialize scheduler
+    await scheduler.initialize();
+    logger.info('Compliance scheduler initialized');
 
     // Set up queue processors
     setupQueueProcessors();
@@ -248,6 +343,7 @@ process.on('SIGTERM', async () => {
   try {
     await complianceWorker.close();
     await complianceQueue.close();
+    await scheduler.shutdown();
     await sequelize.close();
     
     logger.info('Compliance service shutdown complete');
@@ -264,6 +360,7 @@ process.on('SIGINT', async () => {
   try {
     await complianceWorker.close();
     await complianceQueue.close();
+    await scheduler.shutdown();
     await sequelize.close();
     
     logger.info('Compliance service shutdown complete');

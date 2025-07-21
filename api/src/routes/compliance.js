@@ -561,4 +561,208 @@ router.post('/test-connection/:organizationId',
   }
 );
 
+// Schedule management endpoints
+router.post('/schedule/:organizationId',
+  authenticateToken,
+  requireRole('admin'),
+  [
+    body('name').notEmpty().isLength({ min: 1, max: 255 }),
+    body('frequency').isIn(['daily', 'weekly', 'monthly', 'quarterly']),
+    body('assessmentType').optional().isIn(['cis_v400', 'cis_v300', 'custom', 'orca_style'])
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Validation failed', details: errors.array() });
+      }
+
+      const { organizationId } = req.params;
+      const { name, description, frequency, assessmentType = 'cis_v400' } = req.body;
+
+      const complianceServiceUrl = process.env.COMPLIANCE_SERVICE_URL || 'http://compliance:3002';
+      
+      const response = await axios.post(`${complianceServiceUrl}/api/schedule`, {
+        organizationId,
+        name,
+        description,
+        assessmentType,
+        frequency,
+        createdBy: req.user.id
+      }, {
+        headers: {
+          'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+
+      if (response.data.success) {
+        logger.info(`Created compliance schedule for organization ${organizationId} by user ${req.user.id}`);
+        res.json({
+          success: true,
+          schedule: response.data.schedule,
+          message: 'Compliance schedule created successfully'
+        });
+      } else {
+        throw new Error('Compliance service returned unsuccessful response');
+      }
+
+    } catch (error) {
+      logger.error('Error creating compliance schedule:', error);
+      
+      if (error.response) {
+        return res.status(error.response.status || 500).json({
+          error: 'Failed to create schedule',
+          message: error.response.data?.message || error.message
+        });
+      }
+      
+      res.status(500).json({ 
+        error: 'Failed to create compliance schedule',
+        message: error.message 
+      });
+    }
+  }
+);
+
+router.get('/schedules/:organizationId',
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { organizationId } = req.params;
+      const { pool } = require('../services/database');
+
+      // Verify user has access to this organization
+      const orgCheck = await pool.query(
+        'SELECT 1 FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
+        [req.user.id, organizationId]
+      );
+
+      if (orgCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Access denied to this organization' });
+      }
+
+      const complianceServiceUrl = process.env.COMPLIANCE_SERVICE_URL || 'http://compliance:3002';
+      
+      const response = await axios.get(`${complianceServiceUrl}/api/schedules/${organizationId}`, {
+        headers: {
+          'x-service-token': process.env.SERVICE_AUTH_TOKEN
+        },
+        timeout: 10000
+      });
+
+      if (response.data.success) {
+        res.json({
+          success: true,
+          schedules: response.data.schedules
+        });
+      } else {
+        throw new Error('Compliance service returned unsuccessful response');
+      }
+
+    } catch (error) {
+      logger.error('Error fetching compliance schedules:', error);
+      
+      if (error.response) {
+        return res.status(error.response.status || 500).json({
+          error: 'Failed to fetch schedules',
+          message: error.response.data?.message || error.message
+        });
+      }
+      
+      res.status(500).json({ 
+        error: 'Failed to fetch compliance schedules',
+        message: error.message 
+      });
+    }
+  }
+);
+
+router.put('/schedule/:scheduleId',
+  authenticateToken,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { scheduleId } = req.params;
+      const complianceServiceUrl = process.env.COMPLIANCE_SERVICE_URL || 'http://compliance:3002';
+      
+      const response = await axios.put(`${complianceServiceUrl}/api/schedule/${scheduleId}`, req.body, {
+        headers: {
+          'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000
+      });
+
+      if (response.data.success) {
+        res.json({
+          success: true,
+          schedule: response.data.schedule,
+          message: 'Schedule updated successfully'
+        });
+      } else {
+        throw new Error('Compliance service returned unsuccessful response');
+      }
+
+    } catch (error) {
+      logger.error('Error updating compliance schedule:', error);
+      
+      if (error.response) {
+        return res.status(error.response.status || 500).json({
+          error: 'Failed to update schedule',
+          message: error.response.data?.message || error.message
+        });
+      }
+      
+      res.status(500).json({ 
+        error: 'Failed to update compliance schedule',
+        message: error.message 
+      });
+    }
+  }
+);
+
+router.delete('/schedule/:scheduleId',
+  authenticateToken,
+  requireRole('admin'),
+  async (req, res) => {
+    try {
+      const { scheduleId } = req.params;
+      const complianceServiceUrl = process.env.COMPLIANCE_SERVICE_URL || 'http://compliance:3002';
+      
+      const response = await axios.delete(`${complianceServiceUrl}/api/schedule/${scheduleId}`, {
+        headers: {
+          'x-service-token': process.env.SERVICE_AUTH_TOKEN
+        },
+        timeout: 10000
+      });
+
+      if (response.data.success) {
+        res.json({
+          success: true,
+          message: 'Schedule deleted successfully'
+        });
+      } else {
+        throw new Error('Compliance service returned unsuccessful response');
+      }
+
+    } catch (error) {
+      logger.error('Error deleting compliance schedule:', error);
+      
+      if (error.response) {
+        return res.status(error.response.status || 500).json({
+          error: 'Failed to delete schedule',
+          message: error.response.data?.message || error.message
+        });
+      }
+      
+      res.status(500).json({ 
+        error: 'Failed to delete compliance schedule',
+        message: error.message 
+      });
+    }
+  }
+);
+
 module.exports = router;
