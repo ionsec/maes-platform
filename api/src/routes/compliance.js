@@ -32,13 +32,12 @@ async function getOrganizationCredentials(req, res, next) {
     const organization = result.rows[0];
     const credentials = organization.credentials;
 
-    if (!credentials || !credentials.clientId || !credentials.clientSecret) {
+    if (!credentials || !credentials.clientId) {
       return res.status(400).json({ 
         error: 'Organization credentials are not properly configured',
-        details: 'This organization does not have Microsoft 365 credentials configured. Please configure Azure AD app credentials in the organization settings before running compliance assessments.',
+        details: 'This organization does not have Microsoft 365 credentials configured. Please configure Azure AD app credentials (clientId) in the organization settings before running compliance assessments.',
         missingFields: {
           clientId: !credentials?.clientId,
-          clientSecret: !credentials?.clientSecret,
           tenantId: !credentials?.tenantId && !organization.tenant_id
         }
       });
@@ -47,8 +46,7 @@ async function getOrganizationCredentials(req, res, next) {
     req.organization = organization;
     req.credentials = {
       tenantId: credentials.tenantId || organization.tenant_id,
-      clientId: credentials.clientId,
-      clientSecret: credentials.clientSecret
+      clientId: credentials.clientId
     };
 
     next();
@@ -769,5 +767,404 @@ router.delete('/schedule/:scheduleId',
     }
   }
 );
+
+// Generate compliance assessment report
+router.get('/assessment/:assessmentId/report', 
+  authenticateToken, 
+  async (req, res) => {
+    try {
+      const { assessmentId } = req.params;
+      const { format = 'html' } = req.query;
+      const { pool } = require('../services/database');
+
+      // Get assessment details with results
+      const assessmentResult = await pool.query(`
+        SELECT 
+          ca.*, o.name as organization_name, o.tenant_id,
+          u.username as triggered_by_username, u.email as triggered_by_email
+        FROM maes.compliance_assessments ca
+        LEFT JOIN maes.organizations o ON ca.organization_id = o.id
+        LEFT JOIN maes.users u ON ca.triggered_by = u.id
+        WHERE ca.id = $1 AND ca.status = 'completed'
+      `, [assessmentId]);
+
+      if (assessmentResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Assessment not found or not completed' });
+      }
+
+      const assessment = assessmentResult.rows[0];
+
+      // Verify user has access to this organization
+      const orgCheck = await pool.query(
+        'SELECT 1 FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
+        [req.user.id, assessment.organization_id]
+      );
+
+      if (orgCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Access denied to this assessment' });
+      }
+
+      // Get detailed results with control information
+      const resultsQuery = `
+        SELECT 
+          cr.id, cr.status, cr.score, cr.actual_result, cr.expected_result,
+          cr.evidence, cr.remediation_guidance, cr.error_message, cr.checked_at,
+          cc.control_id, cc.section, cc.title, cc.description, cc.severity, 
+          cc.weight, cc.rationale, cc.impact, cc.remediation
+        FROM maes.compliance_results cr
+        JOIN maes.compliance_controls cc ON cr.control_id = cc.id
+        WHERE cr.assessment_id = $1
+        ORDER BY cc.control_id
+      `;
+      
+      const resultsResult = await pool.query(resultsQuery, [assessmentId]);
+      const results = resultsResult.rows;
+
+      // Parse metadata for tenant info and permission check
+      const tenantInfo = assessment.metadata?.tenantInfo || {};
+      const permissionCheck = assessment.metadata?.permissionCheck || {};
+
+      // Group results by section and status
+      const resultsBySection = results.reduce((acc, result) => {
+        if (!acc[result.section]) {
+          acc[result.section] = [];
+        }
+        acc[result.section].push(result);
+        return acc;
+      }, {});
+
+      const resultsByStatus = results.reduce((acc, result) => {
+        if (!acc[result.status]) {
+          acc[result.status] = [];
+        }
+        acc[result.status].push(result);
+        return acc;
+      }, {});
+
+      // Extract failing entities from evidence
+      const failingEntities = [];
+      results.forEach(result => {
+        if (result.evidence && result.evidence.failingEntities) {
+          result.evidence.failingEntities.forEach(entity => {
+            failingEntities.push({
+              ...entity,
+              controlId: result.control_id,
+              controlTitle: result.title,
+              section: result.section
+            });
+          });
+        }
+      });
+
+      // Generate HTML report
+      if (format === 'html') {
+        const htmlReport = generateHTMLReport({
+          assessment,
+          results,
+          resultsBySection,
+          resultsByStatus,
+          tenantInfo,
+          permissionCheck,
+          failingEntities
+        });
+
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Disposition', `inline; filename="compliance-report-${assessmentId}.html"`);
+        return res.send(htmlReport);
+      }
+
+      // Return JSON format
+      res.json({
+        success: true,
+        report: {
+          assessment: {
+            id: assessment.id,
+            name: assessment.name,
+            description: assessment.description,
+            organizationName: assessment.organization_name,
+            assessmentType: assessment.assessment_type,
+            status: assessment.status,
+            complianceScore: assessment.compliance_score,
+            weightedScore: assessment.weighted_score,
+            startedAt: assessment.started_at,
+            completedAt: assessment.completed_at,
+            duration: assessment.duration,
+            triggeredBy: assessment.triggered_by_username,
+            totalControls: assessment.total_controls,
+            compliantControls: assessment.compliant_controls,
+            nonCompliantControls: assessment.non_compliant_controls,
+            manualReviewControls: assessment.manual_review_controls,
+            errorControls: assessment.error_controls
+          },
+          tenantInfo: {
+            id: tenantInfo.id,
+            displayName: tenantInfo.displayName,
+            primaryDomain: tenantInfo.primaryDomain,
+            userCount: tenantInfo.userCount,
+            groupCount: tenantInfo.groupCount,
+            applicationCount: tenantInfo.applicationCount,
+            roleCount: tenantInfo.roleCount,
+            totalLicenses: tenantInfo.totalLicenses,
+            assignedLicenses: tenantInfo.assignedLicenses,
+            country: tenantInfo.country,
+            createdDateTime: tenantInfo.createdDateTime
+          },
+          apiPermissions: {
+            availablePermissions: permissionCheck.availablePermissions?.length || 0,
+            missingPermissions: permissionCheck.missingPermissions?.length || 0,
+            criticalMissing: permissionCheck.criticalMissing?.length || 0,
+            permissionScore: permissionCheck.permissionScore || 0
+          },
+          summary: {
+            totalResults: results.length,
+            compliantCount: resultsByStatus.compliant?.length || 0,
+            nonCompliantCount: resultsByStatus.non_compliant?.length || 0,
+            manualReviewCount: resultsByStatus.manual_review?.length || 0,
+            errorCount: resultsByStatus.error?.length || 0,
+            sectionsEvaluated: Object.keys(resultsBySection).length,
+            failingEntitiesCount: failingEntities.length
+          },
+          resultsBySection,
+          failingEntities: failingEntities.slice(0, 100), // Limit for performance
+          nonCompliantControls: resultsByStatus.non_compliant || [],
+          recommendations: generateRecommendations(resultsByStatus, failingEntities)
+        }
+      });
+
+    } catch (error) {
+      logger.error('Error generating compliance report:', error);
+      res.status(500).json({ 
+        error: 'Failed to generate compliance report',
+        message: error.message 
+      });
+    }
+  }
+);
+
+// Helper function to generate HTML report
+function generateHTMLReport({ assessment, results, resultsBySection, resultsByStatus, tenantInfo, permissionCheck, failingEntities }) {
+  const complianceColor = assessment.compliance_score >= 80 ? 'success' : assessment.compliance_score >= 60 ? 'warning' : 'danger';
+  
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compliance Assessment Report - ${assessment.name}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .report-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .metric-card { border-left: 4px solid #007bff; }
+        .status-compliant { color: #28a745; }
+        .status-non-compliant { color: #dc3545; }
+        .status-manual-review { color: #ffc107; }
+        .status-error { color: #dc3545; }
+        .failing-entity { background-color: #fff5f5; border-left: 3px solid #dc3545; margin: 5px 0; padding: 10px; }
+        @media print { .no-print { display: none !important; } }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="report-header p-4 mb-4">
+            <h1>${assessment.name}</h1>
+            <p class="mb-0">Generated on ${new Date().toLocaleString()} | Organization: ${assessment.organization_name}</p>
+        </div>
+
+        <!-- Executive Summary -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2>Executive Summary</h2>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card metric-card h-100">
+                            <div class="card-body text-center">
+                                <h3 class="text-${complianceColor}">${assessment.compliance_score}%</h3>
+                                <p class="card-text">Overall Compliance</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card metric-card h-100">
+                            <div class="card-body text-center">
+                                <h3 class="text-success">${assessment.compliant_controls}</h3>
+                                <p class="card-text">Compliant Controls</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card metric-card h-100">
+                            <div class="card-body text-center">
+                                <h3 class="text-danger">${assessment.non_compliant_controls}</h3>
+                                <p class="card-text">Non-Compliant</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card metric-card h-100">
+                            <div class="card-body text-center">
+                                <h3>${failingEntities.length}</h3>
+                                <p class="card-text">Failing Entities</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tenant Information -->
+        <div class="row mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h4>Tenant Information</h4>
+                    </div>
+                    <div class="card-body">
+                        <table class="table table-borderless">
+                            <tr><td><strong>Tenant ID:</strong></td><td>${tenantInfo.id || 'N/A'}</td></tr>
+                            <tr><td><strong>Display Name:</strong></td><td>${tenantInfo.displayName || 'N/A'}</td></tr>
+                            <tr><td><strong>Primary Domain:</strong></td><td>${tenantInfo.primaryDomain || 'N/A'}</td></tr>
+                            <tr><td><strong>Users:</strong></td><td>${tenantInfo.userCount || 0}</td></tr>
+                            <tr><td><strong>Groups:</strong></td><td>${tenantInfo.groupCount || 0}</td></tr>
+                            <tr><td><strong>Applications:</strong></td><td>${tenantInfo.applicationCount || 0}</td></tr>
+                            <tr><td><strong>Licenses:</strong></td><td>${tenantInfo.assignedLicenses || 0} / ${tenantInfo.totalLicenses || 0}</td></tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h4>API Permissions Status</h4>
+                    </div>
+                    <div class="card-body">
+                        <div class="progress mb-3">
+                            <div class="progress-bar bg-success" style="width: ${permissionCheck.permissionScore || 0}%">
+                                ${permissionCheck.permissionScore || 0}%
+                            </div>
+                        </div>
+                        <p>Available: ${permissionCheck.availablePermissions?.length || 0} permissions</p>
+                        <p>Missing: ${permissionCheck.missingPermissions?.length || 0} permissions</p>
+                        ${permissionCheck.criticalMissing?.length > 0 ? `<p class="text-danger">Critical Missing: ${permissionCheck.criticalMissing.length}</p>` : ''}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Failing Entities -->
+        ${failingEntities.length > 0 ? `
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3>Failing Entities</h3>
+                <div class="accordion" id="failingEntitiesAccordion">
+                    ${failingEntities.slice(0, 20).map((entity, index) => `
+                    <div class="failing-entity">
+                        <strong>${entity.type}:</strong> ${entity.displayName || entity.userPrincipalName || 'Unknown'}
+                        <br><small>Control: ${entity.controlId} - ${entity.controlTitle}</small>
+                        <br><small>Reason: ${entity.reason}</small>
+                        ${entity.lastSignIn ? `<br><small>Last Sign-in: ${new Date(entity.lastSignIn).toLocaleString()}</small>` : ''}
+                    </div>
+                    `).join('')}
+                    ${failingEntities.length > 20 ? `<p class="text-muted">... and ${failingEntities.length - 20} more entities</p>` : ''}
+                </div>
+            </div>
+        </div>
+        ` : ''}
+
+        <!-- Control Results by Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3>Control Results by Section</h3>
+                ${Object.entries(resultsBySection).map(([section, controls]) => `
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5>${section} (${controls.filter(c => c.status === 'compliant').length}/${controls.length} Compliant)</h5>
+                    </div>
+                    <div class="card-body">
+                        ${controls.map(control => `
+                        <div class="mb-3 p-3 border-start border-3 ${control.status === 'compliant' ? 'border-success' : control.status === 'non_compliant' ? 'border-danger' : 'border-warning'}">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>${control.control_id}:</strong> ${control.title}
+                                    <span class="badge bg-${control.severity === 'level1' ? 'primary' : 'secondary'} ms-2">${control.severity}</span>
+                                </div>
+                                <span class="status-${control.status.replace('_', '-')}">${control.status.replace('_', ' ').toUpperCase()}</span>
+                            </div>
+                            <p class="mb-2 text-muted">${control.description}</p>
+                            ${control.remediation_guidance ? `<div class="alert alert-info"><strong>Remediation:</strong> ${control.remediation_guidance}</div>` : ''}
+                            ${control.error_message ? `<div class="alert alert-danger"><strong>Error:</strong> ${control.error_message}</div>` : ''}
+                        </div>
+                        `).join('')}
+                    </div>
+                </div>
+                `).join('')}
+            </div>
+        </div>
+
+        <!-- Assessment Details -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h3>Assessment Details</h3>
+                <table class="table table-bordered">
+                    <tr><td><strong>Assessment Type:</strong></td><td>${assessment.assessment_type.toUpperCase()}</td></tr>
+                    <tr><td><strong>Started:</strong></td><td>${new Date(assessment.started_at).toLocaleString()}</td></tr>
+                    <tr><td><strong>Completed:</strong></td><td>${new Date(assessment.completed_at).toLocaleString()}</td></tr>
+                    <tr><td><strong>Duration:</strong></td><td>${Math.floor(assessment.duration / 60)} minutes ${assessment.duration % 60} seconds</td></tr>
+                    <tr><td><strong>Triggered By:</strong></td><td>${assessment.triggered_by_username}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+  `;
+}
+
+// Helper function to generate recommendations
+function generateRecommendations(resultsByStatus, failingEntities) {
+  const recommendations = [];
+  
+  if (resultsByStatus.non_compliant?.length > 0) {
+    recommendations.push({
+      priority: 'High',
+      category: 'Security Controls',
+      title: `Address ${resultsByStatus.non_compliant.length} Non-Compliant Controls`,
+      description: 'Review and implement remediation guidance for all non-compliant controls to improve security posture.'
+    });
+  }
+
+  const userFailures = failingEntities.filter(e => e.type === 'User');
+  if (userFailures.length > 0) {
+    recommendations.push({
+      priority: 'High',
+      category: 'User Management',
+      title: `Review ${userFailures.length} Users with Compliance Issues`,
+      description: 'These users have configuration issues that need immediate attention, particularly around MFA and access controls.'
+    });
+  }
+
+  const policyGaps = failingEntities.filter(e => e.type === 'Policy Gap');
+  if (policyGaps.length > 0) {
+    recommendations.push({
+      priority: 'Critical',
+      category: 'Policy Configuration',
+      title: 'Address Policy Coverage Gaps',
+      description: 'Critical security policies are missing or have incomplete coverage. Review and enhance conditional access policies.'
+    });
+  }
+
+  if (resultsByStatus.manual_review?.length > 0) {
+    recommendations.push({
+      priority: 'Medium',
+      category: 'Manual Review',
+      title: `${resultsByStatus.manual_review.length} Controls Require Manual Review`,
+      description: 'These controls cannot be automatically assessed and require manual verification.'
+    });
+  }
+
+  return recommendations;
+}
 
 module.exports = router;
