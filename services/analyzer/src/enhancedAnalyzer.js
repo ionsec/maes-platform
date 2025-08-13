@@ -115,11 +115,29 @@ class EnhancedAnalyzer {
 
     logger.info(`Starting enhanced analysis of ${auditData.length} audit log entries`);
 
+    // Track unknown users for logging
+    const unknownUserDetails = [];
+
     for (let i = 0; i < auditData.length; i++) {
       const event = auditData[i];
       
       // Handle different log formats
       const normalizedEvent = this.normalizeAuditEvent(event);
+      
+      // Log unknown user events for monitoring
+      if (normalizedEvent.isUnknownUser) {
+        unknownUserDetails.push({
+          user: normalizedEvent.user,
+          operation: normalizedEvent.operation,
+          timestamp: normalizedEvent.timestamp,
+          ip: normalizedEvent.ipAddress
+        });
+        
+        // Log every 100th unknown user event to avoid log spam
+        if (unknownUserDetails.length % 100 === 0) {
+          logger.warn(`Found ${unknownUserDetails.length} events with unknown users so far`);
+        }
+      }
       
       // Update statistics
       this.updateStatistics(normalizedEvent, statistics);
@@ -151,6 +169,12 @@ class EnhancedAnalyzer {
     statistics.blacklistedEntities.countries = statistics.blacklistedEntities.countries.size;
     statistics.blacklistedEntities.ipAddresses = statistics.blacklistedEntities.ipAddresses.size;
     statistics.blacklistedEntities.userAgents = statistics.blacklistedEntities.userAgents.size;
+    statistics.dataQuality.unknownUserTypes = Array.from(statistics.dataQuality.unknownUserTypes);
+
+    // Calculate data quality percentage
+    const dataQualityPercentage = statistics.totalEvents > 0 
+      ? ((statistics.totalEvents - statistics.dataQuality.totalUnknownEvents) / statistics.totalEvents * 100).toFixed(2)
+      : 100;
 
     const summary = {
       totalFindings: findings.length,
@@ -158,11 +182,29 @@ class EnhancedAnalyzer {
       highSeverityFindings: findings.filter(f => f.severity === 'high').length,
       mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
       lowSeverityFindings: findings.filter(f => f.severity === 'low').length,
+      dataQualityFindings: findings.filter(f => f.category === 'data_quality').length,
       topThreats: this.identifyTopThreats(findings),
-      riskScore: this.calculateRiskScore(findings, statistics)
+      riskScore: this.calculateRiskScore(findings, statistics),
+      dataQuality: {
+        score: dataQualityPercentage,
+        unknownUserEvents: statistics.dataQuality.unknownUsers,
+        totalUnknownEvents: statistics.dataQuality.totalUnknownEvents,
+        message: dataQualityPercentage < 80 ? 'Poor data quality detected - many events have missing user identification' : 'Good data quality'
+      }
     };
 
-    logger.info(`Enhanced analysis completed: ${findings.length} findings, Risk Score: ${summary.riskScore}`);
+    // Log data quality summary
+    if (statistics.dataQuality.unknownUsers > 0) {
+      logger.warn(`Data Quality Alert: ${statistics.dataQuality.unknownUsers} events with unknown users detected`);
+      logger.warn(`Unknown user types found: ${statistics.dataQuality.unknownUserTypes.join(', ')}`);
+      logger.info(`Data quality score: ${dataQualityPercentage}%`);
+      
+      if (unknownUserDetails.length > 0) {
+        logger.debug(`Sample unknown user events:`, unknownUserDetails.slice(0, 5));
+      }
+    }
+
+    logger.info(`Enhanced analysis completed: ${findings.length} findings, Risk Score: ${summary.riskScore}, Data Quality: ${dataQualityPercentage}%`);
 
     return {
       findings: findings,
@@ -803,7 +845,45 @@ class EnhancedAnalyzer {
 
     // Detect anomalous user behavior
     for (const [user, activities] of userActivityMap) {
-      if (activities.length > 1000) { // High activity threshold
+      // Skip or handle unknown users differently
+      const isUnknownUser = user.startsWith('Unknown_');
+      
+      if (isUnknownUser) {
+        // For unknown users, don't create high activity alerts
+        // Instead, check if there's a data quality issue
+        if (activities.length > 100) { // Lower threshold for unknown users
+          findings.push({
+            id: `finding_${findings.length + 1}`,
+            title: 'Data Quality Issue - Missing User Identification',
+            severity: 'low',
+            description: `${activities.length} events have missing user identification data. These events are tracked as ${user}`,
+            timestamp: new Date(),
+            source: 'entra_audit_logs',
+            type: 'data_quality_issue',
+            category: 'data_quality',
+            affectedEntities: {
+              users: [user]
+            },
+            evidence: {
+              activityCount: activities.length,
+              userIdentifier: user,
+              sampleOperations: activities.slice(0, 5).map(a => a.operation),
+              timespan: 'Analysis period'
+            },
+            mitreAttack: {
+              tactics: [],
+              techniques: [],
+              subTechniques: []
+            },
+            recommendations: [
+              'Review log collection configuration',
+              'Ensure proper user identification fields are captured',
+              'Check if authentication logs are complete',
+              'Consider enabling additional audit log fields'
+            ]
+          });
+        }
+      } else if (activities.length > 1000) { // High activity threshold for known users
         findings.push({
           id: `finding_${findings.length + 1}`,
           title: 'Unusually High User Activity',
@@ -818,7 +898,8 @@ class EnhancedAnalyzer {
           },
           evidence: {
             activityCount: activities.length,
-            timespan: 'Analysis period'
+            timespan: 'Analysis period',
+            isIdentifiedUser: true
           },
           mitreAttack: {
             tactics: ['Collection', 'Exfiltration'],

@@ -368,10 +368,28 @@ if (!isMainThread && workerData.type === 'job_processor') {
     // Analyze each audit log entry
     for (const event of auditData) {
       // Extract user and operation info - support both formats
-      const user = event.UserId || event.UserPrincipalName || 
-                   event.initiatedBy?.user?.userPrincipalName || 
-                   event.initiatedBy?.user?.displayName || 
-                   'Unknown';
+      let user = event.UserId || event.UserPrincipalName || 
+                 event.initiatedBy?.user?.userPrincipalName || 
+                 event.initiatedBy?.user?.displayName || 
+                 event.Actor?.ID ||
+                 event.Actor?.Name ||
+                 event.User ||
+                 null;
+      
+      // Create unique identifier for unknown users
+      if (!user || user === '' || user.toLowerCase() === 'unknown') {
+        const sessionId = event.SessionId || event.CorrelationId || '';
+        const ip = event.ClientIP || event.IPAddress || event.initiatedBy?.user?.ipAddress || '';
+        const timestamp = new Date(event.CreationTime || event.TimeGenerated || event.activityDateTime || Date.now());
+        
+        if (sessionId) {
+          user = `Unknown_Session_${sessionId.substring(0, 8)}`;
+        } else if (ip && ip !== 'Unknown') {
+          user = `Unknown_IP_${ip.replace(/\./g, '_')}`;
+        } else {
+          user = `Unknown_${timestamp.getTime()}_${Math.random().toString(36).substring(2, 7)}`;
+        }
+      }
       const operation = event.Operation || event.activityDisplayName || 'Unknown';
       const result = event.ResultStatus || event.result || 'Success';
       const timestamp = new Date(event.CreationTime || event.TimeGenerated || event.activityDateTime);
@@ -499,9 +517,28 @@ if (!isMainThread && workerData.type === 'job_processor') {
       // Check for multiple failed operations
       if (result !== 'Success' && result !== 'success') {
         const recentFailures = auditData.filter(e => {
-          const eventUser = e.UserId || e.UserPrincipalName || 
-                           e.initiatedBy?.user?.userPrincipalName || 
-                           e.initiatedBy?.user?.displayName || 'Unknown';
+          let eventUser = e.UserId || e.UserPrincipalName || 
+                         e.initiatedBy?.user?.userPrincipalName || 
+                         e.initiatedBy?.user?.displayName || 
+                         e.Actor?.ID ||
+                         e.Actor?.Name ||
+                         e.User ||
+                         null;
+          
+          // Apply same unknown user logic
+          if (!eventUser || eventUser === '' || eventUser.toLowerCase() === 'unknown') {
+            const sessionId = e.SessionId || e.CorrelationId || '';
+            const ip = e.ClientIP || e.IPAddress || e.initiatedBy?.user?.ipAddress || '';
+            const eTimestamp = new Date(e.CreationTime || e.TimeGenerated || e.activityDateTime || Date.now());
+            
+            if (sessionId) {
+              eventUser = `Unknown_Session_${sessionId.substring(0, 8)}`;
+            } else if (ip && ip !== 'Unknown') {
+              eventUser = `Unknown_IP_${ip.replace(/\./g, '_')}`;
+            } else {
+              eventUser = `Unknown_${eTimestamp.getTime()}_${Math.random().toString(36).substring(2, 7)}`;
+            }
+          }
           const eventResult = e.ResultStatus || e.result || 'Success';
           const eventTime = new Date(e.CreationTime || e.TimeGenerated || e.activityDateTime);
           
