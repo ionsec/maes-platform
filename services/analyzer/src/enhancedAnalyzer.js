@@ -254,9 +254,13 @@ class EnhancedAnalyzer {
   normalizeAuditEvent(event) {
     // Handle different audit log formats (Graph API, PowerShell, etc.)
     
-    // Extract user with better fallback handling
+    // Extract user with better fallback handling including AuditData nesting
     let user = event.initiatedBy?.user?.userPrincipalName || 
                event.initiatedBy?.user?.displayName || 
+               event.AuditData?.UserId ||              // Check nested AuditData
+               event.AuditData?.UserPrincipalName ||   // Check nested AuditData  
+               event.AuditData?.User ||                // Check nested AuditData
+               event.AuditData?.UserIds?.[0] ||        // Check array format
                event.UserId || 
                event.UserPrincipalName || 
                event.UserDisplayName ||
@@ -267,10 +271,10 @@ class EnhancedAnalyzer {
     
     // If user is still not found, create a unique identifier based on other properties
     if (!user || user === '' || user.toLowerCase() === 'unknown') {
-      // Try to create a unique identifier from available data
-      const sessionId = event.SessionId || event.CorrelationId || '';
-      const ip = event.initiatedBy?.user?.ipAddress || event.ClientIP || event.IPAddress || '';
-      const app = event.initiatedBy?.app?.displayName || event.initiatedBy?.app?.appId || event.ApplicationId || '';
+      // Try to create a unique identifier from available data (including AuditData nesting)
+      const sessionId = event.SessionId || event.AuditData?.SessionId || event.CorrelationId || event.AuditData?.CorrelationId || '';
+      const ip = event.initiatedBy?.user?.ipAddress || event.AuditData?.ClientIP || event.ClientIP || event.IPAddress || '';
+      const app = event.initiatedBy?.app?.displayName || event.initiatedBy?.app?.appId || event.AuditData?.ApplicationId || event.ApplicationId || '';
       
       if (sessionId) {
         user = `Unknown_Session_${sessionId.substring(0, 8)}`;
@@ -286,34 +290,39 @@ class EnhancedAnalyzer {
     }
     
     return {
-      id: event.id || event.Id || `event_${Date.now()}_${Math.random()}`,
-      timestamp: new Date(event.activityDateTime || event.CreationTime || event.TimeGenerated || event.Timestamp),
+      id: event.id || event.AuditData?.Id || event.Id || `event_${Date.now()}_${Math.random()}`,
+      timestamp: new Date(event.activityDateTime || event.AuditData?.CreationTime || event.CreationTime || event.TimeGenerated || event.Timestamp),
       user: user,
-      operation: event.activityDisplayName || event.Operation || event.ActivityDisplayName || 'Unknown',
-      result: event.result || event.ResultStatus || event.Status || 'Unknown',
+      operation: event.activityDisplayName || event.AuditData?.Operation || event.Operation || event.ActivityDisplayName || 'Unknown',
+      result: event.result || event.AuditData?.ResultStatus || event.ResultStatus || event.Status || 'Unknown',
       ipAddress: event.initiatedBy?.user?.ipAddress || 
+                event.AuditData?.ClientIP || 
                 event.ClientIP || 
                 event.IPAddress || 
                 event.location?.countryOrRegion || 
                 'Unknown',
       userAgent: event.initiatedBy?.user?.userAgent || 
+                event.AuditData?.UserAgent || 
                 event.UserAgent || 
                 event.ClientAppUsed || 
                 'Unknown',
       application: event.initiatedBy?.app?.displayName || 
                   event.initiatedBy?.app?.appId || 
+                  event.AuditData?.AppDisplayName || 
+                  event.AuditData?.ApplicationId || 
                   event.AppDisplayName || 
                   event.ApplicationId || 
                   event.ClientAppUsed ||
                   'Unknown',
       location: event.location?.countryOrRegion || 
                event.location?.city || 
+               event.AuditData?.Country || 
                event.Country || 
                event.Location ||
                'Unknown',
-      category: event.category || event.LogName || event.RecordType || 'Unknown',
-      targetResources: event.targetResources || [],
-      additionalDetails: event.additionalDetails || [],
+      category: event.category || event.AuditData?.LogName || event.AuditData?.RecordType || event.LogName || event.RecordType || 'Unknown',
+      targetResources: event.targetResources || event.AuditData?.targetResources || [],
+      additionalDetails: event.additionalDetails || event.AuditData?.additionalDetails || [],
       rawEvent: event,
       isUnknownUser: user.startsWith('Unknown_')  // Flag to track unknown users
     };
