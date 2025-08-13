@@ -44,13 +44,49 @@ class EnhancedAnalyzer {
         const listName = file.replace('-Blacklist.csv', '').toLowerCase();
         this.blacklists[listName] = await this.loadCsvFile(filePath);
         logger.info(`Loaded ${listName} blacklist: ${this.blacklists[listName].length} entries`);
+      } else {
+        logger.warn(`Blacklist file not found: ${filePath}`)
       }
+    }
+    
+    // Load whitelists
+    const whitelistDir = path.join(__dirname, '../config/Whitelists');
+    this.whitelists = {};
+    if (fs.existsSync(path.join(whitelistDir, 'ASN-Whitelist.csv'))) {
+      this.whitelists.asn = await this.loadCsvFile(path.join(whitelistDir, 'ASN-Whitelist.csv'));
+      logger.info(`Loaded ASN whitelist: ${this.whitelists.asn?.length || 0} entries`);
     }
   }
 
   async loadConfig() {
-    const configDir = path.join(__dirname, '../config/Config');
+    // Load main configuration from Config.json
+    const mainConfigPath = path.join(__dirname, '../config/Config.json');
+    if (fs.existsSync(mainConfigPath)) {
+      try {
+        const configContent = fs.readFileSync(mainConfigPath, 'utf8');
+        const mainConfig = JSON.parse(configContent);
+        this.config = { ...mainConfig };
+        logger.info('Loaded main configuration from Config.json');
+      } catch (error) {
+        logger.error('Failed to load Config.json:', error);
+        this.config = {};
+      }
+    }
     
+    // Add detection thresholds
+    this.config.thresholds = {
+      bruteForce: 1000,
+      failedLogins: 50,
+      suspiciousActivity: 5,
+      highRisk: 10,
+      timeWindowMinutes: 30,
+      multipleFailedLoginsPerUser: 10,
+      suspiciousIPActivityCount: 500,
+      unusualLocationChanges: 5
+    };
+    
+    // Load CSV configurations
+    const configDir = path.join(__dirname, '../config/Config');
     const configFiles = [
       'LogonType.csv',
       'MicrosoftApps.csv',
@@ -149,6 +185,7 @@ class EnhancedAnalyzer {
       await this.checkPermissionChanges(normalizedEvent, findings, statistics);
       await this.checkAccountActivities(normalizedEvent, findings, statistics);
       await this.checkApplicationActivities(normalizedEvent, findings, statistics);
+      await this.checkTokenProtection(normalizedEvent, findings, statistics);
       
       // Check for brute force attempts
       if (i > 0) {
@@ -319,19 +356,36 @@ class EnhancedAnalyzer {
   }
 
   async checkBlacklistedEntities(event, findings, statistics) {
-    // Check against application blacklist
+    // Check against application blacklist with severity levels
     if (this.blacklists.application && event.application !== 'Unknown') {
       const blacklistedApp = this.blacklists.application.find(app => 
-        app.AppDisplayName && event.application.toLowerCase().includes(app.AppDisplayName.toLowerCase())
+        (app.AppDisplayName && event.application.toLowerCase().includes(app.AppDisplayName.toLowerCase())) ||
+        (app.AppId && event.application === app.AppId)
       );
       
       if (blacklistedApp) {
         statistics.blacklistedEntities.applications.add(event.application);
+        
+        // Use severity from blacklist (Red=critical, Yellow=medium, default=high)
+        const severity = blacklistedApp.Severity?.toLowerCase() === 'red' ? 'critical' : 
+                        blacklistedApp.Severity?.toLowerCase() === 'yellow' ? 'medium' : 'high';
+        
+        // Special handling for known malicious apps
+        const specialApps = {
+          'eM Client': 'Known traitorware used for data exfiltration',
+          'Visual Studio Code': 'Potentially used for unauthorized development access',
+          'rclone': 'Cloud storage tool often used for mass data exfiltration',
+          'CloudSponge': 'Contact harvesting application',
+          'Mailbackup': 'Email backup tool that can exfiltrate mailbox data'
+        };
+        
+        const specialNote = specialApps[blacklistedApp.AppDisplayName] || '';
+        
         findings.push({
           id: `finding_${findings.length + 1}`,
           title: 'Blacklisted Application Detected',
-          severity: 'high',
-          description: `Blacklisted application "${event.application}" was used by ${event.user}`,
+          severity: severity,
+          description: `Blacklisted application "${event.application}" was used by ${event.user}. ${specialNote}`,
           timestamp: event.timestamp,
           source: 'entra_audit_logs',
           type: 'blacklisted_application',
@@ -488,6 +542,49 @@ class EnhancedAnalyzer {
         severity: 'critical',
         type: 'mfa_disable',
         description: 'MFA disable activity detected'
+      },
+      // New patterns from Microsoft-Analyzer-Suite v1.6.0
+      {
+        pattern: /UpdateInboxRules.*Create|UpdateInboxRules.*Update|UpdateInboxRules.*Delete/i,
+        severity: 'high',
+        type: 'inbox_rule_manipulation',
+        description: 'Suspicious inbox rule manipulation detected'
+      },
+      {
+        pattern: /MailItemsAccessed/i,
+        severity: 'medium',
+        type: 'mail_items_accessed',
+        description: 'Mail items accessed - potential data exfiltration'
+      },
+      {
+        pattern: /FileDownloaded/i,
+        severity: 'medium',
+        type: 'file_download',
+        description: 'File download activity - monitor for mass downloads'
+      },
+      {
+        pattern: /cloud.*device.*registration/i,
+        severity: 'high',
+        type: 'cloud_device_registration',
+        description: 'Suspicious cloud device registration detected'
+      },
+      {
+        pattern: /adrs.*token.*request/i,
+        severity: 'high',
+        type: 'adrs_token_request',
+        description: 'Suspicious ADRS token request detected'
+      },
+      {
+        pattern: /visual.*studio.*code/i,
+        severity: 'medium',
+        type: 'vscode_signin',
+        description: 'Sign-in via Visual Studio Code detected - potential security risk'
+      },
+      {
+        pattern: /em.*client/i,
+        severity: 'critical',
+        type: 'em_client_usage',
+        description: 'eM Client detected - known traitorware application'
       }
     ];
 
@@ -767,6 +864,133 @@ class EnhancedAnalyzer {
           recommendations: this.getRecommendations(pattern.type)
         });
       }
+    }
+  }
+
+  async checkTokenProtection(event, findings, statistics) {
+    // Check for token protection related issues based on Microsoft-Analyzer-Suite v1.6.0
+    
+    // Check for unique token identifier issues
+    if (event.uniqueTokenIdentifier || event.UniqueTokenIdentifier) {
+      const tokenId = event.uniqueTokenIdentifier || event.UniqueTokenIdentifier;
+      
+      // Check for token replay attacks
+      if (tokenId && tokenId.length > 0) {
+        // Log for future correlation analysis
+        logger.debug(`Token ID detected: ${tokenId.substring(0, 8)}... for user ${event.user}`);
+      }
+    }
+    
+    // Check for incoming token type anomalies
+    if (event.incomingTokenType || event.IncomingTokenType) {
+      const tokenType = event.incomingTokenType || event.IncomingTokenType;
+      
+      // Check for unusual token types
+      const suspiciousTokenTypes = ['none', 'unknown', 'legacy'];
+      if (suspiciousTokenTypes.includes(tokenType.toLowerCase())) {
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Suspicious Token Type Detected',
+          severity: 'medium',
+          description: `Unusual incoming token type "${tokenType}" detected for user ${event.user}`,
+          timestamp: event.timestamp,
+          source: 'entra_audit_logs',
+          type: 'token_anomaly',
+          category: 'authentication',
+          affectedEntities: {
+            users: [event.user],
+            tokenType: tokenType
+          },
+          evidence: {
+            tokenType: tokenType,
+            operation: event.operation,
+            result: event.result
+          },
+          mitreAttack: {
+            tactics: ['Credential Access', 'Lateral Movement'],
+            techniques: ['T1550', 'T1550.001'],
+            subTechniques: []
+          },
+          recommendations: [
+            'Review token issuance policies',
+            'Verify user authentication methods',
+            'Check for legacy authentication usage'
+          ]
+        });
+      }
+    }
+    
+    // Check for sign-in token protection status
+    if (event.signInTokenProtectionStatus || event.SignInTokenProtectionStatus) {
+      const protectionStatus = event.signInTokenProtectionStatus || event.SignInTokenProtectionStatus;
+      
+      // Flag unprotected or weakly protected tokens
+      if (protectionStatus.toLowerCase() === 'none' || protectionStatus.toLowerCase() === 'notapplied') {
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Unprotected Sign-In Token',
+          severity: 'high',
+          description: `Sign-in token without protection detected for user ${event.user}`,
+          timestamp: event.timestamp,
+          source: 'entra_audit_logs',
+          type: 'unprotected_token',
+          category: 'authentication',
+          affectedEntities: {
+            users: [event.user],
+            protectionStatus: protectionStatus
+          },
+          evidence: {
+            protectionStatus: protectionStatus,
+            operation: event.operation,
+            ipAddress: event.ipAddress
+          },
+          mitreAttack: {
+            tactics: ['Initial Access', 'Credential Access'],
+            techniques: ['T1078', 'T1550'],
+            subTechniques: ['T1078.004', 'T1550.001']
+          },
+          recommendations: [
+            'Enable token protection for all users',
+            'Enforce Conditional Access policies',
+            'Review sign-in security settings'
+          ]
+        });
+      }
+    }
+    
+    // Check for ADRS token requests (Azure Device Registration Service)
+    if (event.operation && event.operation.toLowerCase().includes('adrs') && 
+        event.operation.toLowerCase().includes('token')) {
+      findings.push({
+        id: `finding_${findings.length + 1}`,
+        title: 'Suspicious ADRS Token Request',
+        severity: 'high',
+        description: `ADRS token request detected from ${event.user} - potential device registration abuse`,
+        timestamp: event.timestamp,
+        source: 'entra_audit_logs',
+        type: 'adrs_token_request',
+        category: 'device_security',
+        affectedEntities: {
+          users: [event.user],
+          operation: event.operation
+        },
+        evidence: {
+          operation: event.operation,
+          result: event.result,
+          ipAddress: event.ipAddress,
+          userAgent: event.userAgent
+        },
+        mitreAttack: {
+          tactics: ['Persistence', 'Defense Evasion'],
+          techniques: ['T1098', 'T1556'],
+          subTechniques: ['T1098.005']
+        },
+        recommendations: [
+          'Review device registration policies',
+          'Verify if device registration is legitimate',
+          'Check for unusual device enrollment patterns'
+        ]
+      });
     }
   }
 
