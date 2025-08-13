@@ -164,9 +164,17 @@ const Settings = () => {
 
   useEffect(() => {
     if (selectedOrgId) {
+      // Reset form to clear previous org data
+      reset();
+      // Clear cached credentials
+      setActualCredentials({});
+      setShowCredentials({});
+      // Clear other state
+      setConnectionTestResult(null);
+      // Fetch new organization data
       fetchOrganization(selectedOrgId);
     }
-  }, [selectedOrgId]);
+  }, [selectedOrgId, reset]);
 
   const onSubmit = async (data) => {
     try {
@@ -215,7 +223,7 @@ const Settings = () => {
     }));
 
     // If we're showing credentials and don't have them cached, fetch them
-    if (newShowState && !actualCredentials[key]) {
+    if (newShowState && !actualCredentials[key] && selectedOrgId) {
       try {
         const response = await axios.get('/api/organizations/current?showCredentials=true', {
           headers: {
@@ -327,7 +335,7 @@ const Settings = () => {
       resetCredentials();
       setActualCredentials({}); // Clear cached credentials
       setShowCredentials({}); // Reset visibility state
-      fetchOrganization(); // Refresh organization data
+      fetchOrganization(selectedOrgId); // Refresh organization data with selected org
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to save credentials', { variant: 'error' });
     } finally {
@@ -355,7 +363,7 @@ const Settings = () => {
       const formData = new FormData();
       formData.append('certificate', certificateFile);
       formData.append('password', certificatePassword);
-      formData.append('organizationId', organization?.tenantId || 'default');
+      formData.append('organizationId', selectedOrgId || 'default');
 
       await axios.post('/api/user/certificate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }

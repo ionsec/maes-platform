@@ -114,7 +114,12 @@ const UserManagement = () => {
     canManageLicenses: 'Manage Licenses',
     canConfigureGlobalSettings: 'Configure Global Settings',
     canManageBackups: 'Manage Backups',
-    canAccessDeveloperTools: 'Access Developer Tools'
+    canAccessDeveloperTools: 'Access Developer Tools',
+    canManageCompliance: 'Manage Compliance',
+    canCreateIncidents: 'Create Incidents',
+    canManageIncidents: 'Manage Incidents',
+    canEscalateIncidents: 'Escalate Incidents',
+    canCloseIncidents: 'Close Incidents'
   };
 
   const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
@@ -244,15 +249,31 @@ const UserManagement = () => {
 
   const handleResetPassword = async (userId) => {
     try {
+      // Generate a random password
+      const tempPassword = `Temp${Math.random().toString(36).substring(2, 10)}!${Math.floor(Math.random() * 100)}`;
+      
       await axios.patch(`/api/users/${userId}/password`, {
-        newPassword: 'TempPassword123!' // In production, generate a secure random password
+        newPassword: tempPassword
       });
-      enqueueSnackbar('Password reset successfully. Temporary password: TempPassword123!', { 
+      
+      enqueueSnackbar(`Password reset successfully. Temporary password: ${tempPassword}`, { 
         variant: 'success',
-        persist: true
+        persist: true,
+        action: (key) => (
+          <Button 
+            size="small" 
+            color="inherit"
+            onClick={() => {
+              navigator.clipboard.writeText(tempPassword);
+              enqueueSnackbar('Password copied to clipboard', { variant: 'info' });
+            }}
+          >
+            Copy
+          </Button>
+        )
       });
     } catch (error) {
-      enqueueSnackbar('Failed to reset password', { variant: 'error' });
+      enqueueSnackbar(error.response?.data?.error || 'Failed to reset password', { variant: 'error' });
     }
   };
 
@@ -371,6 +392,7 @@ const UserManagement = () => {
                   onChange={(e) => setRoleFilter(e.target.value)}
                 >
                   <MenuItem value="all">All Roles</MenuItem>
+                  {isSuperAdmin && <MenuItem value="super_admin">Super Admin</MenuItem>}
                   <MenuItem value="admin">Admin</MenuItem>
                   <MenuItem value="analyst">Analyst</MenuItem>
                   <MenuItem value="viewer">Viewer</MenuItem>
@@ -435,9 +457,14 @@ const UserManagement = () => {
                 </TableCell>
                 <TableCell>
                   <Chip 
-                    label={user.role} 
+                    label={user.role.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())} 
                     size="small"
-                    color={user.role === 'admin' ? 'error' : user.role === 'analyst' ? 'warning' : 'default'}
+                    color={
+                      user.role === 'super_admin' ? 'error' : 
+                      user.role === 'admin' ? 'secondary' : 
+                      user.role === 'analyst' ? 'warning' : 
+                      'default'
+                    }
                   />
                 </TableCell>
                 {showAllOrganizations && (
@@ -693,31 +720,36 @@ const UserManagement = () => {
             Select which organizations this user can access. This enables cross-organization permissions.
           </Alert>
           <FormGroup>
-            {organizations.map((org) => (
-              <FormControlLabel
-                key={org.id}
-                control={
-                  <Switch
-                    checked={organizationAccessDialog.user?.accessibleOrganizations?.includes(org.id) || false}
-                    onChange={(e) => {
-                      const currentAccess = organizationAccessDialog.user?.accessibleOrganizations || [];
-                      const newAccess = e.target.checked
-                        ? [...currentAccess, org.id]
-                        : currentAccess.filter(id => id !== org.id);
-                      
-                      setOrganizationAccessDialog({
-                        ...organizationAccessDialog,
-                        user: {
-                          ...organizationAccessDialog.user,
-                          accessibleOrganizations: newAccess
-                        }
-                      });
-                    }}
-                  />
-                }
-                label={`${org.name} (${org.organizationType})`}
-              />
-            ))}
+            {organizations
+              .filter((org, index, self) => 
+                // Remove duplicates based on organization ID
+                index === self.findIndex((o) => o.id === org.id)
+              )
+              .map((org) => (
+                <FormControlLabel
+                  key={org.id}
+                  control={
+                    <Switch
+                      checked={organizationAccessDialog.user?.accessibleOrganizations?.includes(org.id) || false}
+                      onChange={(e) => {
+                        const currentAccess = organizationAccessDialog.user?.accessibleOrganizations || [];
+                        const newAccess = e.target.checked
+                          ? [...currentAccess, org.id]
+                          : currentAccess.filter(id => id !== org.id);
+                        
+                        setOrganizationAccessDialog({
+                          ...organizationAccessDialog,
+                          user: {
+                            ...organizationAccessDialog.user,
+                            accessibleOrganizations: newAccess
+                          }
+                        });
+                      }}
+                    />
+                  }
+                  label={`${org.name} (${org.organizationType})`}
+                />
+              ))}
           </FormGroup>
         </DialogContent>
         <DialogActions>

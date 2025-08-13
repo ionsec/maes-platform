@@ -338,17 +338,30 @@ router.patch('/:userId/password', authenticateToken, requirePermission('canManag
       return res.status(400).json({ error: 'New password is required' });
     }
 
-    const user = await User.findOne({
-      where: { id: userId, organizationId: req.organizationId }
-    });
-
-    if (!user) {
+    // Verify user exists and belongs to the organization
+    const checkUserQuery = `
+      SELECT id, email, username 
+      FROM maes.users 
+      WHERE id = $1 AND organization_id = $2
+    `;
+    
+    const userResult = await pool.query(checkUserQuery, [userId, req.organizationId]);
+    
+    if (userResult.rows.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Update password
-    user.password = newPassword;
-    await user.save();
+    // Hash the new password
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+    // Update password in database
+    const updateQuery = `
+      UPDATE maes.users 
+      SET password_hash = $1, updated_at = NOW() 
+      WHERE id = $2
+    `;
+    
+    await pool.query(updateQuery, [hashedPassword, userId]);
 
     logger.info(`Changed password for user: ${userId}`);
 
