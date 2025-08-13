@@ -659,12 +659,12 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
       }
     `,
     'risky_detections': `Get-RiskyDetections -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
-    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
+    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
     'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
     'devices': `
       Write-Host "Starting Devices extraction via Graph...";
       try {
-        Get-Devices -OutputDir '${orgOutputPath}';
+        Get-Devices -Output JSON -OutputDir '${orgOutputPath}';
         Write-Host "Devices extraction completed successfully.";
       } catch {
         Write-Error "Devices extraction failed: $_";
