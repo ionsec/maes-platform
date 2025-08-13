@@ -194,12 +194,19 @@ router.post('/logs',
   ],
   async (req, res) => {
     try {
+      logger.info('Upload request received', {
+        file: req.file?.originalname,
+        dataType: req.body.dataType,
+        organizationId: req.organizationId
+      });
+
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
         // Clean up uploaded file if validation fails
         if (req.file) {
           await fs.unlink(req.file.path).catch(() => {});
         }
+        logger.error('Upload validation failed:', errors.array());
         return res.status(400).json({
           error: 'Validation failed',
           details: errors.array()
@@ -207,6 +214,7 @@ router.post('/logs',
       }
 
       if (!req.file) {
+        logger.error('No file uploaded in request');
         return res.status(400).json({
           error: 'No file uploaded'
         });
@@ -214,6 +222,13 @@ router.post('/logs',
 
       const { dataType, metadata } = req.body;
       const parsedMetadata = metadata ? JSON.parse(metadata) : {};
+      
+      logger.info('Processing uploaded file', {
+        fileName: req.file.originalname,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+        dataType: dataType
+      });
 
       // Read and validate file content
       const fileContent = await fs.readFile(req.file.path, 'utf8');
@@ -222,11 +237,56 @@ router.post('/logs',
       try {
         if (req.file.mimetype === 'application/json' || req.file.originalname.endsWith('.json')) {
           parsedData = JSON.parse(fileContent);
+        } else if (req.file.originalname.endsWith('.csv') || req.file.mimetype === 'text/csv' || req.file.mimetype === 'application/csv') {
+          // Parse CSV file
+          const csvParser = require('csv-parser');
+          const stream = require('stream');
+          
+          parsedData = [];
+          const readable = stream.Readable.from(fileContent);
+          
+          await new Promise((resolve, reject) => {
+            readable
+              .pipe(csvParser())
+              .on('data', (row) => {
+                // Clean up field names (remove BOM and trim)
+                const cleanedRow = {};
+                for (const [key, value] of Object.entries(row)) {
+                  const cleanKey = key.replace(/^\uFEFF/, '').trim();
+                  cleanedRow[cleanKey] = value;
+                }
+                parsedData.push(cleanedRow);
+              })
+              .on('end', resolve)
+              .on('error', reject);
+          });
+          
+          logger.info(`Parsed CSV file: ${parsedData.length} rows`);
         } else {
-          // For CSV/TXT files, we'll need specific parsing based on dataType
-          parsedData = { raw: fileContent, format: 'text' };
+          // For TXT/LOG files, try to parse as JSON first, otherwise keep as text
+          try {
+            parsedData = JSON.parse(fileContent);
+          } catch {
+            // If not JSON, split by lines for log files
+            if (req.file.originalname.endsWith('.log') || req.file.originalname.endsWith('.txt')) {
+              parsedData = fileContent.split('\n')
+                .filter(line => line.trim())
+                .map(line => {
+                  try {
+                    // Try to parse each line as JSON
+                    return JSON.parse(line);
+                  } catch {
+                    // If not JSON, keep as text line
+                    return { raw: line };
+                  }
+                });
+            } else {
+              parsedData = { raw: fileContent, format: 'text' };
+            }
+          }
         }
       } catch (parseError) {
+        logger.error('Parse error:', parseError);
         await fs.unlink(req.file.path).catch(() => {});
         return res.status(400).json({
           error: 'Invalid file content',
@@ -237,13 +297,28 @@ router.post('/logs',
       // Create a real extraction record in the database for the uploaded data
       const { Extraction } = require('../services/models');
       
+      // Calculate items extracted properly
+      let itemsExtracted = 1;
+      if (Array.isArray(parsedData)) {
+        itemsExtracted = parsedData.length;
+      } else if (parsedData && typeof parsedData === 'object' && !parsedData.raw) {
+        // If it's an object but not a raw text format, count its properties
+        itemsExtracted = Object.keys(parsedData).length;
+      }
+      
+      logger.info('Creating extraction record', {
+        dataType,
+        itemsExtracted,
+        dataStructure: Array.isArray(parsedData) ? 'array' : typeof parsedData
+      });
+      
       const extraction = await Extraction.create({
         type: dataType,
         status: 'completed',
         organizationId: req.organizationId,
         startDate: parsedMetadata.startDate || new Date(),
         endDate: parsedMetadata.endDate || new Date(),
-        itemsExtracted: Array.isArray(parsedData) ? parsedData.length : 1,
+        itemsExtracted: itemsExtracted,
         progress: 100,
         parameters: {
           isUpload: true,
@@ -266,15 +341,27 @@ router.post('/logs',
       // Store the uploaded data in memory for analysis
       req.app.locals.uploadedExtractions = req.app.locals.uploadedExtractions || {};
       req.app.locals.uploadedExtractions[extraction.id] = {
+        id: extraction.id,
         extractionId: extraction.id,
         organizationId: req.organizationId, // Add organization context
-        data: parsedData,
+        type: dataType,
+        status: 'completed',
+        startDate: extraction.startDate,
+        endDate: extraction.endDate,
+        itemsExtracted: extraction.itemsExtracted,
+        auditData: parsedData, // Store as auditData for consistency with analyzer
+        data: parsedData, // Keep for backward compatibility
+        parameters: {
+          isUpload: true,
+          auditData: parsedData // Also store in parameters for analyzer access
+        },
         uploadedFile: {
           path: req.file.path,
           originalName: req.file.originalname,
           size: req.file.size,
           mimeType: req.file.mimetype
-        }
+        },
+        createdAt: new Date()
       };
 
       // Clean up old uploads after 24 hours
@@ -288,6 +375,13 @@ router.post('/logs',
           logger.error('Failed to clean up uploaded file:', error);
         }
       }, 24 * 60 * 60 * 1000);
+
+      logger.info('Upload successful', {
+        extractionId: extraction.id,
+        dataType: dataType,
+        itemsExtracted: extraction.itemsExtracted,
+        fileName: req.file.originalname
+      });
 
       res.status(201).json({
         success: true,
