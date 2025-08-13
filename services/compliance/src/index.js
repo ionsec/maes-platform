@@ -29,8 +29,8 @@ const PORT = process.env.COMPLIANCE_PORT || 3002;
 
 app.use(express.json());
 
-// Ensure reports directory exists
-const REPORTS_DIR = path.join(__dirname, '../reports');
+// Ensure reports directory exists - must match reportGenerator.js location
+const REPORTS_DIR = path.join(__dirname, 'reports');
 fs.mkdir(REPORTS_DIR, { recursive: true }).catch(err => 
   logger.error('Failed to create reports directory:', err)
 );

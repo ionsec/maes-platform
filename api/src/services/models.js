@@ -58,7 +58,7 @@ const UserModel = {
     const allowedFields = [
       'username', 'email', 'firstName', 'lastName', 'phone', 'organization',
       'department', 'jobTitle', 'location', 'bio', 'profilePicture', 
-      'preferences', 'isActive', 'organizationId'
+      'preferences', 'isActive', 'organizationId', 'role', 'permissions'
     ];
     
     const fields = [];
@@ -74,7 +74,14 @@ const UserModel = {
         // Check if field is allowed (either camelCase or snake_case)
         if (allowedFields.includes(camelField) || allowedFields.includes(dbField)) {
           fields.push(`${dbField} = $${paramCount}`);
-          values.push(updates[key]);
+          
+          // Handle JSON fields properly
+          let value = updates[key];
+          if ((key === 'permissions' || key === 'preferences') && typeof value === 'object') {
+            value = JSON.stringify(value);
+          }
+          
+          values.push(value);
           paramCount++;
         } else {
           // Log potential SQL injection attempt
