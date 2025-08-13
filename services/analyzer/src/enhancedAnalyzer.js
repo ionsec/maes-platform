@@ -1332,8 +1332,9 @@ class EnhancedAnalyzer {
     };
 
     for (const user of mfaData) {
-      const userPrincipalName = user.userPrincipalName || user.UserPrincipalName || 'Unknown';
-      const mfaStatus = user.mfaStatus || user.MfaStatus || 'Unknown';
+      // MFA extractor uses lowercase 'user' field and 'MFAstatus' with specific casing
+      const userPrincipalName = user.user || user.UserPrincipalName || user.userPrincipalName || 'Unknown';
+      const mfaStatus = user.MFAstatus || user.mfaStatus || user.MfaStatus || 'Unknown';
       const authMethods = user.authMethods || user.AuthMethods || [];
 
       if (mfaStatus === 'Enabled') {
@@ -1602,9 +1603,10 @@ class EnhancedAnalyzer {
     };
 
     for (const user of userData) {
-      const userPrincipalName = user.userPrincipalName || user.UserPrincipalName || 'Unknown';
-      const accountEnabled = user.accountEnabled || user.AccountEnabled || false;
-      const userType = user.userType || user.UserType || 'Member';
+      // Handle both PascalCase (from Get-RiskyUsers) and lowercase variations
+      const userPrincipalName = user.UserPrincipalName || user.userPrincipalName || user.user || 'Unknown';
+      const accountEnabled = user.AccountEnabled !== undefined ? user.AccountEnabled : (user.accountEnabled || false);
+      const userType = user.UserType || user.userType || 'Member';
       const createdDateTime = user.createdDateTime || user.CreatedDateTime;
       const lastSignInDateTime = user.lastSignInDateTime || user.LastSignInDateTime;
 
@@ -1722,10 +1724,13 @@ class EnhancedAnalyzer {
     };
 
     for (const license of licenseData) {
-      const skuName = license.skuPartNumber || license.SkuPartNumber || 'Unknown';
-      const consumedUnits = license.consumedUnits || license.ConsumedUnits || 0;
+      // Get-Licenses uses 'Sku' field, not skuPartNumber
+      const skuName = license.Sku || license.skuPartNumber || license.SkuPartNumber || 'Unknown';
+      // Get-Licenses exports: Units, Status, Retention, E3, E5, P1, P2, etc.
+      const consumedUnits = license.Units || license.consumedUnits || license.ConsumedUnits || 0;
+      const status = license.Status || license.status || 'Unknown';
       const prepaidUnits = license.prepaidUnits || license.PrepaidUnits || {};
-      const enabled = prepaidUnits.enabled || prepaidUnits.Enabled || 0;
+      const enabled = prepaidUnits.enabled || prepaidUnits.Enabled || consumedUnits;
       const expired = prepaidUnits.expired || prepaidUnits.Expired || 0;
       const suspended = prepaidUnits.suspended || prepaidUnits.Suspended || 0;
 

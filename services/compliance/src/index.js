@@ -330,7 +330,7 @@ app.get('/api/assessment/:assessmentId/report/:fileName/download', validateServi
     const { assessmentId, fileName } = req.params;
     
     // Verify the report exists in database
-    const { getRow } = require('./models').sequelize;
+    const { getRow } = require('./services/database');
     const report = await getRow(
       `SELECT * FROM maes.compliance_reports 
        WHERE assessment_id = $1 AND file_name = $2`,
