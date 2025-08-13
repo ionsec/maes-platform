@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Button,
@@ -49,14 +49,19 @@ import axios from '../utils/axios';
 import ThemeSelector from '../components/ThemeSelector';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAuth } from '../contexts/AuthContext';
+import { useOrganization } from '../contexts/OrganizationContext';
 
 const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [organization, setOrganization] = useState(null);
-  const [userOrganizations, setUserOrganizations] = useState([]);
-  const [selectedOrgId, setSelectedOrgId] = useState(null);
   const { currentTheme } = useTheme();
   const { user } = useAuth();
+  const { 
+    organizations, 
+    selectedOrganizationId, 
+    selectOrganization, 
+    refreshOrganizations 
+  } = useOrganization();
   const [tabValue, setTabValue] = useState(0);
   const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
   const [showCredentials, setShowCredentials] = useState({});
@@ -83,25 +88,7 @@ const Settings = () => {
   const watchedClientSecret = watchCredentials('clientSecret');
   const watchedCertificateThumbprint = watchCredentials('certificateThumbprint');
 
-  const fetchUserOrganizations = async () => {
-    try {
-      const response = await axios.get('/api/user/organizations');
-      setUserOrganizations(response.data.organizations || []);
-      
-      // Set the first organization as selected if none is selected
-      if (!selectedOrgId && response.data.organizations?.length > 0) {
-        setSelectedOrgId(response.data.organizations[0].organization_id);
-      }
-    } catch (error) {
-      // Only show error for non-auth errors
-      if (error.response?.status !== 401 && error.response?.status !== 403) {
-        enqueueSnackbar('Failed to fetch user organizations', { variant: 'error' });
-      }
-      setUserOrganizations([]);
-    }
-  };
-
-  const fetchOrganization = async (orgId = selectedOrgId) => {
+  const fetchOrganization = useCallback(async (orgId) => {
     if (!orgId) return;
     
     setLoading(true);
@@ -111,27 +98,31 @@ const Settings = () => {
           'x-organization-id': orgId
         }
       });
-      setOrganization(response.data.organization);
+      const org = response.data.organization;
+      setOrganization(org);
       
-      // Set form values
-      setValue('organizationName', response.data.organization.name);
-      setValue('tenantId', response.data.organization.tenantId);
-      setValue('fqdn', response.data.organization.fqdn || '');
-      setValue('extractionScheduleEnabled', response.data.organization.settings?.extractionSchedule?.enabled || false);
-      setValue('extractionInterval', response.data.organization.settings?.extractionSchedule?.interval || 'daily');
-      setValue('extractionTime', response.data.organization.settings?.extractionSchedule?.time || '02:00');
-      setValue('autoAnalyze', response.data.organization.settings?.analysisSettings?.autoAnalyze || true);
-      setValue('enableThreatIntel', response.data.organization.settings?.analysisSettings?.enableThreatIntel || false);
-      setValue('emailNotifications', response.data.organization.settings?.alertingSettings?.emailNotifications || true);
-      setValue('severityThreshold', response.data.organization.settings?.alertingSettings?.severityThreshold || 'medium');
-      setValue('webhookUrl', response.data.organization.settings?.alertingSettings?.webhookUrl || '');
-      setValue('retentionDays', response.data.organization.settings?.retentionDays || 90);
+      // Reset form with new organization's data
+      // Note: API returns snake_case fields, need to map them correctly
+      reset({
+        organizationName: org.name,
+        tenantId: org.tenant_id || org.tenantId, // Handle both snake_case and camelCase
+        fqdn: org.fqdn || '',
+        extractionScheduleEnabled: org.settings?.extractionSchedule?.enabled || false,
+        extractionInterval: org.settings?.extractionSchedule?.interval || 'daily',
+        extractionTime: org.settings?.extractionSchedule?.time || '02:00',
+        autoAnalyze: org.settings?.analysisSettings?.autoAnalyze !== false, // Default to true
+        enableThreatIntel: org.settings?.analysisSettings?.enableThreatIntel || false,
+        emailNotifications: org.settings?.alertingSettings?.emailNotifications !== false, // Default to true
+        severityThreshold: org.settings?.alertingSettings?.severityThreshold || 'medium',
+        webhookUrl: org.settings?.alertingSettings?.webhookUrl || '',
+        retentionDays: org.settings?.retentionDays || 90
+      });
     } catch (error) {
       enqueueSnackbar('Failed to fetch organization settings', { variant: 'error' });
     } finally {
       setLoading(false);
     }
-  };
+  }, [reset, enqueueSnackbar]);
 
   const handleDeleteOrganization = async () => {
     if (deleteConfirmation !== organization?.name) {
@@ -164,17 +155,14 @@ const Settings = () => {
 
   useEffect(() => {
     if (selectedOrgId) {
-      // Reset form to clear previous org data
-      reset();
-      // Clear cached credentials
+      // Clear cached credentials and other state
       setActualCredentials({});
       setShowCredentials({});
-      // Clear other state
       setConnectionTestResult(null);
       // Fetch new organization data
       fetchOrganization(selectedOrgId);
     }
-  }, [selectedOrgId, reset]);
+  }, [selectedOrgId, fetchOrganization]);
 
   const onSubmit = async (data) => {
     try {

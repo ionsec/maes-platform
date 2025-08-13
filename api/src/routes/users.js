@@ -234,7 +234,7 @@ router.post('/', authenticateToken, requirePermission('canManageUsers'), async (
     // Create user
     const createUserQuery = `
       INSERT INTO maes.users (
-        id, email, username, password_hash, first_name, last_name,
+        id, email, username, password, first_name, last_name,
         role, organization_id, is_active, created_at, updated_at
       ) VALUES (
         gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW()
@@ -357,7 +357,7 @@ router.patch('/:userId/password', authenticateToken, requirePermission('canManag
     // Update password in database
     const updateQuery = `
       UPDATE maes.users 
-      SET password_hash = $1, updated_at = NOW() 
+      SET password = $1, updated_at = NOW() 
       WHERE id = $2
     `;
     
