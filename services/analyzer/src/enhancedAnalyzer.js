@@ -104,6 +104,12 @@ class EnhancedAnalyzer {
         countries: new Set(),
         ipAddresses: new Set(),
         userAgents: new Set()
+      },
+      dataQuality: {
+        unknownUsers: 0,
+        missingUserData: 0,
+        totalUnknownEvents: 0,
+        unknownUserTypes: new Set()
       }
     };
 
@@ -168,15 +174,42 @@ class EnhancedAnalyzer {
 
   normalizeAuditEvent(event) {
     // Handle different audit log formats (Graph API, PowerShell, etc.)
+    
+    // Extract user with better fallback handling
+    let user = event.initiatedBy?.user?.userPrincipalName || 
+               event.initiatedBy?.user?.displayName || 
+               event.UserId || 
+               event.UserPrincipalName || 
+               event.UserDisplayName ||
+               event.Actor?.ID ||
+               event.Actor?.Name ||
+               event.User ||
+               null;
+    
+    // If user is still not found, create a unique identifier based on other properties
+    if (!user || user === '' || user.toLowerCase() === 'unknown') {
+      // Try to create a unique identifier from available data
+      const sessionId = event.SessionId || event.CorrelationId || '';
+      const ip = event.initiatedBy?.user?.ipAddress || event.ClientIP || event.IPAddress || '';
+      const app = event.initiatedBy?.app?.displayName || event.initiatedBy?.app?.appId || event.ApplicationId || '';
+      
+      if (sessionId) {
+        user = `Unknown_Session_${sessionId.substring(0, 8)}`;
+      } else if (ip && ip !== 'Unknown') {
+        user = `Unknown_IP_${ip.replace(/\./g, '_')}`;
+      } else if (app && app !== 'Unknown') {
+        user = `Unknown_App_${app.substring(0, 20)}`;
+      } else {
+        // Last resort: use timestamp and random ID to ensure uniqueness
+        const timestamp = new Date(event.activityDateTime || event.CreationTime || event.TimeGenerated || Date.now());
+        user = `Unknown_${timestamp.getTime()}_${Math.random().toString(36).substring(2, 7)}`;
+      }
+    }
+    
     return {
       id: event.id || event.Id || `event_${Date.now()}_${Math.random()}`,
       timestamp: new Date(event.activityDateTime || event.CreationTime || event.TimeGenerated || event.Timestamp),
-      user: event.initiatedBy?.user?.userPrincipalName || 
-            event.initiatedBy?.user?.displayName || 
-            event.UserId || 
-            event.UserPrincipalName || 
-            event.UserDisplayName ||
-            'Unknown',
+      user: user,
       operation: event.activityDisplayName || event.Operation || event.ActivityDisplayName || 'Unknown',
       result: event.result || event.ResultStatus || event.Status || 'Unknown',
       ipAddress: event.initiatedBy?.user?.ipAddress || 
@@ -202,7 +235,8 @@ class EnhancedAnalyzer {
       category: event.category || event.LogName || event.RecordType || 'Unknown',
       targetResources: event.targetResources || [],
       additionalDetails: event.additionalDetails || [],
-      rawEvent: event
+      rawEvent: event,
+      isUnknownUser: user.startsWith('Unknown_')  // Flag to track unknown users
     };
   }
 
@@ -212,6 +246,28 @@ class EnhancedAnalyzer {
     statistics.uniqueApplications.add(event.application);
     statistics.uniqueCountries.add(event.location);
     statistics.uniqueIPAddresses.add(event.ipAddress);
+
+    // Track data quality issues
+    if (event.isUnknownUser) {
+      statistics.dataQuality.unknownUsers++;
+      
+      // Track the type of unknown user
+      if (event.user.startsWith('Unknown_Session_')) {
+        statistics.dataQuality.unknownUserTypes.add('session-based');
+      } else if (event.user.startsWith('Unknown_IP_')) {
+        statistics.dataQuality.unknownUserTypes.add('ip-based');
+      } else if (event.user.startsWith('Unknown_App_')) {
+        statistics.dataQuality.unknownUserTypes.add('app-based');
+      } else if (event.user.startsWith('Unknown_')) {
+        statistics.dataQuality.unknownUserTypes.add('timestamp-based');
+      }
+    }
+    
+    // Count events with any unknown data
+    if (event.user.includes('Unknown') || event.operation === 'Unknown' || 
+        event.application === 'Unknown' || event.location === 'Unknown') {
+      statistics.dataQuality.totalUnknownEvents++;
+    }
 
     if (event.result === 'success' || event.result === 'Success') {
       statistics.successOperations++;
