@@ -8,7 +8,7 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "bullmq": "^5.0.0",
+    "bullmq": "^5.56.5",
     "redis": "^5.6.0",
     "ioredis": "^5.6.1",
     "winston": "^3.17.0",
