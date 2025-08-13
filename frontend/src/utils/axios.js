@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { apiConfig } from '../config/api'
+import { getCurrentOrganizationId } from '../stores/organizationStore'
 
 // Store navigation function globally
 let navigate = null
@@ -12,13 +13,21 @@ export const setNavigate = (nav) => {
 // Create axios instance with base configuration
 const axiosInstance = axios.create(apiConfig)
 
-// Request interceptor to add auth token
+// Request interceptor to add auth token and organization header
 axiosInstance.interceptors.request.use(
   (config) => {
+    // Add auth token
     const token = useAuthStore.getState().token
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
+    
+    // Add organization ID header if available
+    const organizationId = getCurrentOrganizationId()
+    if (organizationId) {
+      config.headers['x-organization-id'] = organizationId
+    }
+    
     return config
   },
   (error) => Promise.reject(error)

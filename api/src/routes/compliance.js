@@ -31,22 +31,29 @@ async function getOrganizationCredentials(req, res, next) {
 
     const organization = result.rows[0];
     const credentials = organization.credentials;
+    
+    // Check for both clientId and applicationId (legacy naming)
+    const clientId = credentials?.clientId || credentials?.applicationId;
 
-    if (!credentials || !credentials.clientId) {
+    if (!credentials || !clientId) {
+      logger.warn(`Organization ${organizationId} missing credentials for compliance assessment`);
       return res.status(400).json({ 
         error: 'Organization credentials are not properly configured',
         details: 'This organization does not have Microsoft 365 credentials configured. Please configure Azure AD app credentials (clientId) in the organization settings before running compliance assessments.',
         missingFields: {
-          clientId: !credentials?.clientId,
+          clientId: !clientId,
           tenantId: !credentials?.tenantId && !organization.tenant_id
-        }
+        },
+        organizationId,
+        hasCredentials: !!credentials,
+        hasClientId: !!clientId
       });
     }
 
     req.organization = organization;
     req.credentials = {
       tenantId: credentials.tenantId || organization.tenant_id,
-      clientId: credentials.clientId
+      clientId: clientId  // Use the resolved clientId
     };
 
     next();
@@ -55,6 +62,67 @@ async function getOrganizationCredentials(req, res, next) {
     res.status(500).json({ error: 'Failed to fetch organization credentials' });
   }
 }
+
+// Check if organization has credentials configured
+router.get('/organization/:organizationId/credentials-status', 
+  authenticateToken, 
+  async (req, res) => {
+    try {
+      const { pool } = require('../services/database');
+      const { organizationId } = req.params;
+      
+      // Verify user has access to this organization
+      const orgCheck = await pool.query(
+        'SELECT 1 FROM maes.user_organizations WHERE user_id = $1 AND organization_id = $2',
+        [req.user.id, organizationId]
+      );
+
+      if (orgCheck.rows.length === 0) {
+        return res.status(403).json({ error: 'Access denied to this organization' });
+      }
+
+      const result = await pool.query(
+        'SELECT id, name, tenant_id, credentials FROM maes.organizations WHERE id = $1 AND is_active = true',
+        [organizationId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Organization not found or inactive' });
+      }
+
+      const organization = result.rows[0];
+      const credentials = organization.credentials;
+      
+      // Check for both clientId and applicationId (legacy naming)
+      const clientId = credentials?.clientId || credentials?.applicationId;
+      const hasCredentials = !!(credentials && clientId);
+
+      res.json({
+        success: true,
+        organizationId,
+        organizationName: organization.name,
+        hasCredentials,
+        credentialsConfigured: {
+          clientId: !!clientId,
+          applicationId: !!credentials?.applicationId,  // Include legacy field
+          tenantId: !!(credentials?.tenantId || organization.tenant_id),
+          certificateThumbprint: !!credentials?.certificateThumbprint,
+          certificatePath: !!credentials?.certificatePath
+        },
+        message: hasCredentials 
+          ? 'Organization has credentials configured for compliance assessments' 
+          : 'Organization needs Azure AD app credentials configured before running compliance assessments'
+      });
+
+    } catch (error) {
+      logger.error('Error checking organization credentials status:', error);
+      res.status(500).json({ 
+        error: 'Failed to check credentials status',
+        message: error.message 
+      });
+    }
+  }
+);
 
 // Get available compliance controls
 router.get('/controls/:assessmentType?', authenticateToken, async (req, res) => {
@@ -148,6 +216,8 @@ router.post('/assess/:organizationId',
         priority = 10
       } = req.body;
 
+      logger.info(`Starting compliance assessment for organization ${organizationId}, type: ${assessmentType}`);
+
       // Call compliance service
       const complianceServiceUrl = process.env.COMPLIANCE_SERVICE_URL || 'http://compliance:3002';
       
@@ -187,18 +257,26 @@ router.post('/assess/:organizationId',
 
     } catch (error) {
       logger.error('Error starting compliance assessment:', error);
+      logger.error('Error details:', {
+        organizationId,
+        credentials: req.credentials,
+        errorMessage: error.message,
+        errorResponse: error.response?.data
+      });
       
       if (error.response) {
         // Compliance service returned an error
         return res.status(error.response.status || 500).json({
           error: 'Compliance assessment failed',
-          message: error.response.data?.message || error.message
+          message: error.response.data?.message || error.message,
+          details: error.response.data
         });
       }
       
       res.status(500).json({ 
         error: 'Failed to start compliance assessment',
-        message: error.message 
+        message: error.message,
+        details: 'Check server logs for more information'
       });
     }
   }

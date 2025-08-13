@@ -668,8 +668,8 @@ class AssessmentEngine {
       { endpoint: '/identity/conditionalAccess/policies', permission: 'Policy.Read.All', critical: true },
       { endpoint: '/applications', permission: 'Application.Read.All', critical: false },
       { endpoint: '/subscribedSkus', permission: 'Organization.Read.All', critical: false },
-      { endpoint: '/reports/credentialUserRegistrationDetails', permission: 'Reports.Read.All', critical: false },
-      { endpoint: '/identity/authenticationMethods/authenticationMethodsPolicy', permission: 'Policy.Read.AuthenticationMethod', critical: false },
+      { endpoint: '/reports/authenticationMethods/userRegistrationDetails', permission: 'Reports.Read.All', critical: false },
+      { endpoint: '/policies/authenticationMethodsPolicy', permission: 'Policy.Read.AuthenticationMethod', critical: false },
     ];
 
     const availablePermissions = [];
@@ -677,8 +677,23 @@ class AssessmentEngine {
 
     for (const perm of requiredPermissions) {
       try {
-        // Test access to endpoint
-        await graphClient.api(perm.endpoint).top(1).get();
+        // Test access to endpoint with appropriate query parameters
+        // Some endpoints don't support pagination
+        const noPaginationEndpoints = [
+          '/directoryRoles',
+          '/subscribedSkus',
+          '/policies/authenticationMethodsPolicy',
+          '/reports/authenticationMethods/userRegistrationDetails'
+        ];
+        
+        let query = graphClient.api(perm.endpoint);
+        
+        // Only add .top() for endpoints that support it
+        if (!noPaginationEndpoints.some(ep => perm.endpoint.includes(ep))) {
+          query = query.top(1);
+        }
+        
+        await query.get();
         availablePermissions.push(perm);
         logger.debug(`✓ Access granted to ${perm.endpoint} (${perm.permission})`);
       } catch (error) {

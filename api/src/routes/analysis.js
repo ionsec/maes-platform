@@ -358,8 +358,15 @@ router.get('/:id', async (req, res) => {
       });
     }
 
-    // Get the associated extraction to verify organization access
-    const extraction = await Extraction.findById(analysisJob.extraction_id, req.organizationId);
+    // Verify the user has access to this analysis job's organization
+    if (analysisJob.organization_id !== req.organizationId) {
+      return res.status(404).json({
+        error: 'Analysis job not found'
+      });
+    }
+
+    // Get the associated extraction using the job's organization ID
+    const extraction = await Extraction.findById(analysisJob.extraction_id, analysisJob.organization_id);
     if (!extraction) {
       return res.status(404).json({
         error: 'Analysis job not found'
@@ -470,19 +477,38 @@ router.post('/',
 // Get analysis results
 router.get('/:id/results', async (req, res) => {
   try {
+    logger.info(`Fetching analysis results for ID: ${req.params.id}, Organization: ${req.organizationId}`);
+    
     const analysisJob = await AnalysisJob.findById(req.params.id);
 
     if (!analysisJob) {
+      logger.warn(`Analysis job not found: ${req.params.id}`);
       return res.status(404).json({
-        error: 'Analysis job not found'
+        error: 'Analysis job not found',
+        details: `No analysis job found with ID: ${req.params.id}`
       });
     }
 
-    // Get the associated extraction to verify organization access
-    const extraction = await Extraction.findById(analysisJob.extraction_id, req.organizationId);
-    if (!extraction) {
+    logger.info(`Found analysis job: ${req.params.id}, extraction_id: ${analysisJob.extraction_id}, job_org: ${analysisJob.organization_id}`);
+
+    // Verify the user has access to this analysis job's organization
+    if (analysisJob.organization_id !== req.organizationId) {
+      logger.warn(`Access denied - organization mismatch. Job Org: ${analysisJob.organization_id}, Requested Org: ${req.organizationId}`);
       return res.status(404).json({
-        error: 'Analysis job not found'
+        error: 'Analysis job not found',
+        details: 'Access denied - wrong organization'
+      });
+    }
+
+    // Get the associated extraction using the job's organization ID
+    const extraction = await Extraction.findById(analysisJob.extraction_id, analysisJob.organization_id);
+    logger.info(`Extraction lookup result: ${extraction ? 'found' : 'not found'}, looking for extraction_id: ${analysisJob.extraction_id}, with org_id: ${analysisJob.organization_id}`);
+    
+    if (!extraction) {
+      logger.warn(`Extraction not found. Extraction: ${analysisJob.extraction_id}, Job Org: ${analysisJob.organization_id}`);
+      return res.status(404).json({
+        error: 'Analysis job not found', 
+        details: 'Associated extraction not found'
       });
     }
 
@@ -512,19 +538,36 @@ router.post('/:id/cancel',
   requirePermission('canRunAnalysis'),
   async (req, res) => {
     try {
+      logger.info(`Canceling analysis job: ${req.params.id}, Organization: ${req.organizationId}`);
+      
       const analysisJob = await AnalysisJob.findById(req.params.id);
 
       if (!analysisJob) {
+        logger.warn(`Analysis job not found for cancel: ${req.params.id}`);
         return res.status(404).json({
-          error: 'Analysis job not found'
+          error: 'Analysis job not found',
+          details: `No analysis job found with ID: ${req.params.id}`
         });
       }
 
-      // Get the associated extraction to verify organization access
-      const extraction = await Extraction.findById(analysisJob.extraction_id, req.organizationId);
-      if (!extraction) {
+      logger.info(`Found analysis job to cancel: ${req.params.id}, extraction_id: ${analysisJob.extraction_id}, job_org: ${analysisJob.organization_id}`);
+
+      // Verify the user has access to this analysis job's organization
+      if (analysisJob.organization_id !== req.organizationId) {
+        logger.warn(`Access denied for cancel - organization mismatch. Job Org: ${analysisJob.organization_id}, Requested Org: ${req.organizationId}`);
         return res.status(404).json({
-          error: 'Analysis job not found'
+          error: 'Analysis job not found',
+          details: 'Access denied - wrong organization'
+        });
+      }
+
+      // Get the associated extraction using the job's organization ID
+      const extraction = await Extraction.findById(analysisJob.extraction_id, analysisJob.organization_id);
+      if (!extraction) {
+        logger.warn(`Extraction not found for cancel. Extraction: ${analysisJob.extraction_id}, Job Org: ${analysisJob.organization_id}`);
+        return res.status(404).json({
+          error: 'Analysis job not found',
+          details: 'Associated extraction not found'
         });
       }
 
