@@ -15,6 +15,9 @@ CREATE TYPE maes.user_role AS ENUM (
   'viewer'        -- Read-only access to reports and dashboards
 );
 
+-- First drop the default constraint if it exists
+ALTER TABLE maes.users ALTER COLUMN role DROP DEFAULT;
+
 -- Migrate existing users to simplified roles
 ALTER TABLE maes.users 
   ALTER COLUMN role TYPE maes.user_role 
@@ -26,12 +29,11 @@ ALTER TABLE maes.users
     ELSE 'viewer'::maes.user_role
   END;
 
--- Drop the legacy role type
-DROP TYPE maes.user_role_legacy;
+-- Set a new default
+ALTER TABLE maes.users ALTER COLUMN role SET DEFAULT 'viewer'::maes.user_role;
+
+-- Drop the legacy role type CASCADE to remove dependencies
+DROP TYPE maes.user_role_legacy CASCADE;
 
 -- Add comment for documentation
 COMMENT ON TYPE maes.user_role IS 'Simplified RBAC roles: super_admin (system), admin (org), analyst (operations), viewer (read-only)';
-
--- Log the migration
-INSERT INTO maes.system_logs (level, message, created_at)
-VALUES ('info', 'RBAC roles simplified from MSSP/client/standalone to super_admin/admin/analyst/viewer', NOW());
