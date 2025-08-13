@@ -240,9 +240,37 @@ const Compliance = () => {
     }
   };
 
-  const handleDownloadReport = (assessmentId, fileName) => {
-    const downloadUrl = `/api/compliance/assessments/${assessmentId}/report/${fileName}/download`;
-    window.open(downloadUrl, '_blank');
+  const handleDownloadReport = async (assessmentId, fileName) => {
+    try {
+      const downloadUrl = `/api/compliance/assessments/${assessmentId}/report/${fileName}/download`;
+      
+      const response = await axios.get(downloadUrl, {
+        responseType: 'blob'
+      });
+      
+      // Determine content type based on file extension
+      let contentType = 'application/octet-stream';
+      if (fileName.endsWith('.html')) contentType = 'text/html';
+      else if (fileName.endsWith('.pdf')) contentType = 'application/pdf';
+      else if (fileName.endsWith('.json')) contentType = 'application/json';
+      else if (fileName.endsWith('.csv')) contentType = 'text/csv';
+      
+      // Create blob URL and trigger download
+      const blob = new Blob([response.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      enqueueSnackbar('Report download started', { variant: 'success' });
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      enqueueSnackbar('Failed to download report', { variant: 'error' });
+    }
   };
 
   const openReportDialog = async (assessment) => {
