@@ -865,7 +865,8 @@ if (!isMainThread && workerData.type === 'job_processor') {
       try {
         const uploadResponse = await axios.get(`http://api:3000/api/upload/data/${extractionId}`, {
           headers: {
-            'x-service-token': process.env.SERVICE_AUTH_TOKEN
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN || 'service_internal_token_change_in_production',
+            'x-organization-id': organizationId
           },
           timeout: 30000
         });
