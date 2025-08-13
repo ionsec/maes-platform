@@ -416,7 +416,7 @@ const ROLE_PERMISSIONS = {
     canAccessApi: false,
     canManageCompliance: true
   },
-  viewer:
+  viewer: {
     canManageExtractions: false,
     canRunAnalysis: false,
     canViewReports: true,
