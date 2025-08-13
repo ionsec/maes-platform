@@ -1,9 +1,33 @@
 const fs = require('fs');
 const path = require('path');
 const { logger } = require('./logger');
+const Redis = require('ioredis');
 
 const LOG_FILE_PATH = '/output/LogFile.txt';
 const OUTPUT_PATH = '/output';
+
+// Redis client for logging
+const redisClient = new Redis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: parseInt(process.env.REDIS_PORT) || 6379,
+  password: process.env.REDIS_PASSWORD
+});
+
+// Helper function to log to Redis
+async function logToRedis(extractionId, level, message) {
+  try {
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      level: level,
+      message: message
+    };
+    const key = `extraction:logs:${extractionId}`;
+    await redisClient.rpush(key, JSON.stringify(logEntry));
+    await redisClient.expire(key, 86400); // 24 hours TTL
+  } catch (error) {
+    logger.error('Failed to log to Redis:', error);
+  }
+}
 
 // Monitor LogFile.txt for extraction progress
 function updateExtractionProgress(extractionId, job) {
@@ -24,7 +48,13 @@ function updateExtractionProgress(extractionId, job) {
     /(\d+)\s+items\s+exported/i,
     /Export\s+completed/i,
     /Extraction\s+finished/i,
-    /Collection\s+complete/i
+    /Collection\s+complete/i,
+    // PowerShell output patterns
+    /\[INFO\]\s+Total\s+number\s+of\s+events\s+during\s+the\s+acquisition\s+period:\s*(\d+)/i,
+    /\[INFO\]\s+Using\s+interval\s+of\s+(\d+)\s+minutes/i,
+    /\[INFO\]\s+Found\s+(\d+)\s+audit\s+logs/i,
+    /Total\s+number\s+of\s+events:\s*(\d+)/i,
+    /Found\s+(\d+)\s+events/i
   ];
 
   const statusPatterns = [
@@ -48,7 +78,12 @@ function updateExtractionProgress(extractionId, job) {
     { pattern: /Saving\s+.*file/i, progress: 70, status: 'Saving output files' },
     { pattern: /Export\s+completed/i, progress: 85, status: 'Export completed' },
     { pattern: /Extraction\s+complete/i, progress: 90, status: 'Extraction complete' },
-    { pattern: /Disconnecting/i, progress: 95, status: 'Disconnecting from services' }
+    { pattern: /Disconnecting/i, progress: 95, status: 'Disconnecting from services' },
+    // PowerShell status patterns
+    { pattern: /\[INFO\]\s+Total\s+number\s+of\s+events\s+during\s+the\s+acquisition\s+period:\s*(\d+)/i, progress: 35, status: 'Calculating event distribution' },
+    { pattern: /\[INFO\]\s+Using\s+interval\s+of\s+(\d+)\s+minutes/i, progress: 38, status: 'Setting extraction interval' },
+    { pattern: /\[INFO\]\s+Found\s+(\d+)\s+audit\s+logs\s+between/i, progress: 45, status: 'Processing audit logs' },
+    { pattern: /PowerShell\s+output:/i, progress: 32, status: 'Executing PowerShell commands' }
   ];
 
   const errorPatterns = [
@@ -109,6 +144,11 @@ function updateExtractionProgress(extractionId, job) {
     
     for (const line of lines) {
       if (!line.trim()) continue;
+      
+      // Always log PowerShell output and [INFO] messages to Redis for real-time logs
+      if (line.includes('PowerShell output:') || line.includes('[INFO]')) {
+        await logToRedis(extractionId, 'info', line.trim());
+      }
 
       // Check for UAL status updates first
       if (line.includes('UAL_STATUS:')) {
@@ -136,10 +176,23 @@ function updateExtractionProgress(extractionId, job) {
 
       // Check for specific status patterns
       for (const statusInfo of statusPatterns) {
-        if (statusInfo.pattern.test(line)) {
+        const match = line.match(statusInfo.pattern);
+        if (match) {
           currentProgress = Math.max(currentProgress, statusInfo.progress);
-          logger.info(`Extraction ${extractionId} status: ${statusInfo.status} (${currentProgress}%)`);
-          await updateProgress(currentProgress, 'running', statusInfo.status);
+          let statusMessage = statusInfo.status;
+          
+          // If the pattern captured a number, include it in the status
+          if (match[1]) {
+            statusMessage = `${statusInfo.status}: ${match[1]}`;
+          }
+          
+          logger.info(`Extraction ${extractionId} status: ${statusMessage} (${currentProgress}%)`);
+          await updateProgress(currentProgress, 'running', statusMessage);
+          
+          // Also log PowerShell [INFO] messages to Redis for real-time display
+          if (line.includes('[INFO]') || line.includes('PowerShell output:')) {
+            await logToRedis(extractionId, 'info', line.trim());
+          }
           break;
         }
       }
@@ -149,6 +202,7 @@ function updateExtractionProgress(extractionId, job) {
         const match = line.match(progressPattern);
         if (match) {
           let detectedProgress = currentProgress;
+          let progressMessage = line.trim();
           
           if (match[1] && match[2]) {
             // Format: "Processing X of Y" or "Extracted X/Y"
@@ -165,13 +219,22 @@ function updateExtractionProgress(extractionId, job) {
             } else {
               // Large number (record count), increment gradually
               detectedProgress = Math.min(currentProgress + 5, 85);
+              // For PowerShell [INFO] messages with counts
+              if (line.includes('[INFO]')) {
+                progressMessage = line.replace(/\[INFO\]\s*/i, '').trim();
+              }
             }
           }
           
           if (detectedProgress > currentProgress) {
             currentProgress = Math.min(detectedProgress, 95); // Cap at 95%
-            logger.info(`Extraction ${extractionId} progress: ${currentProgress}% - ${line.trim()}`);
-            await updateProgress(currentProgress, 'running', line.trim());
+            logger.info(`Extraction ${extractionId} progress: ${currentProgress}% - ${progressMessage}`);
+            await updateProgress(currentProgress, 'running', progressMessage);
+          }
+          
+          // Log PowerShell [INFO] messages to Redis
+          if (line.includes('[INFO]')) {
+            await logToRedis(extractionId, 'info', line.trim());
           }
           break;
         }

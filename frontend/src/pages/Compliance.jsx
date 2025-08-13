@@ -48,6 +48,9 @@ import {
   Warning as WarningIcon,
   RemoveCircleOutline as RemoveCircleOutlineIcon,
   Error as ErrorIcon,
+  Download as DownloadIcon,
+  Description as DescriptionIcon,
+  PictureAsPdf as PdfIcon,
   Help as HelpIcon,
   ExpandMore as ExpandMoreIcon,
   GetApp as GetAppIcon,
@@ -76,6 +79,12 @@ const Compliance = () => {
   const [selectedAssessmentType, setSelectedAssessmentType] = useState('cis_v400');
   const [hasCredentials, setHasCredentials] = useState(false);
   const [credentialsStatus, setCredentialsStatus] = useState(null);
+  const [reportDialog, setReportDialog] = useState(false);
+  const [selectedAssessmentForReport, setSelectedAssessmentForReport] = useState(null);
+  const [reportFormat, setReportFormat] = useState('html');
+  const [reportType, setReportType] = useState('full');
+  const [generatingReport, setGeneratingReport] = useState(false);
+  const [availableReports, setAvailableReports] = useState([]);
   
   // Fetch compliance data
   useEffect(() => {
@@ -174,6 +183,74 @@ const Compliance = () => {
     }
   };
 
+  const handleGenerateReport = async () => {
+    if (!selectedAssessmentForReport) return;
+    
+    try {
+      setGeneratingReport(true);
+      
+      const response = await axios.post(
+        `/api/compliance/assessments/${selectedAssessmentForReport.id}/report`,
+        {
+          format: reportFormat,
+          type: reportType,
+          options: {
+            includeRemediation: true,
+            includeExecutiveSummary: reportType === 'executive',
+            includeFailingEntities: true
+          }
+        }
+      );
+
+      if (response.data.success) {
+        enqueueSnackbar(`Report generated successfully`, { variant: 'success' });
+        
+        // Fetch available reports
+        await fetchAvailableReports(selectedAssessmentForReport.id);
+        
+        // If HTML, offer to preview
+        if (reportFormat === 'html') {
+          const downloadUrl = `/api/compliance/assessments/${selectedAssessmentForReport.id}/report/${response.data.report.fileName}/download`;
+          window.open(downloadUrl, '_blank');
+        }
+      }
+
+    } catch (error) {
+      console.error('Error generating report:', error);
+      enqueueSnackbar(
+        error.response?.data?.error || 'Failed to generate report',
+        { variant: 'error' }
+      );
+    } finally {
+      setGeneratingReport(false);
+    }
+  };
+
+  const fetchAvailableReports = async (assessmentId) => {
+    try {
+      const response = await axios.get(
+        `/api/compliance/assessments/${assessmentId}/reports`
+      );
+      
+      if (response.data.success) {
+        setAvailableReports(response.data.reports || []);
+      }
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+    }
+  };
+
+  const handleDownloadReport = (assessmentId, fileName) => {
+    const downloadUrl = `/api/compliance/assessments/${assessmentId}/report/${fileName}/download`;
+    window.open(downloadUrl, '_blank');
+  };
+
+  const openReportDialog = async (assessment) => {
+    setSelectedAssessmentForReport(assessment);
+    setReportDialog(true);
+    await fetchAvailableReports(assessment.id);
+  };
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'completed': return 'success';
@@ -209,6 +286,7 @@ const Compliance = () => {
   const currentOrganization = organizations.find(org => org.organization_id === selectedOrganizationId);
 
   return (
+    <>
     <Box sx={{ flexGrow: 1 }}>
       <Typography variant="h4" sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
         <SecurityIcon color="primary" />
@@ -450,9 +528,18 @@ const Compliance = () => {
                     }
                   />
                   <ListItemSecondaryAction>
-                    <IconButton edge="end" onClick={() => handleViewDetails(assessment.id)}>
-                      <AssessmentIcon />
-                    </IconButton>
+                    <Tooltip title="View Details">
+                      <IconButton onClick={() => handleViewDetails(assessment.id)}>
+                        <AssessmentIcon />
+                      </IconButton>
+                    </Tooltip>
+                    {assessment.status === 'completed' && (
+                      <Tooltip title="Generate Report">
+                        <IconButton onClick={() => openReportDialog(assessment)}>
+                          <DescriptionIcon />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </ListItemSecondaryAction>
                 </ListItem>
               ))}
@@ -518,6 +605,139 @@ const Compliance = () => {
         assessment={assessmentDetails}
       />
     </Box>
+
+    {/* Report Generation Dialog */}
+    <Dialog 
+      open={reportDialog} 
+      onClose={() => setReportDialog(false)}
+      maxWidth="md" 
+      fullWidth
+    >
+      <DialogTitle>
+        Generate Compliance Report
+        {selectedAssessmentForReport && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Assessment: {selectedAssessmentForReport.name} ({selectedAssessmentForReport.id.slice(0, 8)}...)
+          </Typography>
+        )}
+      </DialogTitle>
+      <DialogContent>
+        <Grid container spacing={3} sx={{ mt: 0 }}>
+          {/* Report Format */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth>
+              <InputLabel>Report Format</InputLabel>
+              <Select
+                value={reportFormat}
+                onChange={(e) => setReportFormat(e.target.value)}
+                label="Report Format"
+              >
+                <MenuItem value="html">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DescriptionIcon fontSize="small" />
+                    HTML (Web View)
+                  </Box>
+                </MenuItem>
+                <MenuItem value="pdf">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <PdfIcon fontSize="small" />
+                    PDF (Print Ready)
+                  </Box>
+                </MenuItem>
+                <MenuItem value="json">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DescriptionIcon fontSize="small" />
+                    JSON (Machine Readable)
+                  </Box>
+                </MenuItem>
+                <MenuItem value="csv">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DescriptionIcon fontSize="small" />
+                    CSV (Spreadsheet)
+                  </Box>
+                </MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Report Type */}
+          <Grid item xs={12} sm={6}>
+            <FormControl fullWidth>
+              <InputLabel>Report Type</InputLabel>
+              <Select
+                value={reportType}
+                onChange={(e) => setReportType(e.target.value)}
+                label="Report Type"
+              >
+                <MenuItem value="full">Full Report (All Details)</MenuItem>
+                <MenuItem value="executive">Executive Summary</MenuItem>
+                <MenuItem value="remediation">Remediation Focus</MenuItem>
+                <MenuItem value="comparison" disabled>Comparison Report</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          {/* Report Description */}
+          <Grid item xs={12}>
+            <Alert severity="info">
+              {reportType === 'full' && 
+                'Comprehensive report including all control results, remediation guidance, and detailed findings.'
+              }
+              {reportType === 'executive' && 
+                'High-level summary suitable for management with key metrics and critical findings.'
+              }
+              {reportType === 'remediation' && 
+                'Focused report on non-compliant controls with detailed remediation steps.'
+              }
+            </Alert>
+          </Grid>
+
+          {/* Available Reports */}
+          {availableReports.length > 0 && (
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" gutterBottom>
+                Previously Generated Reports
+              </Typography>
+              <List dense>
+                {availableReports.map((report, index) => (
+                  <ListItem key={index}>
+                    <ListItemIcon>
+                      {report.format === 'pdf' ? <PdfIcon /> : <DescriptionIcon />}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={report.file_name}
+                      secondary={`${report.format.toUpperCase()} • ${report.type} • ${new Date(report.created_at).toLocaleString()}`}
+                    />
+                    <ListItemSecondaryAction>
+                      <IconButton 
+                        edge="end" 
+                        onClick={() => handleDownloadReport(selectedAssessmentForReport.id, report.file_name)}
+                      >
+                        <DownloadIcon />
+                      </IconButton>
+                    </ListItemSecondaryAction>
+                  </ListItem>
+                ))}
+              </List>
+            </Grid>
+          )}
+        </Grid>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setReportDialog(false)}>
+          Cancel
+        </Button>
+        <Button 
+          onClick={handleGenerateReport}
+          variant="contained"
+          disabled={generatingReport}
+          startIcon={generatingReport ? <CircularProgress size={20} /> : <DescriptionIcon />}
+        >
+          {generatingReport ? 'Generating...' : 'Generate Report'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 };
 

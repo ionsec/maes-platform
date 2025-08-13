@@ -861,6 +861,12 @@ async function executePowerShell(command, job, extractionLogger) {
         // Parse and clean up PowerShell output for extraction logs
         const lines = output.split('\n').filter(line => line.trim());
         lines.forEach(line => {
+          // Log PowerShell [INFO] messages with proper formatting
+          if (line.includes('[INFO]')) {
+            extractionLogger.info(line.trim());
+            return;
+          }
+          
           // Skip banner lines
           if (line.includes('+-+-+-+-+-+-+-+-+-+') || 
               line.includes('|M|i|c|r|o|s|o|f|t|') ||
