@@ -140,13 +140,15 @@ const ROLE_PERMISSIONS = {
     canManageLicenses: true,
     canConfigureGlobalSettings: true,
     canManageBackups: true,
-    canAccessDeveloperTools: true
+    canAccessDeveloperTools: true,
+    canManageCompliance: true
   },
   mssp_admin: {
     canManageExtractions: true,
     canRunAnalysis: true,
     canViewReports: true,
     canManageAlerts: true,
+    canManageCompliance: true,
     canManageUsers: true,
     canManageOrganization: true,
     canManageClients: true,
@@ -184,7 +186,8 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: true
   },
   mssp_responder: {
     canManageExtractions: false,
@@ -208,7 +211,8 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: false
   },
   client_admin: {
     canManageExtractions: true,
@@ -232,7 +236,8 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: true
   },
   client_analyst: {
     canManageExtractions: true,
@@ -256,7 +261,8 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: true
   },
   client_viewer: {
     canManageExtractions: false,
@@ -276,7 +282,8 @@ const ROLE_PERMISSIONS = {
     canExportData: false,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: false
   },
   standalone_admin: {
     canManageExtractions: true,
@@ -300,7 +307,8 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: true
   },
   standalone_analyst: {
     canManageExtractions: true,
@@ -324,7 +332,8 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: true
   },
   standalone_viewer: {
     canManageExtractions: false,
@@ -344,7 +353,8 @@ const ROLE_PERMISSIONS = {
     canExportData: false,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: false
   },
   admin: {
     canManageExtractions: true,
@@ -378,7 +388,8 @@ const ROLE_PERMISSIONS = {
     canManageLicenses: true,
     canConfigureGlobalSettings: true,
     canManageBackups: true,
-    canAccessDeveloperTools: true
+    canAccessDeveloperTools: true,
+    canManageCompliance: true
   },
   analyst: {
     canManageExtractions: true,
@@ -402,9 +413,10 @@ const ROLE_PERMISSIONS = {
     canExportData: true,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: true
   },
-  viewer: {
+  viewer:
     canManageExtractions: false,
     canRunAnalysis: false,
     canViewReports: true,
@@ -422,7 +434,8 @@ const ROLE_PERMISSIONS = {
     canExportData: false,
     canViewAuditLogs: false,
     canManageSystemSettings: false,
-    canAccessApi: false
+    canAccessApi: false,
+    canManageCompliance: false
   }
 };
 
