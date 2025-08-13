@@ -3,12 +3,28 @@ const { body, validationResult } = require('express-validator');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
+const { createAnalysisJob } = require('../services/jobService');
+const { AnalysisJob } = require('../services/models');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
 
 const router = express.Router();
+
+// Map data types to analysis types
+const DATA_TYPE_TO_ANALYSIS_TYPE = {
+  'unified_audit_log': 'ual_analysis',
+  'azure_signin_logs': 'signin_analysis',
+  'azure_audit_logs': 'audit_analysis',
+  'mfa_status': 'mfa_analysis',
+  'oauth_permissions': 'oauth_analysis',
+  'risky_users': 'risky_user_analysis',
+  'risky_detections': 'risky_detection_analysis',
+  'mailbox_audit': 'audit_analysis',
+  'message_trace': 'message_trace_analysis',
+  'devices': 'device_analysis'
+};
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -383,19 +399,82 @@ router.post('/logs',
         fileName: req.file.originalname
       });
 
-      res.status(201).json({
-        success: true,
-        extraction: {
-          id: extraction.id,
-          type: extraction.type,
-          status: extraction.status,
-          startDate: extraction.startDate,
-          endDate: extraction.endDate,
-          itemsExtracted: extraction.itemsExtracted,
-          isUpload: true,
-          parameters: extraction.parameters
-        }
-      });
+      // Automatically create and queue analysis job for uploaded data
+      try {
+        const analysisType = DATA_TYPE_TO_ANALYSIS_TYPE[dataType] || 'comprehensive_analysis';
+        
+        logger.info('Creating automatic analysis job', {
+          extractionId: extraction.id,
+          analysisType: analysisType,
+          organizationId: req.organizationId
+        });
+
+        // Create analysis job record
+        const analysisJob = await AnalysisJob.create({
+          extractionId: extraction.id,
+          organizationId: req.organizationId,
+          type: analysisType,
+          priority: 'medium',
+          parameters: {
+            autoTriggered: true,
+            fromUpload: true,
+            uploadFileName: req.file.originalname,
+            enableThreatIntel: true,
+            enablePatternDetection: true,
+            enableAnomalyDetection: false
+          },
+          status: 'pending'
+        });
+
+        // Queue the analysis job
+        await createAnalysisJob(analysisJob);
+
+        logger.info('Analysis job created and queued', {
+          analysisJobId: analysisJob.id,
+          extractionId: extraction.id
+        });
+
+        // Return response with both extraction and analysis job info
+        res.status(201).json({
+          success: true,
+          extraction: {
+            id: extraction.id,
+            type: extraction.type,
+            status: extraction.status,
+            startDate: extraction.startDate,
+            endDate: extraction.endDate,
+            itemsExtracted: extraction.itemsExtracted,
+            isUpload: true,
+            parameters: extraction.parameters
+          },
+          analysisJob: {
+            id: analysisJob.id,
+            type: analysisJob.type,
+            status: analysisJob.status,
+            message: 'Analysis job automatically started'
+          }
+        });
+
+      } catch (analysisError) {
+        // If analysis job creation fails, still return success for upload
+        // but log the error and inform the user
+        logger.error('Failed to create automatic analysis job:', analysisError);
+        
+        res.status(201).json({
+          success: true,
+          extraction: {
+            id: extraction.id,
+            type: extraction.type,
+            status: extraction.status,
+            startDate: extraction.startDate,
+            endDate: extraction.endDate,
+            itemsExtracted: extraction.itemsExtracted,
+            isUpload: true,
+            parameters: extraction.parameters
+          },
+          warning: 'Upload successful but automatic analysis could not be started. Please manually start analysis.'
+        });
+      }
 
     } catch (error) {
       logger.error('Upload logs error:', error);
