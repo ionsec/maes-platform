@@ -1,9 +1,12 @@
 const { Worker, Queue } = require('bullmq');
 const express = require('express');
+const path = require('path');
+const fs = require('fs').promises;
 const { logger } = require('./logger');
 const { sequelize } = require('./models');
 const assessmentEngine = require('./services/assessmentEngine');
 const scheduler = require('./services/scheduler');
+const reportGenerator = require('./services/reportGenerator');
 
 // Redis connection configuration
 const redisConnection = {
@@ -25,6 +28,12 @@ const app = express();
 const PORT = process.env.COMPLIANCE_PORT || 3002;
 
 app.use(express.json());
+
+// Ensure reports directory exists
+const REPORTS_DIR = path.join(__dirname, '../reports');
+fs.mkdir(REPORTS_DIR, { recursive: true }).catch(err => 
+  logger.error('Failed to create reports directory:', err)
+);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -218,6 +227,158 @@ app.get('/api/scheduler/stats', validateServiceToken, async (req, res) => {
   }
 });
 
+// Report generation endpoints
+app.post('/api/assessment/:assessmentId/report', validateServiceToken, async (req, res) => {
+  try {
+    const { assessmentId } = req.params;
+    const { format = 'html', type = 'full', options = {} } = req.body;
+
+    logger.info(`Generating ${format} report for assessment ${assessmentId}`);
+
+    // Check if assessment exists and is completed
+    const { ComplianceAssessment } = require('./models');
+    const assessment = await ComplianceAssessment.findByPk(assessmentId);
+    
+    if (!assessment) {
+      return res.status(404).json({
+        error: 'Assessment not found'
+      });
+    }
+
+    if (assessment.status !== 'completed') {
+      return res.status(400).json({
+        error: 'Assessment must be completed before generating report'
+      });
+    }
+
+    let reportResult;
+    
+    // Generate report based on type
+    if (type === 'executive') {
+      reportResult = await reportGenerator.generateExecutiveSummary(assessmentId, options);
+    } else {
+      reportResult = await reportGenerator.generateReport(assessmentId, format, options);
+    }
+
+    // Store report metadata in database
+    const { query } = require('./models').sequelize;
+    await query(
+      `INSERT INTO maes.compliance_reports 
+       (id, assessment_id, organization_id, format, type, file_path, file_name, file_size, status, created_at) 
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'completed', NOW())`,
+      [
+        assessmentId,
+        assessment.organization_id,
+        reportResult.format || format,
+        type,
+        reportResult.filePath,
+        reportResult.fileName,
+        reportResult.size
+      ]
+    );
+
+    res.json({
+      success: true,
+      report: {
+        assessmentId,
+        format: reportResult.format || format,
+        type,
+        fileName: reportResult.fileName,
+        size: reportResult.size,
+        generatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    logger.error(`Failed to generate report for assessment ${req.params.assessmentId}:`, error);
+    res.status(500).json({
+      error: 'Failed to generate report',
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/assessment/:assessmentId/reports', validateServiceToken, async (req, res) => {
+  try {
+    const { assessmentId } = req.params;
+    
+    // Get all reports for this assessment
+    const { getRows } = require('./models').sequelize;
+    const reports = await getRows(
+      `SELECT * FROM maes.compliance_reports 
+       WHERE assessment_id = $1 
+       ORDER BY created_at DESC`,
+      [assessmentId]
+    );
+
+    res.json({
+      success: true,
+      reports: reports || []
+    });
+
+  } catch (error) {
+    logger.error(`Failed to get reports for assessment ${req.params.assessmentId}:`, error);
+    res.status(500).json({
+      error: 'Failed to get reports',
+      message: error.message
+    });
+  }
+});
+
+app.get('/api/assessment/:assessmentId/report/:fileName/download', validateServiceToken, async (req, res) => {
+  try {
+    const { assessmentId, fileName } = req.params;
+    
+    // Verify the report exists in database
+    const { getRow } = require('./models').sequelize;
+    const report = await getRow(
+      `SELECT * FROM maes.compliance_reports 
+       WHERE assessment_id = $1 AND file_name = $2`,
+      [assessmentId, fileName]
+    );
+
+    if (!report) {
+      return res.status(404).json({
+        error: 'Report not found'
+      });
+    }
+
+    // Check if file exists
+    const filePath = path.join(REPORTS_DIR, fileName);
+    try {
+      await fs.access(filePath);
+    } catch (err) {
+      logger.error(`Report file not found: ${filePath}`);
+      return res.status(404).json({
+        error: 'Report file not found'
+      });
+    }
+
+    // Read and send file
+    const fileContent = await fs.readFile(filePath);
+    
+    // Set appropriate content type based on format
+    let contentType = 'application/octet-stream';
+    if (report.format === 'html') contentType = 'text/html';
+    else if (report.format === 'json') contentType = 'application/json';
+    else if (report.format === 'csv') contentType = 'text/csv';
+    else if (report.format === 'pdf') contentType = 'application/pdf';
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', fileContent.length);
+    
+    res.send(fileContent);
+
+  } catch (error) {
+    logger.error(`Failed to download report:`, error);
+    res.status(500).json({
+      error: 'Failed to download report',
+      message: error.message
+    });
+  }
+});
+
 // Initialize the compliance service
 async function initialize() {
   try {
@@ -230,6 +391,10 @@ async function initialize() {
     // Initialize scheduler
     await scheduler.initialize();
     logger.info('Compliance scheduler initialized');
+
+    // Initialize report generator
+    await reportGenerator.initialize();
+    logger.info('Report generator initialized');
 
     // Set up queue processors
     setupQueueProcessors();
@@ -332,6 +497,18 @@ function setupPeriodicTasks() {
       logger.error('Job cleanup failed:', error);
     }
   }, 3600000);
+
+  // Clean up old reports every day
+  setInterval(async () => {
+    try {
+      const deletedCount = await reportGenerator.cleanupOldReports(30 * 24 * 60 * 60 * 1000); // 30 days
+      if (deletedCount > 0) {
+        logger.info(`Cleaned up ${deletedCount} old report files`);
+      }
+    } catch (error) {
+      logger.error('Report cleanup failed:', error);
+    }
+  }, 24 * 60 * 60 * 1000); // Daily
 
   logger.info('Periodic tasks set up successfully');
 }

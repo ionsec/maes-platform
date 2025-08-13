@@ -604,7 +604,7 @@ const Extractions = () => {
                     />
                   </TableCell>
                   <TableCell>
-                    <Box sx={{ width: 100 }}>
+                    <Box sx={{ width: 150 }}>
                       {(() => {
                         const progress = progressData[extraction.id] ? progressData[extraction.id].progress : (extraction.progress || 0);
                         const currentMessage = progressData[extraction.id] ? progressData[extraction.id].currentMessage : '';
@@ -626,8 +626,46 @@ const Extractions = () => {
                               {progress}%
                             </Typography>
                             {currentMessage && extraction.status === 'running' && (
-                              <Typography variant="caption" display="block" color="text.secondary" sx={{ fontSize: '0.7rem', mt: 0.5 }}>
-                                {currentMessage.length > 30 ? currentMessage.substring(0, 30) + '...' : currentMessage}
+                              <Typography 
+                                variant="caption" 
+                                display="block" 
+                                color="text.secondary" 
+                                sx={{ 
+                                  fontSize: '0.7rem', 
+                                  mt: 0.5,
+                                  lineHeight: 1.2,
+                                  wordBreak: 'break-word'
+                                }}
+                              >
+                                {(() => {
+                                  // Clean up and format the message
+                                  let formattedMessage = currentMessage;
+                                  
+                                  // Remove [INFO] prefix if present
+                                  formattedMessage = formattedMessage.replace(/^\[INFO\]\s*/i, '');
+                                  
+                                  // Shorten long messages but keep important information
+                                  if (formattedMessage.includes('Total number of events')) {
+                                    const match = formattedMessage.match(/(\d+)/);
+                                    if (match) {
+                                      formattedMessage = `Total events: ${match[1]}`;
+                                    }
+                                  } else if (formattedMessage.includes('Using interval')) {
+                                    const match = formattedMessage.match(/(\d+)\s+minutes/);
+                                    if (match) {
+                                      formattedMessage = `Interval: ${match[1]} min`;
+                                    }
+                                  } else if (formattedMessage.includes('Found') && formattedMessage.includes('audit logs')) {
+                                    const match = formattedMessage.match(/(\d+)/);
+                                    if (match) {
+                                      formattedMessage = `Found ${match[1]} audit logs`;
+                                    }
+                                  } else if (formattedMessage.length > 50) {
+                                    formattedMessage = formattedMessage.substring(0, 50) + '...';
+                                  }
+                                  
+                                  return formattedMessage;
+                                })()}
                               </Typography>
                             )}
                           </Box>
@@ -937,25 +975,46 @@ const Extractions = () => {
                   selectedExtraction.logs.map((log, index) => {
                     let color = '#d4d4d4';
                     let icon = '';
+                    let displayMessage = log.message;
                     
-                    switch(log.level) {
-                      case 'error':
-                        color = '#f85149';
-                        icon = '❌';
-                        break;
-                      case 'warn':
-                        color = '#d29922';
-                        icon = '⚠️';
-                        break;
-                      case 'success':
-                        color = '#3fb950';
-                        icon = '✅';
-                        break;
-                      case 'info':
-                      default:
-                        color = '#79c0ff';
-                        icon = 'ℹ️';
-                        break;
+                    // Format PowerShell [INFO] messages
+                    if (log.message && log.message.includes('[INFO]')) {
+                      displayMessage = log.message.replace(/^\[INFO\]\s*/i, '');
+                      // Special formatting for specific PowerShell messages
+                      if (displayMessage.includes('Total number of events during')) {
+                        icon = '📊';
+                        color = '#58a6ff';
+                      } else if (displayMessage.includes('Using interval')) {
+                        icon = '⏱️';
+                        color = '#58a6ff';
+                      } else if (displayMessage.includes('Found') && displayMessage.includes('audit logs')) {
+                        icon = '🔍';
+                        color = '#58a6ff';
+                      }
+                    } else if (log.message && log.message.includes('PowerShell output:')) {
+                      displayMessage = log.message.replace(/^PowerShell output:\s*/i, '');
+                      icon = '🖥️';
+                      color = '#8b949e';
+                    } else {
+                      switch(log.level) {
+                        case 'error':
+                          color = '#f85149';
+                          icon = '❌';
+                          break;
+                        case 'warn':
+                          color = '#d29922';
+                          icon = '⚠️';
+                          break;
+                        case 'success':
+                          color = '#3fb950';
+                          icon = '✅';
+                          break;
+                        case 'info':
+                        default:
+                          color = '#79c0ff';
+                          icon = 'ℹ️';
+                          break;
+                      }
                     }
                     
                     return (
@@ -969,7 +1028,7 @@ const Extractions = () => {
                         </span>
                         {' '}
                         <span style={{ color: '#c9d1d9' }}>
-                          {log.message}
+                          {displayMessage}
                         </span>
                       </Box>
                     );

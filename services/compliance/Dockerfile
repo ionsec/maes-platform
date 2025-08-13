@@ -1,5 +1,19 @@
 FROM node:20-alpine
 
+# Install chromium dependencies for puppeteer
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Tell Puppeteer to use installed Chromium
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 # Create app directory
 WORKDIR /app
 
@@ -9,6 +23,9 @@ RUN npm ci --only=production
 
 # Bundle app source
 COPY src/ ./src/
+
+# Create reports directory
+RUN mkdir -p /app/reports
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

@@ -154,6 +154,7 @@ services:
       CERT_PASSWORD: ${CERT_PASSWORD:-Password123}
     volumes:
       - ./certs:/certs:ro
+      - compliance-reports:/app/reports
     depends_on:
       redis:
         condition: service_healthy
@@ -290,6 +291,7 @@ volumes:
   grafana_data:
   loki_data:
   user_certificates:
+  compliance-reports:
 
 networks:
   maes-network:

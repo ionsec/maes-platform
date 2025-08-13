@@ -1,9 +1,10 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken, requireRole } = require('../middleware/auth');
+const { authenticateToken, requireRole, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 const axios = require('axios');
+const { getRow } = require('../services/database');
 
 const router = express.Router();
 
@@ -1244,5 +1245,185 @@ function generateRecommendations(resultsByStatus, failingEntities) {
 
   return recommendations;
 }
+
+// Report generation endpoints
+router.post('/assessments/:assessmentId/report',
+  requirePermission('canManageCompliance'),
+  [
+    body('format').optional().isIn(['html', 'json', 'csv', 'pdf', 'xlsx']).withMessage('Invalid format'),
+    body('type').optional().isIn(['full', 'executive', 'remediation', 'comparison']).withMessage('Invalid report type'),
+    body('options').optional().isObject().withMessage('Options must be an object')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: 'Validation failed',
+          details: errors.array()
+        });
+      }
+
+      const { assessmentId } = req.params;
+      const { format = 'html', type = 'full', options = {} } = req.body;
+
+      // Verify the assessment belongs to the user's organization
+      const assessment = await getRow(
+        `SELECT * FROM maes.compliance_assessments 
+         WHERE id = $1 AND organization_id = $2`,
+        [assessmentId, req.organizationId]
+      );
+
+      if (!assessment) {
+        return res.status(404).json({
+          error: 'Assessment not found'
+        });
+      }
+
+      if (assessment.status !== 'completed') {
+        return res.status(400).json({
+          error: 'Assessment must be completed before generating a report'
+        });
+      }
+
+      // Forward request to compliance service
+      const response = await axios.post(
+        `http://compliance:3002/api/assessment/${assessmentId}/report`,
+        { format, type, options },
+        {
+          headers: {
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      logger.info(`Report generation initiated for assessment ${assessmentId}`);
+
+      res.json(response.data);
+
+    } catch (error) {
+      logger.error('Generate report error:', error);
+      
+      if (error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: 'Failed to generate report',
+        message: error.message
+      });
+    }
+  }
+);
+
+// Get reports for an assessment
+router.get('/assessments/:assessmentId/reports',
+  requirePermission('canManageCompliance'),
+  async (req, res) => {
+    try {
+      const { assessmentId } = req.params;
+
+      // Verify the assessment belongs to the user's organization
+      const assessment = await getRow(
+        `SELECT * FROM maes.compliance_assessments 
+         WHERE id = $1 AND organization_id = $2`,
+        [assessmentId, req.organizationId]
+      );
+
+      if (!assessment) {
+        return res.status(404).json({
+          error: 'Assessment not found'
+        });
+      }
+
+      // Forward request to compliance service
+      const response = await axios.get(
+        `http://compliance:3002/api/assessment/${assessmentId}/reports`,
+        {
+          headers: {
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN
+          }
+        }
+      );
+
+      res.json(response.data);
+
+    } catch (error) {
+      logger.error('Get reports error:', error);
+      
+      if (error.response) {
+        return res.status(error.response.status).json(error.response.data);
+      }
+      
+      res.status(500).json({
+        error: 'Failed to get reports',
+        message: error.message
+      });
+    }
+  }
+);
+
+// Download report
+router.get('/assessments/:assessmentId/report/:fileName/download',
+  requirePermission('canManageCompliance'),
+  async (req, res) => {
+    try {
+      const { assessmentId, fileName } = req.params;
+
+      // Verify the assessment belongs to the user's organization
+      const assessment = await getRow(
+        `SELECT * FROM maes.compliance_assessments 
+         WHERE id = $1 AND organization_id = $2`,
+        [assessmentId, req.organizationId]
+      );
+
+      if (!assessment) {
+        return res.status(404).json({
+          error: 'Assessment not found'
+        });
+      }
+
+      // Stream the file from compliance service
+      const response = await axios.get(
+        `http://compliance:3002/api/assessment/${assessmentId}/report/${fileName}/download`,
+        {
+          headers: {
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN
+          },
+          responseType: 'stream'
+        }
+      );
+
+      // Forward headers
+      if (response.headers['content-type']) {
+        res.setHeader('Content-Type', response.headers['content-type']);
+      }
+      if (response.headers['content-disposition']) {
+        res.setHeader('Content-Disposition', response.headers['content-disposition']);
+      }
+      if (response.headers['content-length']) {
+        res.setHeader('Content-Length', response.headers['content-length']);
+      }
+
+      // Stream the file to the client
+      response.data.pipe(res);
+
+    } catch (error) {
+      logger.error('Download report error:', error);
+      
+      if (error.response && error.response.status !== 500) {
+        return res.status(error.response.status).json({
+          error: error.response.data?.error || 'Failed to download report'
+        });
+      }
+      
+      res.status(500).json({
+        error: 'Failed to download report',
+        message: error.message
+      });
+    }
+  }
+);
 
 module.exports = router;
