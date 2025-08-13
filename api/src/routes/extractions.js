@@ -181,8 +181,29 @@ router.post('/',
 
     } catch (error) {
       logger.error('Create extraction error:', error);
+      
+      // Return more specific error message if it's a configuration issue
+      if (error.message && error.message.includes('not properly configured')) {
+        return res.status(400).json({
+          error: error.message
+        });
+      }
+      
+      // For organization-related errors
+      if (error.message && (
+        error.message.includes('Organization') ||
+        error.message.includes('Missing required credential') ||
+        error.message.includes('Missing authentication method') ||
+        error.message.includes('tenant_id')
+      )) {
+        return res.status(400).json({
+          error: error.message
+        });
+      }
+      
       res.status(500).json({
-        error: 'Internal server error'
+        error: 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
