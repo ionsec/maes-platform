@@ -954,12 +954,25 @@ if (!isMainThread && workerData.type === 'job_processor') {
         }
       }
       
-      logger.info(`Loaded ${auditData.length} audit log entries for analysis`);
+      // Use appropriate label based on analysis type
+      const dataTypeLabel = {
+        'device_analysis': 'device records',
+        'mfa_analysis': 'MFA status records', 
+        'risky_user_analysis': 'user records',
+        'comprehensive_analysis': 'records',
+        'ual_analysis': 'audit log entries',
+        'signin_analysis': 'sign-in log entries',
+        'audit_analysis': 'audit log entries',
+        'oauth_analysis': 'OAuth permission records',
+        'risky_detection_analysis': 'risky detection records'
+      };
+      const dataLabel = dataTypeLabel[data.analysisType] || 'data records';
+      logger.info(`Loaded ${auditData.length} ${dataLabel} for analysis`);
       
       parentPort.postMessage({
         type: 'job_progress',
         jobId: jobId,
-        data: { progress: 40, message: 'Analyzing audit logs' }
+        data: { progress: 40, message: `Analyzing ${dataLabel}` }
       });
 
       // Analyze the data using the appropriate analyzer based on analysis type

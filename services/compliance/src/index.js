@@ -261,24 +261,20 @@ app.post('/api/assessment/:assessmentId/report', validateServiceToken, async (re
     }
 
     // Store report metadata in database
-    const { sequelize } = require('./models');
-    const { QueryTypes } = require('sequelize');
-    await sequelize.query(
+    const { query } = require('./services/database');
+    await query(
       `INSERT INTO maes.compliance_reports 
        (id, assessment_id, organization_id, format, type, file_path, file_name, file_size, status, created_at) 
        VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 'completed', NOW())`,
-      {
-        replacements: [
-          assessmentId,
-          assessment.organization_id,
-          reportResult.format || format,
-          type,
-          reportResult.filePath,
-          reportResult.fileName,
-          reportResult.size
-        ],
-        type: QueryTypes.INSERT
-      }
+      [
+        assessmentId,
+        assessment.organization_id,
+        reportResult.format || format,
+        type,
+        reportResult.filePath,
+        reportResult.fileName,
+        reportResult.size
+      ]
     );
 
     res.json({
@@ -307,16 +303,12 @@ app.get('/api/assessment/:assessmentId/reports', validateServiceToken, async (re
     const { assessmentId } = req.params;
     
     // Get all reports for this assessment
-    const { sequelize } = require('./models');
-    const { QueryTypes } = require('sequelize');
-    const reports = await sequelize.query(
+    const { getRows } = require('./services/database');
+    const reports = await getRows(
       `SELECT * FROM maes.compliance_reports 
        WHERE assessment_id = $1 
        ORDER BY created_at DESC`,
-      {
-        replacements: [assessmentId],
-        type: QueryTypes.SELECT
-      }
+      [assessmentId]
     );
 
     res.json({
