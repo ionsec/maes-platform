@@ -150,7 +150,9 @@ VITE_API_URL=https://yourdomain.com
 
 ## 🏗️ High-Level Architecture
 
-MAES follows a modern microservices architecture with specialized services for different aspects of Microsoft 365 security analysis:
+MAES follows a modern microservices architecture with specialized services for different aspects of Microsoft 365 security analysis.
+
+**Note**: The compliance controls (CIS v4.0.0) are automatically loaded during initial deployment via database migrations.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
@@ -357,6 +359,14 @@ docker push your-registry/maes-analyzer:latest
 - **Container Orchestration**: Improved Docker networking and service discovery
 - **Performance Optimization**: Efficient log pagination and caching for large data volumes
 - **Express Dependencies**: Added Express.js support to Analyzer and Extractor services for cleanup APIs
+
+### API & Frontend Integration Improvements
+- **Organization Context Management**: Implemented global organization store with automatic header injection via axios interceptors
+- **Authentication Flow**: Fixed JWT-based organization context validation across all API endpoints
+- **Graph API Compatibility**: Enhanced pagination handling for Microsoft Graph API endpoints with endpoint-specific requirements
+- **Compliance Controls**: Automated CIS v4.0.0 controls loading via database migrations for fresh deployments
+- **Service Communication**: Fixed extraction-to-analysis service communication with proper authentication headers
+- **Certificate Authentication**: Added support for both 'clientId' and 'applicationId' field names for backward compatibility
 
 ## 🔧 Troubleshooting
 

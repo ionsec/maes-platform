@@ -74,6 +74,8 @@ const Compliance = () => {
   const [detailsDialog, setDetailsDialog] = useState(false);
   const [loadingAssessment, setLoadingAssessment] = useState(false);
   const [selectedAssessmentType, setSelectedAssessmentType] = useState('cis_v400');
+  const [hasCredentials, setHasCredentials] = useState(false);
+  const [credentialsStatus, setCredentialsStatus] = useState(null);
   
   // Fetch compliance data
   useEffect(() => {
@@ -86,10 +88,11 @@ const Compliance = () => {
     try {
       setLoading(true);
       
-      // Fetch assessments and controls in parallel
-      const [assessmentsResponse, controlsResponse] = await Promise.all([
+      // Fetch assessments, controls, and credentials status in parallel
+      const [assessmentsResponse, controlsResponse, credentialsResponse] = await Promise.all([
         axios.get(`/api/compliance/assessments/${selectedOrganizationId}?limit=10`),
-        axios.get('/api/compliance/controls/cis_v400')
+        axios.get('/api/compliance/controls/cis_v400'),
+        axios.get(`/api/compliance/organization/${selectedOrganizationId}/credentials-status`)
       ]);
 
       if (assessmentsResponse.data.success) {
@@ -99,6 +102,11 @@ const Compliance = () => {
       if (controlsResponse.data.success) {
         setControls(controlsResponse.data.controls);
         setControlsBySection(controlsResponse.data.controlsBySection);
+      }
+
+      if (credentialsResponse.data.success) {
+        setHasCredentials(credentialsResponse.data.hasCredentials);
+        setCredentialsStatus(credentialsResponse.data);
       }
 
     } catch (error) {
@@ -268,6 +276,21 @@ const Compliance = () => {
         </Grid>
       </Grid>
 
+      {/* Credentials Warning */}
+      {!hasCredentials && credentialsStatus && (
+        <Alert severity="warning" sx={{ mt: 2, mb: 2 }}>
+          <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 1 }}>
+            Microsoft 365 Credentials Not Configured
+          </Typography>
+          <Typography variant="body2">
+            {credentialsStatus.message}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            Please configure Azure AD app credentials (Client ID, Tenant ID) in the organization settings to enable compliance assessments.
+          </Typography>
+        </Alert>
+      )}
+
       {/* Action Buttons */}
       <Box sx={{ mb: 3, display: 'flex', gap: 2, alignItems: 'center' }}>
         <Tooltip 
@@ -289,7 +312,8 @@ const Compliance = () => {
               disabled={
                 !selectedOrganizationId || 
                 user?.role !== 'admin' || 
-                selectedOrganizationId === '00000000-0000-0000-0000-000000000001'
+                selectedOrganizationId === '00000000-0000-0000-0000-000000000001' ||
+                !hasCredentials
               }
             >
               Start Assessment
@@ -484,6 +508,7 @@ const Compliance = () => {
         onClose={() => setStartAssessmentDialog(false)}
         onSubmit={handleStartAssessment}
         loading={loadingAssessment}
+        hasCredentials={hasCredentials}
       />
 
       {/* Assessment Details Dialog */}
@@ -497,7 +522,7 @@ const Compliance = () => {
 };
 
 // Start Assessment Dialog Component
-const StartAssessmentDialog = ({ open, onClose, onSubmit, loading }) => {
+const StartAssessmentDialog = ({ open, onClose, onSubmit, loading, hasCredentials }) => {
   const [formData, setFormData] = useState({
     assessmentType: 'cis_v400',
     name: '',
@@ -525,10 +550,21 @@ const StartAssessmentDialog = ({ open, onClose, onSubmit, loading }) => {
       <form onSubmit={handleSubmit}>
         <DialogTitle>Start Compliance Assessment</DialogTitle>
         <DialogContent>
-          <Alert severity="info" sx={{ mb: 3 }}>
-            This will run a comprehensive compliance assessment against your Microsoft 365 environment.
-            The process may take several minutes to complete.
-          </Alert>
+          {!hasCredentials ? (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                Microsoft 365 credentials are not configured for this organization.
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 1 }}>
+                Please configure Azure AD app credentials in the organization settings before running compliance assessments.
+              </Typography>
+            </Alert>
+          ) : (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              This will run a comprehensive compliance assessment against your Microsoft 365 environment.
+              The process may take several minutes to complete.
+            </Alert>
+          )}
 
           <FormControl fullWidth sx={{ mb: 3 }}>
             <InputLabel>Assessment Type</InputLabel>

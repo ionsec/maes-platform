@@ -43,7 +43,12 @@ router.get('/',
       // Transform database column names to camelCase and mark uploaded extractions
       const extractionsWithUploadFlag = result.extractions.map(extraction => ({
         ...extraction,
+        startDate: extraction.start_date,  // Transform snake_case to camelCase
+        endDate: extraction.end_date,      // Transform snake_case to camelCase
         outputFiles: extraction.output_files || [],  // Transform snake_case to camelCase
+        itemsExtracted: extraction.items_extracted,  // Transform snake_case to camelCase
+        startedAt: extraction.started_at,  // Transform snake_case to camelCase
+        completedAt: extraction.completed_at,  // Transform snake_case to camelCase
         isUpload: extraction.parameters?.isUpload === true
       }));
 
@@ -75,7 +80,12 @@ router.get('/:id', async (req, res) => {
 
     const extractionData = { 
       ...extraction,
+      startDate: extraction.start_date,  // Transform snake_case to camelCase
+      endDate: extraction.end_date,      // Transform snake_case to camelCase
       outputFiles: extraction.output_files || [],  // Transform snake_case to camelCase
+      itemsExtracted: extraction.items_extracted,  // Transform snake_case to camelCase
+      startedAt: extraction.started_at,  // Transform snake_case to camelCase
+      completedAt: extraction.completed_at,  // Transform snake_case to camelCase
       isUpload: extraction.parameters?.isUpload === true
     };
 

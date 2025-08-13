@@ -169,7 +169,6 @@ const Analysis = () => {
         extractionId: data.extractionId,
         type: data.type,
         priority: data.priority,
-        organizationId: selectedOrganizationId,
         parameters: {
           enableThreatIntel: data.enableThreatIntel,
           enablePatternDetection: data.enablePatternDetection,
@@ -178,6 +177,9 @@ const Analysis = () => {
         }
       };
 
+      console.log('Submitting analysis with payload:', payload);
+      console.log('Current organization ID:', selectedOrganizationId);
+      
       await axios.post('/api/analysis', payload);
       enqueueSnackbar('Analysis job created successfully', { variant: 'success' });
       setDialogOpen(false);

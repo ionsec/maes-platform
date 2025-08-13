@@ -13,7 +13,8 @@ services:
     #   - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./database/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./database/02-run-migrations.sh:/docker-entrypoint-initdb.d/02-run-migrations.sh
       - ./database/migrations:/docker-entrypoint-initdb.d/migrations
     networks:
       - maes-network

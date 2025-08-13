@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import axios from '../utils/axios';
+import { setCurrentOrganizationId } from '../stores/organizationStore';
 
 const OrganizationContext = createContext();
 
@@ -26,6 +27,8 @@ export const OrganizationProvider = ({ children }) => {
       if (orgs.length > 0) {
         const primaryOrg = orgs.find(org => org.is_primary) || orgs[0];
         setSelectedOrganization(primaryOrg);
+        // Update the global store
+        setCurrentOrganizationId(primaryOrg.organization_id);
       }
     } catch (error) {
       console.error('Failed to fetch organizations:', error);
@@ -42,6 +45,8 @@ export const OrganizationProvider = ({ children }) => {
     const org = organizations.find(o => o.organization_id === orgId);
     if (org) {
       setSelectedOrganization(org);
+      // Update the global store
+      setCurrentOrganizationId(orgId);
       // Store in localStorage for persistence
       localStorage.setItem('selectedOrganizationId', orgId);
     }
@@ -54,6 +59,8 @@ export const OrganizationProvider = ({ children }) => {
       const org = organizations.find(o => o.organization_id === savedOrgId);
       if (org) {
         setSelectedOrganization(org);
+        // Update the global store
+        setCurrentOrganizationId(savedOrgId);
       }
     }
   }, [organizations]);
