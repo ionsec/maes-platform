@@ -309,6 +309,10 @@ router.put('/:userId', authenticateToken, requirePermission('canManageUsers'), a
 
     const updatedUser = await User.update(userId, updateData);
 
+    if (!updatedUser) {
+      return res.status(500).json({ error: 'Failed to update user - no valid fields provided' });
+    }
+
     logger.info(`Updated user: ${userId}`);
 
     res.json({
@@ -357,12 +361,18 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
     // Update user permissions
     const updatedUser = await User.update(userId, { permissions });
 
+    if (!updatedUser) {
+      return res.status(500).json({ error: 'Failed to update user permissions' });
+    }
+
     logger.info(`Updated permissions for user: ${userId}`);
 
     res.json({
       success: true,
       message: 'User permissions updated successfully',
-      permissions: updatedUser.permissions
+      permissions: typeof updatedUser.permissions === 'string' 
+        ? JSON.parse(updatedUser.permissions) 
+        : updatedUser.permissions
     });
 
   } catch (error) {
