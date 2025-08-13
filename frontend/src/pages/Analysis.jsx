@@ -260,12 +260,22 @@ const Analysis = () => {
         }
       });
 
-      enqueueSnackbar('Logs uploaded successfully', { variant: 'success' });
+      // Check if analysis job was created
+      if (response.data.analysisJob) {
+        enqueueSnackbar('Logs uploaded and analysis started automatically', { variant: 'success' });
+      } else if (response.data.warning) {
+        enqueueSnackbar('Logs uploaded successfully', { variant: 'success' });
+        enqueueSnackbar(response.data.warning, { variant: 'warning' });
+      } else {
+        enqueueSnackbar('Logs uploaded successfully', { variant: 'success' });
+      }
+      
       setUploadDialogOpen(false);
       setUploadFile(null);
       
-      // Refresh extractions to include the uploaded one
+      // Refresh both extractions and analysis jobs to show the new ones
       fetchExtractions();
+      fetchAnalysisJobs();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to upload logs', { variant: 'error' });
     }

@@ -604,10 +604,18 @@ const requirePermission = (permission) => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
+    // Get user's stored permissions
     const userPermissions = req.user.permissions || {};
     
-    if (!userPermissions[permission]) {
-      logger.warn(`User ${req.user.id} attempted to access ${permission} without permission`);
+    // Also check role-based permissions as fallback
+    const userRole = req.user.role;
+    const rolePermissions = ROLE_PERMISSIONS[userRole] || {};
+    
+    // Check if user has permission either from stored permissions or role
+    const hasPermission = userPermissions[permission] || rolePermissions[permission];
+    
+    if (!hasPermission) {
+      logger.warn(`User ${req.user.id} (role: ${userRole}) attempted to access ${permission} without permission`);
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
 

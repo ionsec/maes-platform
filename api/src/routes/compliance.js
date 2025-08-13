@@ -1248,6 +1248,7 @@ function generateRecommendations(resultsByStatus, failingEntities) {
 
 // Report generation endpoints
 router.post('/assessments/:assessmentId/report',
+  authenticateToken,
   requirePermission('canManageCompliance'),
   [
     body('format').optional().isIn(['html', 'json', 'csv', 'pdf', 'xlsx']).withMessage('Invalid format'),
@@ -1319,6 +1320,7 @@ router.post('/assessments/:assessmentId/report',
 
 // Get reports for an assessment
 router.get('/assessments/:assessmentId/reports',
+  authenticateToken,
   requirePermission('canManageCompliance'),
   async (req, res) => {
     try {
@@ -1366,6 +1368,7 @@ router.get('/assessments/:assessmentId/reports',
 
 // Download report
 router.get('/assessments/:assessmentId/report/:fileName/download',
+  authenticateToken,
   requirePermission('canManageCompliance'),
   async (req, res) => {
     try {
