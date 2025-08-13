@@ -54,22 +54,49 @@ axiosInstance.interceptors.response.use(
 
     // Handle 401 Unauthorized
     if (error.response?.status === 401 && !originalRequest._retry) {
+      // Don't retry for login requests
+      if (originalRequest.url?.includes('/auth/login')) {
+        return Promise.reject(error)
+      }
+      
       originalRequest._retry = true
       
+      // Try to refresh token
+      const currentToken = useAuthStore.getState().token
+      
+      // If no token exists, redirect to login immediately
+      if (!currentToken) {
+        if (navigate && window.location.pathname !== '/login') {
+          navigate('/login')
+        } else if (window.location.pathname !== '/login') {
+          window.location.href = '/login'
+        }
+        return Promise.reject(error)
+      }
+      
+      // Try to refresh the token
       const refreshed = await useAuthStore.getState().refreshToken()
       if (refreshed) {
         // Retry original request with new token
         originalRequest.headers.Authorization = `Bearer ${useAuthStore.getState().token}`
         return axiosInstance(originalRequest)
       } else {
-        // Refresh failed, logout
+        // Refresh failed, logout and redirect
         useAuthStore.getState().logout()
-        if (navigate) {
+        if (navigate && window.location.pathname !== '/login') {
           navigate('/login')
-        } else {
+        } else if (window.location.pathname !== '/login') {
           window.location.href = '/login'
         }
+        return Promise.reject(error)
       }
+    }
+    
+    // Handle 403 Forbidden - user is authenticated but lacks permissions
+    if (error.response?.status === 403) {
+      console.warn('Access forbidden:', error.response?.data?.error || 'Insufficient permissions')
+      // Don't redirect on 403, let the component handle it
+      return Promise.reject(error)
     }
     
     // Handle CORS errors specifically

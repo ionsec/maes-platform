@@ -245,8 +245,8 @@ const Header = ({ onMenuClick }) => {
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          {/* Organization Selector */}
-          {organizations.length > 1 && (
+          {/* Organization Selector - Show if user has organizations */}
+          {organizations.length > 0 && (
             <FormControl 
               size="small" 
               sx={{ 
@@ -262,16 +262,23 @@ const Header = ({ onMenuClick }) => {
                 value={selectedOrganization?.organization_id || ''}
                 onChange={(e) => selectOrganization(e.target.value)}
                 displayEmpty
+                disabled={organizations.length === 1}
                 sx={{
                   backgroundColor: 'rgba(255, 255, 255, 0.05)',
                   '& .MuiOutlinedInput-notchedOutline': {
                     borderColor: 'rgba(255, 255, 255, 0.2)'
                   },
                   '&:hover .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(255, 255, 255, 0.4)'
+                    borderColor: organizations.length > 1 ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.2)'
                   },
                   '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
                     borderColor: 'primary.main'
+                  },
+                  '&.Mui-disabled': {
+                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+                    '& .MuiSelect-icon': {
+                      display: organizations.length === 1 ? 'none' : 'block'
+                    }
                   }
                 }}
               >
@@ -279,9 +286,11 @@ const Header = ({ onMenuClick }) => {
                   <MenuItem key={org.organization_id} value={org.organization_id}>
                     <Box>
                       <Typography variant="body2">{org.organization_name}</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {org.organization_fqdn}
-                      </Typography>
+                      {org.organization_fqdn && (
+                        <Typography variant="caption" color="text.secondary">
+                          {org.organization_fqdn}
+                        </Typography>
+                      )}
                     </Box>
                   </MenuItem>
                 ))}

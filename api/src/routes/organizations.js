@@ -254,6 +254,7 @@ router.put('/current/credentials',
 
 // Test Azure app connectivity
 router.post('/test-connection',
+  authenticateToken,
   requirePermission('canManageOrganization'),
   [
     body('applicationId').isUUID().withMessage('Application ID must be a valid UUID'),
