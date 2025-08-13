@@ -285,12 +285,16 @@ router.put('/:userId', authenticateToken, requirePermission('canManageUsers'), a
       preferences
     } = req.body;
 
-    const user = await User.findOne({
-      where: { id: userId, organizationId: req.organizationId }
-    });
+    // Find the user first
+    const user = await User.findById(userId);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check organization access
+    if (user.organization_id !== req.organizationId && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied to this user' });
     }
 
     // Update user
@@ -303,7 +307,7 @@ router.put('/:userId', authenticateToken, requirePermission('canManageUsers'), a
     if (isActive !== undefined) updateData.isActive = isActive;
     if (preferences !== undefined) updateData.preferences = preferences;
 
-    await user.update(updateData);
+    const updatedUser = await User.update(userId, updateData);
 
     logger.info(`Updated user: ${userId}`);
 
@@ -311,20 +315,59 @@ router.put('/:userId', authenticateToken, requirePermission('canManageUsers'), a
       success: true,
       message: 'User updated successfully',
       user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        isActive: user.isActive,
-        permissions: user.permissions
+        id: updatedUser.id,
+        email: updatedUser.email,
+        username: updatedUser.username,
+        firstName: updatedUser.first_name,
+        lastName: updatedUser.last_name,
+        role: updatedUser.role,
+        isActive: updatedUser.is_active,
+        permissions: updatedUser.permissions
       }
     });
 
   } catch (error) {
     logger.error('Update user error:', error);
     res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+// Update user permissions
+router.patch('/:userId/permissions', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { permissions } = req.body;
+
+    if (!permissions || typeof permissions !== 'object') {
+      return res.status(400).json({ error: 'Valid permissions object is required' });
+    }
+
+    // Find the user first
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check organization access
+    if (user.organization_id !== req.organizationId && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied to this user' });
+    }
+
+    // Update user permissions
+    const updatedUser = await User.update(userId, { permissions });
+
+    logger.info(`Updated permissions for user: ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'User permissions updated successfully',
+      permissions: updatedUser.permissions
+    });
+
+  } catch (error) {
+    logger.error('Update user permissions error:', error);
+    res.status(500).json({ error: 'Failed to update user permissions' });
   }
 });
 
