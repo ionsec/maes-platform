@@ -1449,11 +1449,11 @@ class EnhancedAnalyzer {
     };
 
     for (const device of deviceData) {
-      const deviceName = device.displayName || device.DeviceName || 'Unknown';
-      const isCompliant = device.isCompliant || device.IsCompliant || false;
-      const isManaged = device.isManaged || device.IsManaged || false;
-      const operatingSystem = device.operatingSystem || device.OperatingSystem || 'Unknown';
-      const lastSeenDateTime = device.lastSeenDateTime || device.LastSeenDateTime;
+      const deviceName = device.DisplayName || device.displayName || device.DeviceName || 'Unknown';
+      const isCompliant = device.IsCompliant !== undefined ? device.IsCompliant : (device.isCompliant || false);
+      const isManaged = device.IsManaged !== undefined ? device.IsManaged : (device.isManaged || false);
+      const operatingSystem = device.OperatingSystem || device.operatingSystem || 'Unknown';
+      const lastSeenDateTime = device.LastSignInDateTime || device.lastSeenDateTime || device.ApproximateLastSignInDateTime;
 
       if (isCompliant) {
         statistics.compliantDevices++;
