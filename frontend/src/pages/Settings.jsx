@@ -132,15 +132,15 @@ const Settings = () => {
 
     setDeleteLoading(true);
     try {
-      await axios.delete(`/api/organizations/${selectedOrgId}`);
+      await axios.delete(`/api/organizations/${selectedOrganizationId}`);
       enqueueSnackbar('Organization deleted successfully', { variant: 'success' });
       setDeleteDialogOpen(false);
       setDeleteConfirmation('');
       // Refresh organizations and select a different one
-      await fetchUserOrganizations();
-      const remainingOrgs = userOrganizations.filter(org => org.organization_id !== selectedOrgId);
+      await refreshOrganizations();
+      const remainingOrgs = organizations.filter(org => org.organization_id !== selectedOrganizationId);
       if (remainingOrgs.length > 0) {
-        setSelectedOrgId(remainingOrgs[0].organization_id);
+        selectOrganization(remainingOrgs[0].organization_id);
       }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to delete organization', { variant: 'error' });
@@ -150,19 +150,15 @@ const Settings = () => {
   };
 
   useEffect(() => {
-    fetchUserOrganizations();
-  }, []);
-
-  useEffect(() => {
-    if (selectedOrgId) {
+    if (selectedOrganizationId) {
       // Clear cached credentials and other state
       setActualCredentials({});
       setShowCredentials({});
       setConnectionTestResult(null);
       // Fetch new organization data
-      fetchOrganization(selectedOrgId);
+      fetchOrganization(selectedOrganizationId);
     }
-  }, [selectedOrgId, fetchOrganization]);
+  }, [selectedOrganizationId, fetchOrganization]);
 
   const onSubmit = async (data) => {
     try {
@@ -192,11 +188,11 @@ const Settings = () => {
 
       await axios.put('/api/organizations/current', payload, {
         headers: {
-          'x-organization-id': selectedOrgId
+          'x-organization-id': selectedOrganizationId
         }
       });
       enqueueSnackbar('Settings saved successfully', { variant: 'success' });
-      fetchOrganization(selectedOrgId);
+      fetchOrganization(selectedOrganizationId);
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to save settings', { variant: 'error' });
     }
@@ -211,11 +207,11 @@ const Settings = () => {
     }));
 
     // If we're showing credentials and don't have them cached, fetch them
-    if (newShowState && !actualCredentials[key] && selectedOrgId) {
+    if (newShowState && !actualCredentials[key] && selectedOrganizationId) {
       try {
         const response = await axios.get('/api/organizations/current?showCredentials=true', {
           headers: {
-            'x-organization-id': selectedOrgId
+            'x-organization-id': selectedOrganizationId
           }
         });
         setActualCredentials(response.data.organization.credentials || {});
@@ -300,7 +296,7 @@ const Settings = () => {
 
       await axios.put('/api/organizations/current/credentials', credentialsPayload, {
         headers: {
-          'x-organization-id': selectedOrgId
+          'x-organization-id': selectedOrganizationId
         }
       });
 
@@ -313,7 +309,7 @@ const Settings = () => {
         };
         await axios.put('/api/organizations/current', orgPayload, {
           headers: {
-            'x-organization-id': selectedOrgId
+            'x-organization-id': selectedOrganizationId
           }
         });
       }
@@ -323,7 +319,7 @@ const Settings = () => {
       resetCredentials();
       setActualCredentials({}); // Clear cached credentials
       setShowCredentials({}); // Reset visibility state
-      fetchOrganization(selectedOrgId); // Refresh organization data with selected org
+      fetchOrganization(selectedOrganizationId); // Refresh organization data with selected org
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to save credentials', { variant: 'error' });
     } finally {
@@ -351,7 +347,7 @@ const Settings = () => {
       const formData = new FormData();
       formData.append('certificate', certificateFile);
       formData.append('password', certificatePassword);
-      formData.append('organizationId', selectedOrgId || 'default');
+      formData.append('organizationId', selectedOrganizationId || 'default');
 
       await axios.post('/api/user/certificate', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -397,11 +393,11 @@ const Settings = () => {
       resetAddOrg();
       
       // Refresh the organizations list
-      await fetchUserOrganizations();
+      await refreshOrganizations();
       
       // Select the newly added organization
       if (response.data.organizationId) {
-        setSelectedOrgId(response.data.organizationId);
+        selectOrganization(response.data.organizationId);
       }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.error || 'Failed to add organization', { variant: 'error' });
@@ -416,39 +412,38 @@ const Settings = () => {
         Organization Settings
       </Typography>
 
-      {/* Organization Selector */}
+      {/* Organization Info - Display only, selector is in header */}
       <Paper sx={{ p: 2, mb: 3 }}>
-        {userOrganizations.length > 0 && (
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Select Organization</InputLabel>
-            <Select
-              value={selectedOrgId || ''}
-              label="Select Organization"
-              onChange={(e) => setSelectedOrgId(e.target.value)}
-              disabled={userOrganizations.length === 1}
-            >
-              {userOrganizations.map((org) => (
-                <MenuItem key={org.organization_id} value={org.organization_id}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography>{org.organization_name}</Typography>
-                    {org.organization_fqdn && (
-                      <Chip 
-                        label={org.organization_fqdn} 
-                        size="small" 
-                        variant="outlined" 
-                        sx={{ ml: 1 }}
-                      />
-                    )}
-                  </Box>
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+        {organizations.length > 0 && selectedOrganizationId ? (
+          <Box>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              Current Organization
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Typography variant="h6">
+                {organizations.find(org => org.organization_id === selectedOrganizationId)?.organization_name}
+              </Typography>
+              {organizations.find(org => org.organization_id === selectedOrganizationId)?.organization_fqdn && (
+                <Chip 
+                  label={organizations.find(org => org.organization_id === selectedOrganizationId)?.organization_fqdn} 
+                  size="small" 
+                  variant="outlined" 
+                />
+              )}
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              To switch organizations, use the organization selector in the header
+            </Typography>
+          </Box>
+        ) : (
+          <Alert severity="info">
+            No organizations available. Please ensure you are properly authenticated.
+          </Alert>
         )}
         
-        {/* Add New Organization Button - Show for admins and super_admins */}
+        {/* Organization Management Buttons - Show for admins and super_admins */}
         {(user?.role === 'admin' || user?.role === 'super_admin') && (
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
             <Button
               variant="outlined"
               startIcon={<AddIcon />}
@@ -463,14 +458,18 @@ const Settings = () => {
             >
               Add New Organization
             </Button>
+            {selectedOrganizationId && selectedOrganizationId !== '00000000-0000-0000-0000-000000000001' && (
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={loading}
+              >
+                Remove Organization
+              </Button>
+            )}
           </Box>
-        )}
-        
-        {/* Show message if no organizations */}
-        {userOrganizations.length === 0 && (
-          <Alert severity="info">
-            No organizations available. Please ensure you are properly authenticated.
-          </Alert>
         )}
       </Paper>
 
@@ -495,7 +494,7 @@ const Settings = () => {
                 <CardHeader 
                   title={organization?.id === 'individual' ? 'User Information' : 'Organization Information'}
                   action={
-                    user?.role === 'admin' && selectedOrgId !== '00000000-0000-0000-0000-000000000001' && (
+                    (user?.role === 'admin' || user?.role === 'super_admin') && selectedOrganizationId !== '00000000-0000-0000-0000-000000000001' && (
                       <IconButton
                         color="error"
                         onClick={() => setDeleteDialogOpen(true)}
