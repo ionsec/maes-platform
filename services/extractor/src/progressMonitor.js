@@ -75,8 +75,11 @@ function updateExtractionProgress(extractionId, job) {
     { pattern: /Getting\s+.*users/i, progress: 30, status: 'Retrieving user data' },
     { pattern: /Starting\s+export/i, progress: 40, status: 'Starting data export' },
     { pattern: /Exporting\s+to\s+CSV/i, progress: 50, status: 'Exporting to CSV' },
+    { pattern: /Exporting\s+to\s+JSON/i, progress: 50, status: 'Exporting to JSON' },
     { pattern: /Saving\s+.*file/i, progress: 70, status: 'Saving output files' },
     { pattern: /Export\s+completed/i, progress: 85, status: 'Export completed' },
+    { pattern: /JSON\s+file\s+created/i, progress: 85, status: 'JSON file created' },
+    { pattern: /JSON\s+export\s+completed/i, progress: 85, status: 'JSON export completed' },
     { pattern: /Extraction\s+complete/i, progress: 90, status: 'Extraction complete' },
     { pattern: /Disconnecting/i, progress: 95, status: 'Disconnecting from services' },
     // PowerShell status patterns

@@ -550,7 +550,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
       Write-Host "Starting Unified Audit Log extraction...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
       try {
-        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}';
+        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}';
         Write-Host "UAL extraction completed successfully.";
       } catch {
         Write-Error "UAL extraction failed: $_";
@@ -690,7 +690,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -OutputDir '${orgOutputPath}';
+          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}';
           Write-Host "UAL Graph extraction completed successfully.";
           $completed = $true;
         } catch {
