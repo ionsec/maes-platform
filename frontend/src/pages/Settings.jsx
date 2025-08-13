@@ -93,7 +93,11 @@ const Settings = () => {
         setSelectedOrgId(response.data.organizations[0].organization_id);
       }
     } catch (error) {
-      enqueueSnackbar('Failed to fetch user organizations', { variant: 'error' });
+      // Only show error for non-auth errors
+      if (error.response?.status !== 401 && error.response?.status !== 403) {
+        enqueueSnackbar('Failed to fetch user organizations', { variant: 'error' });
+      }
+      setUserOrganizations([]);
     }
   };
 
@@ -418,24 +422,27 @@ const Settings = () => {
 
       {/* Organization Selector */}
       <Paper sx={{ p: 2, mb: 3 }}>
-        {userOrganizations.length > 1 && (
+        {userOrganizations.length > 0 && (
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel>Select Organization</InputLabel>
             <Select
               value={selectedOrgId || ''}
               label="Select Organization"
               onChange={(e) => setSelectedOrgId(e.target.value)}
+              disabled={userOrganizations.length === 1}
             >
               {userOrganizations.map((org) => (
                 <MenuItem key={org.organization_id} value={org.organization_id}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Typography>{org.organization_name}</Typography>
-                    <Chip 
-                      label={org.organization_fqdn} 
-                      size="small" 
-                      variant="outlined" 
-                      sx={{ ml: 1 }}
-                    />
+                    {org.organization_fqdn && (
+                      <Chip 
+                        label={org.organization_fqdn} 
+                        size="small" 
+                        variant="outlined" 
+                        sx={{ ml: 1 }}
+                      />
+                    )}
                   </Box>
                 </MenuItem>
               ))}
@@ -443,8 +450,8 @@ const Settings = () => {
           </FormControl>
         )}
         
-        {/* Add New Organization Button - Always show for admins */}
-        {user?.role === 'admin' && (
+        {/* Add New Organization Button - Show for admins and super_admins */}
+        {(user?.role === 'admin' || user?.role === 'super_admin') && (
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button
               variant="outlined"
@@ -461,6 +468,13 @@ const Settings = () => {
               Add New Organization
             </Button>
           </Box>
+        )}
+        
+        {/* Show message if no organizations */}
+        {userOrganizations.length === 0 && (
+          <Alert severity="info">
+            No organizations available. Please ensure you are properly authenticated.
+          </Alert>
         )}
       </Paper>
 
