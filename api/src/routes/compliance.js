@@ -1,6 +1,6 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
-const { authenticateToken, requireRole, requirePermission } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireAdminRole, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 const axios = require('axios');
@@ -193,7 +193,7 @@ router.get('/controls/:assessmentType?', authenticateToken, async (req, res) => 
 // Start compliance assessment
 router.post('/assess/:organizationId', 
   authenticateToken, 
-  requireRole('admin'),
+  requireAdminRole(),
   getOrganizationCredentials,
   [
     body('assessmentType').optional().isIn(['cis_v400', 'cis_v300', 'custom', 'orca_style']),
@@ -618,7 +618,7 @@ router.get('/compare/:baselineId/:currentId',
 // Test Graph API connection for an organization
 router.post('/test-connection/:organizationId', 
   authenticateToken, 
-  requireRole('admin'),
+  requireAdminRole(),
   getOrganizationCredentials,
   async (req, res) => {
     try {
@@ -646,7 +646,7 @@ router.post('/test-connection/:organizationId',
 // Schedule management endpoints
 router.post('/schedule/:organizationId',
   authenticateToken,
-  requireRole('admin'),
+  requireAdminRole(),
   [
     body('name').notEmpty().isLength({ min: 1, max: 255 }),
     body('frequency').isIn(['daily', 'weekly', 'monthly', 'quarterly']),
@@ -763,7 +763,7 @@ router.get('/schedules/:organizationId',
 
 router.put('/schedule/:scheduleId',
   authenticateToken,
-  requireRole('admin'),
+  requireAdminRole(),
   async (req, res) => {
     try {
       const { scheduleId } = req.params;
@@ -807,7 +807,7 @@ router.put('/schedule/:scheduleId',
 
 router.delete('/schedule/:scheduleId',
   authenticateToken,
-  requireRole('admin'),
+  requireAdminRole(),
   async (req, res) => {
     try {
       const { scheduleId } = req.params;

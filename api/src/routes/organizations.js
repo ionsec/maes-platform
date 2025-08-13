@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { Organization, User } = require('../services/models');
-const { authenticateToken, requireRole, requirePermission } = require('../middleware/auth');
+const { authenticateToken, requireRole, requireAdminRole, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 
@@ -396,7 +396,7 @@ router.get('/stats', async (req, res) => {
 // Delete organization (admin only)
 // Offboard organization (soft delete with grace period)
 router.post('/:organizationId/offboard',
-  requireRole('admin'),
+  requireAdminRole(),
   async (req, res) => {
     try {
       const { organizationId } = req.params;
@@ -465,7 +465,7 @@ router.post('/:organizationId/offboard',
 
 // Cancel organization offboarding (restore)
 router.post('/:organizationId/restore',
-  requireRole('admin'),
+  requireAdminRole(),
   async (req, res) => {
     try {
       const { organizationId } = req.params;
@@ -516,7 +516,7 @@ router.post('/:organizationId/restore',
 
 // Immediate deletion (admin only)
 router.delete('/:organizationId', 
-  requireRole('admin'),
+  requireAdminRole(),
   async (req, res) => {
     try {
       const { organizationId } = req.params;

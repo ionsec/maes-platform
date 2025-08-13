@@ -461,6 +461,11 @@ const requireRole = (roles) => {
   };
 };
 
+// Admin role access control - for both admin and super_admin roles
+const requireAdminRole = () => {
+  return requireRole(['admin', 'super_admin']);
+};
+
 // Super admin access control - for cross-organization operations
 const requireSuperAdmin = () => {
   return (req, res, next) => {
@@ -508,6 +513,7 @@ module.exports = {
   authenticateService,
   requirePermission,
   requireRole,
+  requireAdminRole,
   requireSuperAdmin,
   auditLog,
   blacklistToken,
