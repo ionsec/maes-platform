@@ -405,7 +405,7 @@ const Compliance = () => {
               ? "Configure organization credentials first or create a new organization"
               : !selectedOrganizationId 
               ? "Select an organization"
-              : user?.role !== 'admin'
+              : !['admin', 'super_admin'].includes(user?.role)
               ? "Admin access required"
               : "Start compliance assessment"
           }
@@ -417,7 +417,7 @@ const Compliance = () => {
               onClick={() => setStartAssessmentDialog(true)}
               disabled={
                 !selectedOrganizationId || 
-                user?.role !== 'admin' || 
+                !['admin', 'super_admin'].includes(user?.role) || 
                 selectedOrganizationId === '00000000-0000-0000-0000-000000000001' ||
                 !hasCredentials
               }
