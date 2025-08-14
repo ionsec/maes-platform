@@ -12,6 +12,7 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 const EncryptionUtil = require('../utils/encryption');
+const { User } = require('../services/models');
 
 const router = express.Router();
 
@@ -190,13 +191,25 @@ let userCertificates = [];
  */
 router.get('/profile', async (req, res) => {
   try {
-    const user = users.find(u => u.id === req.userId);
+    const userId = req.user?.id || req.userId;
+    const user = await User.findById(userId);
+    
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Remove sensitive information
+    // Remove sensitive information and format response
     const { password, ...userProfile } = user;
+    
+    // Parse preferences if they're stored as JSON string
+    if (userProfile.preferences && typeof userProfile.preferences === 'string') {
+      try {
+        userProfile.preferences = JSON.parse(userProfile.preferences);
+      } catch (e) {
+        // If parsing fails, keep as is
+        logger.warn('Failed to parse user preferences:', e);
+      }
+    }
     
     res.json({
       success: true,
@@ -239,28 +252,40 @@ router.put('/profile',
         });
       }
 
-      const userIndex = users.findIndex(u => u.id === req.userId);
-      if (userIndex === -1) {
+      const userId = req.user?.id || req.userId;
+      const user = await User.findById(userId);
+      
+      if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      // Update user profile
-      users[userIndex] = {
-        ...users[userIndex],
-        ...req.body,
-        updatedAt: new Date().toISOString()
-      };
+      // Update user profile in database
+      const updatedUser = await User.update(userId, req.body);
+      
+      if (!updatedUser) {
+        return res.status(500).json({ error: 'Failed to update profile' });
+      }
 
-      // Log activity
+      // Log activity (keeping for compatibility)
       userActivity.unshift({
-        userId: req.userId,
+        userId: userId,
         action: 'Profile updated',
         type: 'profile',
         timestamp: new Date().toISOString(),
         details: 'Profile information updated'
       });
 
-      const { password, ...userProfile } = users[userIndex];
+      // Remove sensitive information
+      const { password, ...userProfile } = updatedUser;
+      
+      // Parse preferences if they're stored as JSON string
+      if (userProfile.preferences && typeof userProfile.preferences === 'string') {
+        try {
+          userProfile.preferences = JSON.parse(userProfile.preferences);
+        } catch (e) {
+          // If parsing fails, keep as is
+        }
+      }
 
       res.json({
         success: true,
@@ -423,36 +448,55 @@ router.get('/preferences', async (req, res) => {
 router.put('/preferences', async (req, res) => {
   try {
     const { preferences } = req.body;
+    const userId = req.user?.id || req.userId;
     
-    const userIndex = users.findIndex(u => u.id === req.userId);
-    if (userIndex === -1) {
+    // Get user from database
+    const user = await User.findById(userId);
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Update preferences
-    users[userIndex].preferences = {
-      ...users[userIndex].preferences,
+    // Merge new preferences with existing ones
+    const existingPreferences = typeof user.preferences === 'string' 
+      ? JSON.parse(user.preferences) 
+      : (user.preferences || {});
+    
+    const updatedPreferences = {
+      ...existingPreferences,
       ...preferences
     };
-    users[userIndex].updatedAt = new Date().toISOString();
 
-    // Log activity
+    // Update user preferences in database
+    const updatedUser = await User.update(userId, {
+      preferences: updatedPreferences
+    });
+
+    if (!updatedUser) {
+      return res.status(500).json({ error: 'Failed to update preferences' });
+    }
+
+    // Log activity (keeping for compatibility, though in production this should be in audit_logs table)
     userActivity.unshift({
-      userId: req.userId,
+      userId: userId,
       action: 'Preferences updated',
       type: 'profile',
       timestamp: new Date().toISOString(),
       details: 'User preferences modified'
     });
 
+    // Parse preferences if they're a string
+    const returnPreferences = typeof updatedUser.preferences === 'string'
+      ? JSON.parse(updatedUser.preferences)
+      : updatedUser.preferences;
+
     res.json({
       success: true,
-      preferences: users[userIndex].preferences,
+      preferences: returnPreferences,
       message: 'Preferences updated successfully'
     });
   } catch (error) {
     logger.error('Failed to update preferences:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Failed to update preferences' });
   }
 });
 
