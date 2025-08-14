@@ -40,6 +40,8 @@
 - **System Logs Management**: Real-time container log access with advanced filtering and raw log viewing
 - **Monitoring & Observability**: Prometheus, Grafana, Loki, cAdvisor with integrated access and real-time alerting
 - **Enterprise Architecture**: Docker containerization, microservices architecture with service mesh communication
+- **Settings & Organization Management**: Integrated global organization context with automatic header injection
+- **User Management**: Comprehensive user administration with role-based permissions and organization access control
 
 ## 🚦 Quick Start
 
@@ -368,6 +370,26 @@ docker push your-registry/maes-analyzer:latest
 - **Service Communication**: Fixed extraction-to-analysis service communication with proper authentication headers
 - **Certificate Authentication**: Added support for both 'clientId' and 'applicationId' field names for backward compatibility
 
+### Compliance Report Generation & Download
+- **Report Path Resolution**: Fixed path mismatch between report generation (`/app/src/reports/`) and download endpoint (`/app/reports/`)
+- **Multiple Report Formats**: Support for HTML, JSON, CSV, and PDF report generation with proper content-type headers
+- **Report Storage**: Centralized report storage in compliance service with database metadata tracking
+- **Download Endpoint**: Secure report download with proper file validation and content disposition headers
+
+### Settings & Organization Management Improvements  
+- **Global Organization Context**: Integrated global OrganizationContext throughout Settings page tabs
+- **Test Connection Fix**: Added missing authenticateToken middleware to test-connection endpoint
+- **Organization Removal**: Added visible "Remove Organization" button with proper permission checks
+- **Tab Synchronization**: Fixed Settings tabs (General, Credentials, Extraction, Analysis) to properly sync with selected organization
+- **Field Mapping**: Corrected tenant_id field mapping between backend (snake_case) and frontend (camelCase)
+
+### User Management Improvements
+- **Model Methods**: Fixed User.findById implementation replacing incorrect User.findOne usage
+- **Permission Endpoints**: Added PATCH `/api/users/:id/permissions` endpoint for updating user permissions
+- **Error Handling**: Improved error responses with proper status codes (400, 404, 500)
+- **Super Admin Role**: Enhanced admin users with super_admin role for complete platform management
+- **Organization Access**: Fixed organization access validation for user operations
+
 ## 🔧 Troubleshooting
 
 ### Services Not Starting
@@ -424,6 +446,24 @@ docker push your-registry/maes-analyzer:latest
 - **Alternative**: Use `PUBLIC_IP` for IP-based deployments or `CORS_ORIGIN` for manual override
 - **Development**: Use `docker-compose.dev.yml` to expose port 3000 for direct API access
 - Check API logs for CORS-related errors: `docker logs maes-api`
+
+### Settings Page Issues
+- **Issue**: Settings tabs not updating when switching organizations
+- **Solution**: Integration of global OrganizationContext instead of local state management
+- **Debug**: Check browser console for organization context errors
+- **Fix Applied**: Settings.jsx now uses global useOrganization hook for consistent state
+
+### User Management Issues  
+- **Error**: "User.findOne is not a function" (500 error)
+- **Solution**: Use User.findById which is the correct model method
+- **Error**: "Cannot PATCH /api/users/:id/permissions" (404 error)
+- **Solution**: Permission update endpoint has been added to users router
+
+### Compliance Report Download Issues
+- **Error**: "Report file not found" when downloading compliance reports
+- **Solution**: Report path has been fixed to match where reportGenerator.js saves files
+- **Debug**: Check compliance service logs for file path details
+- **Location**: Reports are saved in `/app/src/reports/` within the compliance container
 
 ## 📋 Backup & Maintenance
 
@@ -599,6 +639,44 @@ docker system prune -f
 # Remove volumes (WARNING: This deletes all data)
 docker compose down -v
 ```
+
+## 🔄 Migration Instructions
+
+### For Existing Deployments
+
+If you're upgrading from a previous version, apply these migrations:
+
+```bash
+# 1. Update user roles to super_admin (if needed)
+docker exec -i maes-postgres psql -U maes_user -d maes_db << 'EOF'
+UPDATE maes.users 
+SET role = 'super_admin' 
+WHERE email = 'admin@maes.local';
+EOF
+
+# 2. Verify compliance report paths
+docker exec maes-compliance ls -la /app/src/reports/
+
+# 3. Clear browser cache and cookies
+# This ensures the new organization context is properly initialized
+
+# 4. Restart services to apply all fixes
+docker-compose restart api frontend compliance
+```
+
+### Verification Steps
+
+1. **Test Organization Context**:
+   - Login and switch between organizations
+   - Verify Settings tabs update with correct organization data
+
+2. **Test User Management**:
+   - Create, update, and manage users
+   - Verify permission updates work correctly
+
+3. **Test Compliance Reports**:
+   - Generate a new compliance report
+   - Download the report to verify path resolution
 
 ## 🤝 Contributing
 
