@@ -94,10 +94,12 @@ function App() {
   // Check if user needs onboarding
   if (user?.needsOnboarding) {
     return (
-      <Routes>
-        <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="*" element={<Navigate to="/onboarding" replace />} />
-      </Routes>
+      <OrganizationProvider>
+        <Routes>
+          <Route path="/onboarding" element={<Onboarding />} />
+          <Route path="*" element={<Navigate to="/onboarding" replace />} />
+        </Routes>
+      </OrganizationProvider>
     )
   }
 
