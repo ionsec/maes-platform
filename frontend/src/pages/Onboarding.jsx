@@ -45,6 +45,7 @@ import { useNavigate } from 'react-router-dom'
 import axios from '../utils/axios'
 import { useAuth } from '../contexts/AuthContext'
 import { useAuthStore } from '../stores/authStore'
+import { useOrganization } from '../contexts/OrganizationContext'
 
 const Onboarding = () => {
   const [activeStep, setActiveStep] = useState(0)
@@ -55,6 +56,12 @@ const Onboarding = () => {
   const [showDocumentation, setShowDocumentation] = useState(false)
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { 
+    organizations, 
+    selectedOrganizationId, 
+    selectOrganization, 
+    refreshOrganizations 
+  } = useOrganization()
 
   // Form data
   const [organizationData, setOrganizationData] = useState({
@@ -63,7 +70,6 @@ const Onboarding = () => {
     tenantId: ''
   })
   
-  const [organizations, setOrganizations] = useState([])
   const [currentOrgIndex, setCurrentOrgIndex] = useState(0)
   const [isAddingMultipleOrgs, setIsAddingMultipleOrgs] = useState(false)
   
@@ -83,39 +89,26 @@ const Onboarding = () => {
   })
 
   useEffect(() => {
-    // For individual users or users with default organization, allow onboarding
-    // Only redirect if user has a properly configured organization and completed onboarding
-    if (user?.organization?.name && 
-        user.organization.name !== 'MAES Default Organization' &&
-        !user.needsOnboarding) {
-      // User already has organization setup and completed onboarding, redirect to dashboard
+    // Check if user has any real organizations and completed onboarding
+    if (organizations && organizations.length > 0 && !user?.needsOnboarding) {
+      // User has organizations and completed onboarding, redirect to dashboard
       navigate('/dashboard')
     }
-  }, [user, navigate])
+    // Otherwise stay in onboarding to create first organization
+  }, [organizations, user, navigate])
 
-  const isIndividualUser = !user?.organization || user?.organization?.name === 'MAES Default Organization';
+  // Check if this is the first time setup (no organizations exist)
+  const isFirstTimeSetup = !organizations || organizations.length === 0;
   
-  const steps = isIndividualUser ? [
-    {
-      label: 'Welcome to MAES',
-      description: 'Get started with your individual MAES account'
-    },
-    {
-      label: 'Microsoft 365 Setup (Optional)',
-      description: 'Configure Microsoft 365 credentials for data extraction'
-    },
-    {
-      label: 'Complete Setup',
-      description: 'Finalize configuration and start using MAES'
-    }
-  ] : [
+  // All users must create an organization - no individual user flow
+  const steps = [
     {
       label: 'Welcome & Security',
       description: 'Change default password and learn about MAES'
     },
     {
-      label: 'Organization Setup',
-      description: 'Configure your Microsoft 365 organization details'
+      label: 'Create Your Organization',
+      description: 'Set up your Microsoft 365 organization (Required)'
     },
     {
       label: 'Azure App Registration',
@@ -193,24 +186,21 @@ const Onboarding = () => {
         orgData.tenantId = organizationData.tenantId
       }
       
-      if (isAddingMultipleOrgs) {
-        // Add organization to user's accessible organizations
-        await axios.post('/api/user/organizations', orgData)
-        
-        // Add to local state
-        setOrganizations([...organizations, { ...orgData, id: Date.now() }])
-        
-        // Reset form for next organization
-        setOrganizationData({ name: '', fqdn: '', tenantId: '' })
-        setSuccess(`Organization "${orgData.name}" added successfully! Add another or continue.`)
-      } else {
-        // Update current organization (legacy single-org mode)
-        await axios.put('/api/organizations/current', orgData)
-        setSuccess('Organization details updated successfully!')
-        setTimeout(() => handleNext(), 2000)
+      // Always create a new organization (not update)
+      const response = await axios.post('/api/organizations', orgData)
+      
+      // Refresh the organizations list in the global context
+      await refreshOrganizations()
+      
+      // Select the newly created organization
+      if (response.data.organization) {
+        await selectOrganization(response.data.organization.id)
       }
+      
+      setSuccess('Organization created successfully!')
+      setTimeout(() => handleNext(), 2000)
     } catch (error) {
-      setError(error.response?.data?.error || 'Failed to save organization')
+      setError(error.response?.data?.error || 'Failed to create organization')
     } finally {
       setLoading(false)
     }
@@ -224,7 +214,7 @@ const Onboarding = () => {
   }
 
   const handleFinishAddingOrgs = () => {
-    if (organizations.length === 0) {
+    if (!organizations || organizations.length === 0) {
       setError('Please add at least one organization')
       return
     }
@@ -243,11 +233,10 @@ const Onboarding = () => {
       return
     }
 
-    // Certificate thumbprint is optional since we have hardcoded certificates
-    // if (credentialsData.authMethod === 'certificate' && !credentialsData.certificateThumbprint) {
-    //   setError('Certificate Thumbprint is required for this authentication method')
-    //   return
-    // }
+    if (!selectedOrganizationId) {
+      setError('No organization selected. Please complete organization setup first.')
+      return
+    }
 
     setLoading(true)
     try {
@@ -264,7 +253,16 @@ const Onboarding = () => {
         }
       }
 
-      await axios.put('/api/organizations/current/credentials', credentials)
+      // Save credentials to the selected organization
+      await axios.put('/api/organizations/current/credentials', credentials, {
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
+      })
+      
+      // Refresh organization data to ensure Settings sees the changes
+      await refreshOrganizations()
+      
       setSuccess('Credentials configured successfully!')
       setTimeout(() => handleNext(), 2000)
     } catch (error) {
@@ -275,11 +273,20 @@ const Onboarding = () => {
   }
 
   const handleTestConnection = async () => {
+    if (!selectedOrganizationId) {
+      setError('No organization selected. Please complete organization setup first.')
+      return
+    }
+    
     setLoading(true)
     setTestConnectionResult(null)
     try {
       // Get current organization data to test with
-      const orgResponse = await axios.get('/api/organizations/current?showCredentials=true')
+      const orgResponse = await axios.get('/api/organizations/current?showCredentials=true', {
+        headers: {
+          'x-organization-id': selectedOrganizationId
+        }
+      })
       const org = orgResponse.data.organization
       
       const testParams = {
@@ -438,10 +445,10 @@ const Onboarding = () => {
   }
 
   const renderStepContent = (step) => {
-    if (isIndividualUser) {
-      switch (step) {
-        case 0:
-          return (
+    // Organization-based flow (all users must create organizations)
+    switch (step) {
+      case 0:
+        return (
             <Box>
               <Card sx={{ mb: 3 }}>
                 <CardContent>
@@ -878,16 +885,10 @@ const Onboarding = () => {
             </Box>
           )
 
-        default:
-          return 'Unknown step'
-      }
+      default:
+        return 'Unknown step'
     }
-    
-    // Original organization-based flow
-    switch (step) {
-      case 0:
-        return (
-          <Box>
+  }
             <Alert severity="warning" sx={{ mb: 3 }}>
               <Typography variant="h6" gutterBottom>Security First!</Typography>
               <Typography>
@@ -993,9 +994,9 @@ const Onboarding = () => {
       case 1:
         return (
           <Box>
-            <Alert severity="info" sx={{ mb: 3 }}>
+            <Alert severity="warning" sx={{ mb: 3 }}>
               <Typography variant="body2">
-                Configure organization details to connect to Microsoft 365. You can add multiple organizations for comprehensive monitoring across your managed clients.
+                <strong>Required:</strong> You must create an organization to use MAES. This will be your primary organization for Microsoft 365 data extraction and analysis.
               </Typography>
             </Alert>
 
@@ -1055,42 +1056,10 @@ const Onboarding = () => {
                 disabled={loading || !organizationData.name || !organizationData.fqdn}
                 startIcon={loading ? <CircularProgress size={20} /> : <Business />}
               >
-                {loading ? 'Adding...' : isAddingMultipleOrgs ? 'Add Organization' : 'Save Organization'}
+                {loading ? 'Creating Organization...' : 'Create Organization'}
               </Button>
               
-              {!isAddingMultipleOrgs && (
-                <Button
-                  variant="outlined"
-                  onClick={handleAddAnotherOrg}
-                  disabled={loading}
-                  startIcon={<Business />}
-                  color="primary"
-                >
-                  Add Multiple Organizations
-                </Button>
-              )}
-              
-              {isAddingMultipleOrgs && organizations.length > 0 && (
-                <Button
-                  variant="contained"
-                  onClick={handleFinishAddingOrgs}
-                  disabled={loading}
-                  startIcon={<CheckCircle />}
-                  color="success"
-                >
-                  Finish Adding Organizations
-                </Button>
-              )}
-              
-              <Button
-                variant="outlined"
-                onClick={handleNext}
-                disabled={loading}
-                startIcon={<SkipNext />}
-                color="secondary"
-              >
-                Skip for Now
-              </Button>
+              {/* Organization creation is mandatory - no skip button */}
             </Box>
           </Box>
         )

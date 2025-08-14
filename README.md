@@ -390,6 +390,14 @@ docker push your-registry/maes-analyzer:latest
 - **Super Admin Role**: Enhanced admin users with super_admin role for complete platform management
 - **Organization Access**: Fixed organization access validation for user operations
 
+### Onboarding & Organization Setup Improvements
+- **Mandatory Organization Creation**: Admin users must create their first organization during onboarding
+- **Global Organization Context**: Integrated OrganizationContext throughout onboarding flow
+- **Organization Creation API**: Fixed to use POST `/api/organizations` for creating new organizations
+- **Credentials Management**: Credentials now saved to organization context, not user preferences
+- **Database Integration**: Fixed user preferences endpoint to use database instead of mock data
+- **Onboarding Flow**: Streamlined 6-step process for organization setup and M365 configuration
+
 ## 🔧 Troubleshooting
 
 ### Services Not Starting
