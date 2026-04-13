@@ -1,3 +1,33 @@
+## [1.2.0] - 2026-04-13
+
+### Added
+- UEBA (User Entity Behavior Analytics) with baseline creation and anomaly detection
+- Case Management system for incident response lifecycle
+- Automated Playbooks engine with 3 built-in playbooks
+- Threat Intelligence integration (VirusTotal, AbuseIPDB, Shodan, IPQualityScore)
+- Saved IOCs feature with CRUD tracking
+- UEBA Dashboard frontend page
+- Incident Management frontend page
+- Threat Intelligence frontend page with single/bulk lookup
+- Behavior Analytics sidebar navigation
+
+### Fixed
+- Duplicate imports and app declarations in api/src/index.js
+- Duplicate imports and routes in frontend/src/App.jsx
+- Broken menuItems array in frontend/src/components/Sidebar.jsx
+- Transaction handling in incidentService.js (proper client-based transactions)
+- Route ordering in incidents.js (specific routes before parameterized routes)
+- SQL injection in userBehaviorProfile.js getUserCountries() (parameterized query)
+- Missing updateBaseline() method in UserBehaviorProfile
+- Broken Alert model reference in ueba route (replaced with direct query)
+- RBAC permission names in ueba, incidents, and threatIntel routes
+- Missing IPQualityScore provider initialization
+
+### Security
+- Parameterized SQL queries in UEBA baseline queries
+- Proper RBAC enforcement on all new API endpoints
+- Rate limiting on all new routes
+
 # Changelog
 
 All notable changes to this project are documented in this file.

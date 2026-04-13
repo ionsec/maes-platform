@@ -64,6 +64,24 @@ const menuItems = [
     description: 'Threat Intelligence & IOCs'
   },
   { 
+    text: 'Incident Response', 
+    icon: <Timeline />, 
+    path: '/incidents',
+    description: 'Case Management & Playbooks'
+  },
+  { 
+    text: 'Threat Intelligence', 
+    icon: <BugReport />, 
+    path: '/threat-intel',
+    description: 'IOC Enrichment & Lookup'
+  },
+  { 
+    text: 'Behavior Analytics', 
+    icon: <Fingerprint />, 
+    path: '/ueba',
+    description: 'User Entity Behavior Analytics'
+  },
+  { 
     text: 'Investigation Reports', 
     icon: <Assessment />, 
     path: '/reports',

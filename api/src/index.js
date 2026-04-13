@@ -28,6 +28,10 @@ const siemRoutes = require('./routes/siem');
 const internalRoutes = require('./routes/internal');
 const systemRoutes = require('./routes/system');
 const complianceRoutes = require('./routes/compliance');
+const uebaRoutes = require('./routes/ueba');
+const incidentRoutes = require('./routes/incidents');
+const threatIntelRoutes = require('./routes/threatIntel');
+const savedIOCsRoutes = require('./routes/savedIOCs');
 
 const app = express();
 const requiredEnvVars = ['JWT_SECRET', 'SERVICE_AUTH_TOKEN', 'ENCRYPTION_KEY'];
@@ -226,6 +230,10 @@ app.use('/api/siem', siemRoutes);
 app.use('/api/internal', internalRoutes);
 app.use('/api/system', systemRoutes);
 app.use('/api/compliance', complianceRoutes);
+app.use('/api/ueba', uebaRoutes);
+app.use('/api/incidents', incidentRoutes);
+app.use('/api/threat-intel', threatIntelRoutes);
+app.use('/api/threat-intel', savedIOCsRoutes);
 
 // Certificate download endpoint
 app.get('/api/certificates/app.crt', (req, res) => {
