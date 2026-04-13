@@ -1,7 +1,7 @@
 .. _quickstart:
 
 Quick Start Guide
-==================
+=================
 
 This guide walks you through the fastest path from zero to a working extraction and analysis result.
 
@@ -71,7 +71,7 @@ This guide walks you through the fastest path from zero to a working extraction 
          cd services/compliance && npm install && npm start
 
 Typical Workflow
------------------
+----------------
 
 .. mermaid::
 
@@ -84,7 +84,7 @@ Typical Workflow
      F --> G[Remediate & Re-Assess]
 
 Next Steps
------------
+----------
 
 - :doc:`/architecture/overview` — understand the system design
 - :doc:`/api/authentication` — authenticate with the API

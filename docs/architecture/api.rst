@@ -20,7 +20,7 @@ The server:
 6. Listens on port 3000
 
 Middleware Stack
------------------
+----------------
 
 .. list-table::
    :header-rows: 1
@@ -46,7 +46,7 @@ Middleware Stack
      - Prometheus metrics collection
 
 Route Modules
---------------
+-------------
 
 All routes are mounted under ``/api/``:
 
@@ -101,12 +101,12 @@ All routes are mounted under ``/api/``:
      - Public registration, tenant app info
 
 Swagger Documentation
-----------------------
+---------------------
 
 Available at ``/api/docs`` when the API is running. Powered by ``swagger-jsdoc`` with OpenAPI 3.0.0 schema definitions auto-generated from JSDoc comments in route files.
 
 Health & Metrics
------------------
+----------------
 
 - ``GET /health`` — Basic health check
 - ``GET /api/health`` — Extended health with uptime and environment

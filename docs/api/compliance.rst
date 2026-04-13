@@ -6,14 +6,14 @@ Compliance
 Manage CIS compliance assessments, controls, and reports. All endpoints require JWT authentication.
 
 Check Credentials Status
---------------------------
+------------------------
 
 .. http:get:: /api/compliance/organization/(organizationId)/credentials-status
 
    Check if an organization has Microsoft 365 credentials configured for compliance assessments.
 
 Get Compliance Controls
-------------------------
+-----------------------
 
 .. http:get:: /api/compliance/controls/(assessment_type)
 
@@ -24,7 +24,7 @@ Get Compliance Controls
    :query active: Filter by active status (``true``, ``false``)
 
 List Assessments
------------------
+----------------
 
 .. http:get:: /api/compliance/assessments
 
@@ -43,7 +43,7 @@ Get Assessment
    Get a single assessment with its control results and failing entities.
 
 Start Assessment
------------------
+----------------
 
 .. http:post:: /api/compliance/assessments
 
@@ -63,14 +63,14 @@ Start Assessment
       }
 
 Get Assessment Summary
------------------------
+----------------------
 
 .. http:get:: /api/compliance/assessments/(id)/summary
 
    Get a summary with scores, failing entity breakdown, and prioritized recommendations.
 
 Generate Report
-----------------
+---------------
 
 .. http:post:: /api/compliance/assessments/(id)/report
 
@@ -90,21 +90,21 @@ Generate Report
    Supported types: ``full``, ``executive``, ``remediation``, ``comparison``
 
 List Reports
--------------
+------------
 
 .. http:get:: /api/compliance/assessments/(id)/reports
 
    List all generated reports for an assessment.
 
 Download Report
-----------------
+---------------
 
 .. http:get:: /api/compliance/assessments/(id)/report/(fileName)/download
 
    Download a generated report file.
 
 Schedule Assessment
---------------------
+-------------------
 
 .. http:post:: /api/compliance/schedules
 

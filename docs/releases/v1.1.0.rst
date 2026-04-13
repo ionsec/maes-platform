@@ -1,0 +1,50 @@
+.. _v1-1-0:
+
+v1.1.0 Release Notes
+====================
+
+Release Date: 2025
+
+This release focuses on security hardening, capability alignment with upstream extractor/analyzer suites, and production readiness.
+
+Breaking Changes
+----------------
+
+- **No default admin account** — The database bootstrap no longer seeds ``admin@maes.local / admin123``. You must register the first user.
+- **No fallback secrets** — Services fail fast if required environment variables are missing. No hardcoded defaults.
+- **Docker logs disabled** — ``/api/system/logs`` returns ``503`` unless ``ENABLE_DOCKER_LOGS=true`` is set and the Docker socket is explicitly mounted.
+
+New Features
+------------
+
+- **Shared extraction capability registry** — ``shared/platformCapabilities.json`` is used by API, extractor, and frontend, ensuring consistent extraction type definitions.
+- **Expanded extraction types** — Added ``ual_graph``, ``licenses``, ``mailbox_rules``, ``transport_rules``, ``activity_logs``, ``directory_activity_logs``, ``admin_users``, ``conditional_access_policies``, ``mailbox_audit_status``, ``mailbox_permissions``, ``licenses_by_user``, ``license_compatibility``, ``entra_security_defaults``, ``groups``, ``group_members``, ``dynamic_groups``, ``pim_assignments``, ``role_activity``, ``security_alerts``, and ``full_extraction``.
+- **Upload support for additional types** — Many extraction types now support file upload for bring-your-own-data workflows.
+- **Updated PowerShell cmdlet bindings** — Aligned with current upstream ``Microsoft-Extractor-Suite`` command names.
+
+Security Fixes
+--------------
+
+- Removed seeded default credentials from database bootstrap
+- Removed insecure fallback secrets from runtime code and ``docker-compose.yml``
+- Upgraded vulnerable Node.js dependencies (clean ``npm audit --omit=dev``)
+- Pinned floating container base images by SHA256 digest
+- Hardened service Dockerfiles
+- Disabled Docker socket access by default (``ENABLE_DOCKER_LOGS=false``)
+- Tightened CSP and CORS defaults in production mode
+
+Dependency Updates
+------------------
+
+- Upgraded all production dependencies across API, frontend, extractor, analyzer, and compliance
+- Pinned override versions for ``body-parser``, ``path-to-regexp``, ``socket.io-parser``, ``glob``, ``minimatch``, ``js-yaml``, and ``brace-expansion``
+
+Verification
+------------
+
+The release was verified with:
+
+- ``npm audit --omit=dev --json`` in all service directories (clean)
+- Frontend production build
+- Syntax checks on modified service files
+- Manual container image testing

@@ -78,7 +78,7 @@ Pages
      - First-time organization and M365 setup wizard
 
 Theme Engine
--------------
+------------
 
 The platform ships with 5 built-in themes:
 
@@ -91,7 +91,7 @@ The platform ships with 5 built-in themes:
 Themes are managed via ``ThemeProvider.jsx`` and selectable through the ``ThemeSelector`` component.
 
 Real-Time Updates
-------------------
+-----------------
 
 The frontend connects to the API via Socket.IO and listens for events scoped to the user's organization:
 
@@ -100,7 +100,7 @@ The frontend connects to the API via Socket.IO and listens for events scoped to 
 - ``extraction.progress`` / ``extraction.completed`` / ``extraction.failed``
 
 Nginx Configuration
---------------------
+-------------------
 
 The frontend container runs nginx with:
 

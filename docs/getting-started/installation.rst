@@ -11,7 +11,7 @@ Prerequisites
 - A ``.env`` file with explicit secrets (no default credentials)
 
 Step 1 — Clone the Repository
-------------------------------
+-----------------------------
 
 .. code-block:: bash
 
@@ -19,7 +19,7 @@ Step 1 — Clone the Repository
    cd maes-platform
 
 Step 2 — Configure Environment
--------------------------------
+------------------------------
 
 Copy the baseline template and fill in all required secrets:
 
@@ -65,7 +65,7 @@ Required secrets (generate with ``openssl rand -hex 24`` or ``openssl rand -hex 
    The platform will refuse to start if any required secret is missing.
 
 Step 3 — Start the Stack
--------------------------
+------------------------
 
 .. code-block:: bash
 
@@ -118,7 +118,7 @@ This starts the following services:
      - Container metrics
 
 Step 4 — Access the Platform
------------------------------
+----------------------------
 
 Open your browser at:
 
@@ -130,12 +130,12 @@ Open your browser at:
    Your browser may warn about the self-signed certificate on first visit. Accept it or configure a valid certificate (see :doc:`/deployment/domain-setup`).
 
 Step 5 — Create Your Account
------------------------------
+----------------------------
 
 The platform no longer seeds a default administrator account. Register the first user through the MAES UI registration flow. The first user will have ``viewer`` role by default — promote to ``admin`` or ``super_admin`` via the database or API as needed.
 
 Verify the Stack
------------------
+----------------
 
 .. code-block:: bash
 

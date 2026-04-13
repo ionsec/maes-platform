@@ -1,7 +1,7 @@
 .. MAES Platform documentation master file
 
 MAES Platform Documentation
-============================
+===========================
 
 .. raw:: html
 
