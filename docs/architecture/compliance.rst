@@ -8,7 +8,7 @@ The compliance service evaluates Microsoft 365 tenant configurations against CIS
 Source: ``services/compliance/src/index.js``
 
 Assessment Flow
-----------------
+---------------
 
 .. mermaid::
 
@@ -32,7 +32,7 @@ Assessment Flow
      Compliance->>Compliance: Generate HTML/JSON/PDF report
 
 CIS v4.0.0 Controls
---------------------
+-------------------
 
 The engine evaluates controls defined in ``compliance_controls`` table. Currently implemented automated checks:
 
@@ -82,7 +82,7 @@ The engine evaluates controls defined in ``compliance_controls`` table. Currentl
      - Manual Review
 
 Assessment Results
---------------------
+------------------
 
 Each control evaluation produces:
 
@@ -95,7 +95,7 @@ Each control evaluation produces:
 Scores are weighted by control severity (Level 1 / Level 2) and rolled up to an overall compliance score.
 
 Entity-Level Detail
---------------------
+-------------------
 
 The compliance engine tracks failing entities at a granular level:
 
@@ -106,7 +106,7 @@ The compliance engine tracks failing entities at a granular level:
 This enables targeted remediation rather than just a pass/fail score.
 
 Report Generation
-------------------
+-----------------
 
 The ``ReportGenerator`` (``services/compliance/src/services/reportGenerator.js``) produces:
 
@@ -143,7 +143,7 @@ The ``ReportGenerator`` (``services/compliance/src/services/reportGenerator.js``
      - Excel spreadsheet
 
 Scheduled Assessments
-----------------------
+---------------------
 
 The ``Scheduler`` (``services/compliance/src/services/scheduler.js``) supports:
 
@@ -152,7 +152,7 @@ The ``Scheduler`` (``services/compliance/src/services/scheduler.js``) supports:
 - **Baseline flagging** for initial assessment comparison
 
 API Endpoints
---------------
+-------------
 
 The compliance service exposes internal API on port 3002:
 

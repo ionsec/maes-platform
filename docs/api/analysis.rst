@@ -6,7 +6,7 @@ Analysis
 Manage forensic analysis jobs. All endpoints require JWT authentication unless noted.
 
 List Analysis Jobs
--------------------
+------------------
 
 .. http:get:: /api/analysis
 
@@ -18,7 +18,7 @@ List Analysis Jobs
    :query type: Filter by analysis type
 
 Create Analysis Job
---------------------
+-------------------
 
 .. http:post:: /api/analysis
 
@@ -43,7 +43,7 @@ Create Analysis Job
    - ``extractionId`` must reference a completed extraction
 
 Create Internal Analysis Job
------------------------------
+----------------------------
 
 .. http:post:: /api/analysis/internal
 
@@ -63,7 +63,7 @@ Create Internal Analysis Job
       }
 
 Create Direct Analysis Record
--------------------------------
+-----------------------------
 
 .. http:post:: /api/analysis/internal/direct
 
@@ -72,7 +72,7 @@ Create Direct Analysis Record
    **Headers:** ``x-service-token: <SERVICE_AUTH_TOKEN>``
 
 Get Analysis Results
----------------------
+--------------------
 
 .. http:get:: /api/analysis/(id)/results
 
@@ -95,7 +95,7 @@ Get Analysis Results
       }
 
 Cancel Analysis Job
---------------------
+-------------------
 
 .. http:post:: /api/analysis/(id)/cancel
 

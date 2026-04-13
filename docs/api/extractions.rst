@@ -6,7 +6,7 @@ Extractions
 Manage Microsoft 365 data extraction jobs. All endpoints require JWT authentication.
 
 List Extractions
------------------
+----------------
 
 .. http:get:: /api/extractions
 
@@ -35,7 +35,7 @@ Get Extraction
    Get details for a single extraction.
 
 Create Extraction
-------------------
+-----------------
 
 .. http:post:: /api/extractions
 
@@ -73,21 +73,21 @@ Create Extraction
       }
 
 Get Extraction Logs
---------------------
+-------------------
 
 .. http:get:: /api/extractions/(id)/logs
 
    Retrieve real-time log entries for an extraction job from Redis.
 
 Download Extraction
---------------------
+-------------------
 
 .. http:get:: /api/extractions/(id)/download
 
    Download extraction results as a ZIP archive containing all output files and a ``extraction_metadata.json`` summary. Only available for completed extractions.
 
 Update Extraction Status (Internal)
--------------------------------------
+-----------------------------------
 
 .. http:patch:: /api/extractions/(id)/status
 

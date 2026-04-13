@@ -6,12 +6,12 @@ Database Schema
 The MAES platform uses PostgreSQL 14 with TimescaleDB on the ``maes`` schema.
 
 Schema: ``maes``
-------------------
+----------------
 
 All tables live in the ``maes`` schema. The database is initialized from ``database/init.sql`` and subsequent migrations in ``database/migrations/``.
 
 Entity-Relationship Overview
-------------------------------
+----------------------------
 
 .. mermaid::
 
@@ -30,7 +30,7 @@ Entity-Relationship Overview
      users ||--o{ user_organizations : "has"
 
 Core Tables
-------------
+-----------
 
 organizations
 ^^^^^^^^^^^^^
@@ -143,7 +143,7 @@ Multi-organization membership:
      - Primary org flag
 
 extractions
-^^^^^^^^^^
+^^^^^^^^^^^
 
 .. list-table::
    :header-rows: 1
@@ -262,7 +262,7 @@ audit_logs
 Immutable audit trail for all security-relevant actions (login, logout, CRUD operations).
 
 Compliance Tables
-------------------
+-----------------
 
 compliance_assessments
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -297,12 +297,12 @@ Per-control evaluation result:
 - ``remediation_guidance``: Actionable steps
 
 compliance_schedules
-^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^
 
 Scheduled assessment configuration with ``frequency`` (daily/weekly/monthly/quarterly).
 
 Migrations
------------
+----------
 
 Migrations are numbered and stored in ``database/migrations/``:
 

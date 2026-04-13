@@ -8,7 +8,7 @@ The analyzer service processes extracted Microsoft 365 data to detect security a
 Source: ``services/analyzer/src/index.js``
 
 Architecture
--------------
+------------
 
 .. mermaid::
 
@@ -38,7 +38,7 @@ Architecture
      JP --> VOL
 
 Queue Processing
------------------
+----------------
 
 The service listens on two BullMQ queues:
 
@@ -48,7 +48,7 @@ The service listens on two BullMQ queues:
 Workers use the ``JobProcessor`` class for multi-threaded processing and the ``EnhancedAnalyzer`` for detection logic.
 
 Analysis Types
----------------
+--------------
 
 .. list-table::
    :header-rows: 1
@@ -78,7 +78,7 @@ Analysis Types
      - Broad analysis across supported datasets
 
 Detection Engine — EnhancedAnalyzer
-------------------------------------
+-----------------------------------
 
 The ``EnhancedAnalyzer`` class (``services/analyzer/src/enhancedAnalyzer.js``) provides:
 
@@ -126,7 +126,7 @@ The ``EnhancedAnalyzer`` class (``services/analyzer/src/enhancedAnalyzer.js``) p
      - Location changes for impossible-travel
 
 Analysis Result Flow
----------------------
+--------------------
 
 1. Job is dequeued from Redis
 2. ``JobProcessor`` fetches extraction data (from API or local volume)
@@ -136,7 +136,7 @@ Analysis Result Flow
 6. Results are stored in ``analysis_jobs.results`` (JSONB)
 
 Cleanup
---------
+-------
 
 - Old completed/failed jobs are cleaned up every hour (30-day retention)
 - The analyzer exposes a cleanup API for organization data removal

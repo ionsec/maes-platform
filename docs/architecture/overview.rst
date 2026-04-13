@@ -6,7 +6,7 @@ Architecture Overview
 MAES follows a microservices architecture with each service owning a distinct responsibility. All services communicate through Redis queues (BullMQ) and a shared PostgreSQL database, while the frontend sits behind an nginx reverse proxy with SSL termination.
 
 High-Level Diagram
--------------------
+------------------
 
 .. mermaid::
 
@@ -58,7 +58,7 @@ High-Level Diagram
      COMP <--> PG
 
 Service Responsibilities
--------------------------
+------------------------
 
 .. list-table::
    :header-rows: 1
@@ -84,7 +84,7 @@ Service Responsibilities
      - Dashboard, extractions, analysis, compliance, alerts, settings, onboarding wizard, theme engine
 
 Communication Patterns
------------------------
+----------------------
 
 **Synchronous (HTTP):**
 
@@ -110,7 +110,7 @@ Communication Patterns
 - Uploaded data caching (24-hour TTL)
 
 Data Flow — Extraction Pipeline
---------------------------------
+-------------------------------
 
 .. mermaid::
 

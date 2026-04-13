@@ -6,7 +6,7 @@ First-Time Setup
 After installing the platform, complete these steps before running extractions or assessments.
 
 1. Register the First User
----------------------------
+--------------------------
 
 Navigate to ``https://localhost/register`` and create your account. The first registered user gets the ``viewer`` role.
 
@@ -22,7 +22,7 @@ To promote to admin:
    WHERE email = 'your-email@example.com';
 
 2. Complete Organization Onboarding
--------------------------------------
+-----------------------------------
 
 After login, the platform guides you through onboarding:
 
@@ -36,7 +36,7 @@ After login, the platform guides you through onboarding:
 3. **Grant admin consent** — Use the MAES admin consent URL to grant the required Microsoft Graph permissions to the MAES application.
 
 3. Configure Microsoft 365 Application
-----------------------------------------
+--------------------------------------
 
 The MAES Azure AD application (ID: ``574cfe92-60a1-4271-9c80-8aba00070e67``) requires the following Microsoft Graph permissions:
 
@@ -52,7 +52,7 @@ The MAES Azure AD application (ID: ``574cfe92-60a1-4271-9c80-8aba00070e67``) req
 Grant these via the Microsoft Entra admin center or through the MAES consent flow.
 
 4. Upload or Generate a Certificate
--------------------------------------
+-----------------------------------
 
 Two options:
 
@@ -86,7 +86,7 @@ From the Extractions page:
 The extractor service picks up the job from the Redis queue, authenticates to Microsoft 365, runs the PowerShell cmdlet, and stores the results. On completion, analysis is automatically triggered.
 
 7. Review Analysis Results
----------------------------
+--------------------------
 
 After extraction completes, the analyzer automatically processes the data and generates findings. Review results on the Analysis page, where you can:
 

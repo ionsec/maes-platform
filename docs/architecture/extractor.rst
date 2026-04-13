@@ -8,7 +8,7 @@ The extractor service is a BullMQ worker that dequeues extraction jobs from the 
 Source: ``services/extractor/src/index.js``
 
 How It Works
--------------
+------------
 
 .. mermaid::
 
@@ -31,7 +31,7 @@ How It Works
      Extractor->>Redis: Enqueue analysis job (auto-trigger)
 
 Extraction Types
------------------
+----------------
 
 The supported extraction types are defined in ``shared/platformCapabilities.json`` and used across all services:
 
@@ -169,7 +169,7 @@ The supported extraction types are defined in ``shared/platformCapabilities.json
      - comprehensive_analysis
 
 Certificate Authentication
-----------------------------
+--------------------------
 
 The extractor uses X.509 certificate authentication to connect to Microsoft 365:
 
@@ -179,7 +179,7 @@ The extractor uses X.509 certificate authentication to connect to Microsoft 365:
 4. Organization-scoped output directories prevent cross-tenant data leakage
 
 Output Structure
------------------
+----------------
 
 Extraction output is stored in Docker volumes:
 

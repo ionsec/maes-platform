@@ -52,7 +52,7 @@ Account Lockout
 - Failed login attempts are recorded in the audit log.
 
 Admin Consent
---------------
+-------------
 
 .. http:get:: /api/auth/callback
 
@@ -61,7 +61,7 @@ Admin Consent
    This endpoint is used during the registration flow to link a Microsoft 365 tenant to a MAES organization.
 
 Logout
--------
+------
 
 .. http:post:: /api/auth/logout
 
@@ -79,7 +79,7 @@ Logout
       }
 
 JWT Structure
---------------
+-------------
 
 The JWT payload contains:
 
@@ -96,7 +96,7 @@ The JWT payload contains:
 Default expiry: **24 hours** (configurable via ``JWT_EXPIRY``).
 
 Service Authentication
------------------------
+----------------------
 
 Internal service-to-service calls use the ``x-service-token`` header with the shared ``SERVICE_AUTH_TOKEN`` secret. This bypasses JWT authentication and is used by:
 
