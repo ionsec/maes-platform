@@ -1,13 +1,13 @@
 # MAES API Documentation
 
-> **Developed by [IONSEC.IO Dev Team](https://github.com/ionsec/maes-platform)** - Specializing in Incident Response Services and Cybersecurity Solutions
+> **Developed by [IONSEC.IO Dev Team](https://github.com/ionsec/maes-platform)** — Specializing in Incident Response Services and Cybersecurity Solutions
 
 ## Overview
 
-The MAES API provides comprehensive endpoints for Microsoft 365 forensic analysis, data extraction, and security event management. The API is RESTful and uses JWT authentication.
+The MAES API provides comprehensive endpoints for Microsoft 365 forensic analysis, data extraction, security event management, user behavior analytics, incident response, and threat intelligence enrichment. The API is RESTful and uses JWT authentication.
 
-**Base URL**: `http://localhost:3000/api`
-**API Documentation**: `http://localhost:3000/api/docs`
+**Base URL**: `http://localhost:3000/api`  
+**Interactive Docs**: `http://localhost:3000/api/docs`
 
 ## Authentication
 
@@ -23,7 +23,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 ### Authentication
 
 #### POST `/auth/login`
-Authenticate user and receive JWT token.
+Authenticate user and receive a JWT token.
 
 **Request Body:**
 ```json
@@ -42,54 +42,21 @@ Authenticate user and receive JWT token.
     "id": "uuid",
     "username": "admin@example.com",
     "email": "admin@example.com",
-    "firstName": "Admin",
-    "lastName": "User",
     "role": "admin",
-    "permissions": ["canRunAnalysis", "canViewReports"],
-    "organization": {
-      "id": "uuid",
-      "name": "Your Organization",
-      "tenantId": "tenant-id",
-      "isActive": true
-    }
+    "permissions": { "canRunAnalysis": true, "canViewReports": true },
+    "organization": { "id": "uuid", "name": "Your Organization" }
   }
 }
 ```
+
+---
 
 ### Data Extraction
 
 #### GET `/extractions`
-Get list of data extractions with pagination.
+List data extractions with pagination.
 
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 20, max: 100)
-- `status` (optional): Filter by status
-- `type` (optional): Filter by extraction type
-
-**Response:**
-```json
-{
-  "success": true,
-  "extractions": [
-    {
-      "id": "uuid",
-      "type": "unified_audit_log",
-      "status": "completed",
-      "startDate": "2024-01-01",
-      "endDate": "2024-01-31",
-      "itemsExtracted": 15000,
-      "createdAt": "2024-01-15T10:30:00Z"
-    }
-  ],
-  "pagination": {
-    "total": 50,
-    "page": 1,
-    "pages": 3,
-    "limit": 20
-  }
-}
-```
+**Query Parameters:** `page`, `limit`, `status`, `type`
 
 #### POST `/extractions`
 Start a new data extraction.
@@ -100,47 +67,18 @@ Start a new data extraction.
   "type": "unified_audit_log",
   "startDate": "2024-01-01",
   "endDate": "2024-01-31",
-  "parameters": {
-    "includeMailboxAudit": true,
-    "includeMessageTrace": false
-  }
+  "parameters": { "includeMailboxAudit": true }
 }
 ```
+
+---
 
 ### Analysis
 
 #### GET `/analysis`
-Get analysis jobs with pagination and filtering.
+List analysis jobs with pagination.
 
-**Query Parameters:**
-- `page` (optional): Page number
-- `limit` (optional): Items per page
-- `status` (optional): Filter by status
-- `type` (optional): Filter by analysis type
-
-**Response:**
-```json
-{
-  "success": true,
-  "analysisJobs": [
-    {
-      "id": "uuid",
-      "type": "ual_analysis",
-      "status": "completed",
-      "priority": "high",
-      "extractionId": "uuid",
-      "parameters": {},
-      "createdAt": "2024-01-15T10:30:00Z"
-    }
-  ],
-  "pagination": {
-    "total": 25,
-    "page": 1,
-    "pages": 2,
-    "limit": 20
-  }
-}
-```
+**Query Parameters:** `page`, `limit`, `status`, `type`
 
 #### POST `/analysis`
 Create a new analysis job.
@@ -150,25 +88,18 @@ Create a new analysis job.
 {
   "extractionId": "uuid",
   "type": "ual_analysis",
-  "priority": "high",
-  "parameters": {
-    "detectSuspiciousActivity": true,
-    "includeMITREMapping": true
-  }
+  "priority": "high"
 }
 ```
+
+---
 
 ### Alerts
 
 #### GET `/alerts`
-Get security alerts with pagination and filtering.
+List security alerts with filtering.
 
-**Query Parameters:**
-- `page` (optional): Page number
-- `limit` (optional): Items per page
-- `severity` (optional): Filter by severity
-- `category` (optional): Filter by category
-- `status` (optional): Filter by status
+**Query Parameters:** `page`, `limit`, `severity`, `category`, `status`
 
 **Response:**
 ```json
@@ -178,137 +109,271 @@ Get security alerts with pagination and filtering.
     {
       "id": "uuid",
       "title": "Suspicious Login Detected",
-      "description": "Multiple failed login attempts detected",
       "severity": "high",
       "category": "authentication",
       "status": "new",
       "mitreTechniques": ["T1078", "T1110"],
-      "affectedEntities": {
-        "users": ["user@domain.com"],
-        "ips": ["192.168.1.100"]
-      },
       "createdAt": "2024-01-15T10:30:00Z"
     }
   ],
-  "pagination": {
-    "total": 100,
-    "page": 1,
-    "pages": 5,
-    "limit": 20
+  "pagination": { "total": 100, "page": 1, "pages": 5, "limit": 20 }
+}
+```
+
+---
+
+### UEBA (User Entity Behavior Analytics)
+
+#### GET `/ueba/baseline/:userId`
+Get or create a behavior baseline for a user.
+
+**Response:**
+```json
+{
+  "success": true,
+  "baseline": {
+    "id": "uuid",
+    "user_id": "uuid",
+    "baseline_data": {
+      "login_frequency": 12.5,
+      "unique_ips": 3,
+      "primary_country": "US",
+      "peak_activity_hour": 10,
+      "confidence_level": 70,
+      "risk_score": 15
+    }
   }
 }
 ```
 
-### Reports
+#### GET `/ueba/risk/:userId`
+Get a user's current risk score.
 
-#### GET `/reports`
-Get generated reports with pagination.
+**Response:**
+```json
+{
+  "success": true,
+  "riskScore": {
+    "risk_score": 35,
+    "confidence": 70,
+    "primary_country": "US",
+    "unique_ips": 3,
+    "unique_countries": 1
+  }
+}
+```
 
-**Query Parameters:**
-- `page` (optional): Page number
-- `limit` (optional): Items per page
-- `type` (optional): Filter by report type
-- `status` (optional): Filter by status
+#### GET `/ueba/baselines`
+List all user baselines for the organization.
 
-#### POST `/reports`
-Create a new report.
+**Query Parameters:** `page`, `limit`
+
+#### POST `/ueba/process-activity`
+Process an activity event and check for anomalies.
 
 **Request Body:**
 ```json
 {
-  "name": "Monthly Security Report",
-  "type": "executive_summary",
-  "format": "pdf",
-  "parameters": {
-    "includeCharts": true,
-    "includeRecommendations": true
+  "userId": "uuid",
+  "activity": {
+    "country": "CN",
+    "timestamp": "2024-01-15T03:00:00Z",
+    "operation": "Reset user password"
   }
 }
 ```
 
-#### GET `/reports/{id}/download`
-Download a completed report.
-
-## SIEM Integration
-
-### Export Events
-
-#### GET `/siem/events`
-Export security events in various SIEM formats.
-
-**Query Parameters:**
-- `format` (required): SIEM format (`splunk`, `qradar`, `elasticsearch`, `cef`, `json`)
-- `startDate` (optional): Start date for events
-- `endDate` (optional): End date for events
-- `eventTypes` (optional): Comma-separated list of event types
-- `severity` (optional): Filter by severity
-
-**Example - Splunk Format:**
-```bash
-curl -X GET "http://localhost:3000/api/siem/events?format=splunk" \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
-
-**Response (Splunk):**
+**Response (anomaly detected):**
 ```json
 {
   "success": true,
-  "format": "splunk",
-  "totalEvents": 150,
-  "events": [
-    {
-      "_time": "2024-01-15T10:30:00Z",
-      "_raw": "{\"id\":\"uuid\",\"title\":\"Suspicious Login\"}",
-      "sourcetype": "maes:security:events",
-      "source": "maes-platform",
-      "host": "maes-server",
-      "index": "security",
-      "event": {
-        "id": "uuid",
-        "title": "Suspicious Login",
-        "severity": "high",
-        "category": "authentication"
-      }
-    }
+  "result": {
+    "anomalies": [
+      { "type": "geographic_anomaly", "severity": "high", "risk_score": 30 },
+      { "type": "temporal_anomaly", "severity": "medium", "risk_score": 20 }
+    ],
+    "total_risk_score": 50,
+    "recommendation": { "action": "require_mfa", "message": "Elevated risk." }
+  }
+}
+```
+
+#### GET `/ueba/stats`
+Get UEBA statistics for the organization.
+
+---
+
+### Incident Management
+
+#### GET `/incidents`
+List incidents with filtering.
+
+**Query Parameters:** `page`, `limit`, `status`, `severity`
+
+#### GET `/incidents/stats/summary`
+Get incident statistics (counts by status and severity, average resolution time).
+
+**Response:**
+```json
+{
+  "success": true,
+  "stats": {
+    "total": "12",
+    "new": "3",
+    "investigating": "4",
+    "critical": "2",
+    "avg_resolution_time_seconds": "86400"
+  }
+}
+```
+
+#### GET `/incidents/meta/playbooks`
+List available automated playbooks.
+
+#### GET `/incidents/:id`
+Get incident details including timeline and evidence.
+
+#### POST `/incidents`
+Create a new incident.
+
+**Request Body:**
+```json
+{
+  "title": "Suspicious admin activity",
+  "description": "Unusual privilege escalation detected",
+  "severity": "high",
+  "alertIds": ["uuid1", "uuid2"]
+}
+```
+
+#### PUT `/incidents/:id/status`
+Update incident status. Valid statuses: `new`, `investigating`, `contained`, `resolved`, `closed`.
+
+**Request Body:**
+```json
+{ "status": "investigating", "notes": "Starting investigation" }
+```
+
+#### PUT `/incidents/:id/assign`
+Assign incident to a user.
+
+**Request Body:**
+```json
+{ "assignedTo": "user-uuid" }
+```
+
+#### POST `/incidents/:id/evidence`
+Add evidence to an incident.
+
+**Request Body:**
+```json
+{
+  "type": "log",
+  "name": "audit_log_export.csv",
+  "description": "Exported audit logs for the incident period",
+  "hash": "sha256:abc123..."
+}
+```
+
+#### POST `/incidents/:id/playbook`
+Execute a playbook on an incident.
+
+**Request Body:**
+```json
+{ "playbookId": "compromised-account" }
+```
+
+---
+
+### Threat Intelligence
+
+#### GET `/threat-intel/enrich/ip/:ip`
+Enrich an IP address using configured providers.
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "ip": "1.2.3.4",
+    "type": "ip",
+    "risk_score": 45,
+    "risk_level": "high",
+    "providers_checked": ["abuseipdb", "shodan"],
+    "findings": [
+      { "provider": "abuseipdb", "type": "reputation", "severity": "high", "data": {} }
+    ],
+    "metadata": { "abuseReports": 120 }
+  }
+}
+```
+
+#### GET `/threat-intel/enrich/domain/:domain`
+Enrich a domain.
+
+#### GET `/threat-intel/enrich/hash/:hash`
+Enrich a file hash (MD5, SHA1, SHA256).  
+**Query Parameter:** `type` (default: `sha256`)
+
+#### POST `/threat-intel/enrich/bulk`
+Bulk enrich multiple IOCs (1–100).
+
+**Request Body:**
+```json
+{
+  "iocs": [
+    { "value": "1.2.3.4", "type": "ip" },
+    { "value": "evil.com", "type": "domain" },
+    { "value": "abc123...", "type": "hash" }
   ]
 }
 ```
 
-### Download Events
+#### GET `/threat-intel/stats`
+Get threat intelligence provider status and cache size.
+
+#### GET `/threat-intel/saved`
+List saved IOCs for the organization.
+
+**Query Parameters:** `page`, `limit`, `type`, `risk_level`
+
+#### POST `/threat-intel/saved`
+Save an IOC for tracking.
+
+**Request Body:**
+```json
+{ "value": "1.2.3.4", "type": "ip", "notes": "Flagged in phishing campaign" }
+```
+
+#### DELETE `/threat-intel/saved/:id`
+Remove a saved IOC.
+
+---
+
+### Reports
+
+#### GET `/reports`
+List generated reports with pagination.
+
+#### POST `/reports`
+Create a new report.
+
+#### GET `/reports/{id}/download`
+Download a completed report.
+
+---
+
+### SIEM Integration
+
+#### GET `/siem/events`
+Export security events in SIEM formats (`splunk`, `qradar`, `elasticsearch`, `cef`, `json`).
+
+**Query Parameters:** `format`, `startDate`, `endDate`, `eventTypes`, `severity`
 
 #### GET `/siem/download`
-Download security events in various file formats.
+Download events as file (`csv`, `json`, `xml`, `cef`).
 
-**Query Parameters:**
-- `format` (required): Download format (`csv`, `json`, `xml`, `cef`)
-- `startDate` (optional): Start date for events
-- `endDate` (optional): End date for events
-
-**Example - CSV Download:**
-```bash
-curl -X GET "http://localhost:3000/api/siem/download?format=csv" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  --output security-events.csv
-```
-
-## SIEM Format Details
-
-### Splunk Format
-Events are formatted for Splunk with proper timestamp and source type mapping.
-
-### QRadar Format
-Events include QID mapping and magnitude calculations for QRadar integration.
-
-### Elasticsearch Format
-Events are formatted with proper `@timestamp` and field mappings for Elasticsearch.
-
-### CEF Format
-Common Event Format (CEF) for universal SIEM compatibility.
-
-**CEF Example:**
-```
-CEF:0|IONSEC.IO|MAES Platform|1.0.0|AUTH-001|Suspicious Login|6|msg=Multiple failed login attempts suser=unknown duser=unknown
-```
+---
 
 ## Error Handling
 
@@ -317,33 +382,32 @@ All endpoints return consistent error responses:
 ```json
 {
   "error": "Error message",
-  "details": [
-    {
-      "field": "username",
-      "message": "Username is required"
-    }
-  ]
+  "details": [{ "field": "username", "message": "Username is required" }]
 }
 ```
 
 ## Rate Limiting
 
-API endpoints are rate-limited to prevent abuse:
 - Authentication endpoints: 5 requests per minute
 - General API endpoints: 100 requests per minute
 - SIEM export endpoints: 50 requests per minute
 
-## Permissions
+## Permissions (RBAC)
 
-The API uses role-based access control:
-
-- **Admin**: Full access to all endpoints
-- **Analyst**: Can run analysis, view reports, export data
-- **Viewer**: Read-only access to data and reports
+| Permission | super_admin | admin | analyst | viewer |
+|---|---|---|---|---|
+| canManageExtractions | ✅ | ✅ | ✅ | ❌ |
+| canRunAnalysis | ✅ | ✅ | ✅ | ❌ |
+| canViewReports | ✅ | ✅ | ✅ | ✅ |
+| canManageAlerts | ✅ | ✅ | ✅ | ❌ |
+| canManageIncidents | ✅ | ✅ | ✅ | ❌ |
+| canAccessThreatIntel | ✅ | ✅ | ✅ | ❌ |
+| canManageCompliance | ✅ | ✅ | ✅ | ❌ |
+| canManageUsers | ✅ | ✅ | ❌ | ❌ |
+| canManageSystemSettings | ✅ | ❌ | ❌ | ❌ |
 
 ## Development
 
-### Local Development
 ```bash
 # Install dependencies
 npm install
@@ -351,26 +415,16 @@ npm install
 # Start development server
 npm run dev
 
-# Access API documentation
+# Access interactive API docs
 open http://localhost:3000/api/docs
-```
-
-### Testing
-```bash
-# Run API tests
-npm test
-
-# Run with coverage
-npm run test:coverage
 ```
 
 ## Support
 
-For technical support and incident response services:
-- **Email**: contact@ionsec.io
+- **Email**: dev@ionsec.io
 - **GitHub**: https://github.com/ionsec/maes-platform
-- **Documentation**: http://localhost:3000/api/docs
+- **API Docs**: http://localhost:3000/api/docs
 
 ---
 
-**Developed by [IONSEC.IO Dev Team](https://github.com/ionsec/maes-platform)** - Specializing in Incident Response Services and Cybersecurity Solutions 
+**Developed by [IONSEC.IO Dev Team](https://github.com/ionsec/maes-platform)** — Specializing in Incident Response Services and Cybersecurity Solutions
