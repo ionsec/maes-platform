@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:20-alpine@sha256:f598378b5240225e6beab68fa9f356db1fb8efe55173e6d4d8153113bb8f333c
 
 # Install chromium dependencies for puppeteer
 RUN apk add --no-cache \
@@ -8,6 +8,7 @@ RUN apk add --no-cache \
     freetype-dev \
     harfbuzz \
     ca-certificates \
+    dumb-init \
     ttf-freefont
 
 # Tell Puppeteer to use installed Chromium
@@ -20,6 +21,7 @@ WORKDIR /app
 # Install app dependencies
 COPY package*.json ./
 RUN npm ci --only=production
+RUN npm cache clean --force
 
 # Bundle app source
 COPY src/ ./src/
@@ -49,4 +51,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   req.end();"
 
 # Start the service
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["npm", "start"]

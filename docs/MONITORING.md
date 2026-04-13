@@ -339,7 +339,7 @@ scrape_configs:
 
 ### Production Hardening
 
-1. **Change default passwords**:
+1. **Set explicit dashboard credentials**:
 ```bash
 GRAFANA_USER=secure_admin
 GRAFANA_PASSWORD=very_secure_password_here

@@ -8,18 +8,30 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
-    "axios": "^1.10.0",
+    "axios": "^1.15.0",
     "bullmq": "^5.0.0",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.2.0",
-    "express": "^4.21.1",
+    "express": "^4.22.1",
     "pg": "^8.16.3",
     "redis": "^5.6.0",
-    "sequelize": "^6.37.7",
+    "sequelize": "^6.37.8",
     "winston": "^3.17.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
+  },
+  "overrides": {
+    "body-parser": "1.20.4",
+    "path-to-regexp": "0.1.13",
+    "jsonwebtoken": "9.0.3",
+    "jws": "3.2.3",
+    "js-yaml": "4.1.1",
+    "sequelize": {
+      "dottie": "2.0.7",
+      "validator": "13.15.23",
+      "lodash": "4.18.1"
+    }
   },
   "engines": {
     "node": ">=20.0.0"

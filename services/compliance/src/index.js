@@ -7,6 +7,13 @@ const { sequelize } = require('./models');
 const assessmentEngine = require('./services/assessmentEngine');
 const scheduler = require('./services/scheduler');
 const reportGenerator = require('./services/reportGenerator');
+const requiredEnvVars = ['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Redis connection configuration
 const redisConnection = {

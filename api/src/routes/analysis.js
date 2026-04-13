@@ -5,6 +5,7 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { createAnalysisJob } = require('../services/jobService');
 const { logger } = require('../utils/logger');
+const { analysisTypes, getAutoAnalysisType, isAnalyzableExtraction } = require('../utils/platformCapabilities');
 
 const router = express.Router();
 
@@ -12,18 +13,7 @@ const router = express.Router();
 router.post('/internal', 
   [
     body('extractionId').isUUID().withMessage('Valid extraction ID is required'),
-    body('type').isIn([
-      'ual_analysis',
-      'signin_analysis',
-      'audit_analysis',
-      'mfa_analysis',
-      'oauth_analysis',
-      'risky_detection_analysis',
-      'risky_user_analysis',
-      'message_trace_analysis',
-      'device_analysis',
-      'comprehensive_analysis'
-    ]).withMessage('Invalid analysis type'),
+    body('type').isIn(analysisTypes).withMessage('Invalid analysis type'),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
     body('parameters').optional().isObject().withMessage('Parameters must be an object')
   ],
@@ -66,6 +56,19 @@ router.post('/internal',
         });
       }
 
+      const recommendedAnalysisType = getAutoAnalysisType(extraction.type);
+      if (!recommendedAnalysisType) {
+        return res.status(400).json({
+          error: `Extraction type '${extraction.type}' does not support analysis`
+        });
+      }
+
+      if (type !== recommendedAnalysisType) {
+        return res.status(400).json({
+          error: `Extraction type '${extraction.type}' must use analysis type '${recommendedAnalysisType}'`
+        });
+      }
+
       // Create analysis job record
       const analysisJob = await AnalysisJob.create({
         extractionId,
@@ -104,18 +107,7 @@ router.post('/internal/direct',
     body('id').isUUID().withMessage('Valid job ID is required'),
     body('extractionId').isUUID().withMessage('Valid extraction ID is required'),
     body('organizationId').isUUID().withMessage('Valid organization ID is required'),
-    body('type').isIn([
-      'ual_analysis',
-      'signin_analysis',
-      'audit_analysis',
-      'mfa_analysis',
-      'oauth_analysis',
-      'risky_detection_analysis',
-      'risky_user_analysis',
-      'message_trace_analysis',
-      'device_analysis',
-      'comprehensive_analysis'
-    ]).withMessage('Invalid analysis type'),
+    body('type').isIn(analysisTypes).withMessage('Invalid analysis type'),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
     body('parameters').optional().isObject().withMessage('Parameters must be an object')
   ],
@@ -391,18 +383,7 @@ router.post('/',
   requirePermission('canRunAnalysis'),
   [
     body('extractionId').isUUID().withMessage('Valid extraction ID is required'),
-    body('type').isIn([
-      'ual_analysis',
-      'signin_analysis',
-      'audit_analysis',
-      'mfa_analysis',
-      'oauth_analysis',
-      'risky_detection_analysis',
-      'risky_user_analysis',
-      'message_trace_analysis',
-      'device_analysis',
-      'comprehensive_analysis'
-    ]).withMessage('Invalid analysis type'),
+    body('type').isIn(analysisTypes).withMessage('Invalid analysis type'),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
     body('parameters').optional().isObject().withMessage('Parameters must be an object')
   ],
@@ -430,6 +411,19 @@ router.post('/',
       if (extraction.status !== 'completed') {
         return res.status(400).json({
           error: 'Cannot analyze incomplete extraction'
+        });
+      }
+
+      if (!isAnalyzableExtraction(extraction.type)) {
+        return res.status(400).json({
+          error: `Extraction type '${extraction.type}' does not support analysis`
+        });
+      }
+
+      const recommendedAnalysisType = getAutoAnalysisType(extraction.type);
+      if (recommendedAnalysisType !== type) {
+        return res.status(400).json({
+          error: `Extraction type '${extraction.type}' must use analysis type '${recommendedAnalysisType}'`
         });
       }
 

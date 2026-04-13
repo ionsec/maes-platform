@@ -5,6 +5,7 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { createExtractionJob, extractionQueue } = require('../services/jobService');
 const { logger } = require('../utils/logger');
+const { extractionTypes, getExtractionCapability } = require('../utils/platformCapabilities');
 
 const router = express.Router();
 
@@ -106,26 +107,17 @@ router.get('/:id', async (req, res) => {
 router.post('/', 
   requirePermission('canManageExtractions'),
   [
-    body('type').isIn([
-      'unified_audit_log',
-      'azure_signin_logs',
-      'azure_audit_logs',
-      'mailbox_audit',
-      'message_trace',
-      'emails',
-      'oauth_permissions',
-      'mfa_status',
-      'risky_users',
-      'risky_detections',
-      'devices',
-      'ual_graph',
-      'licenses',
-      'full_extraction'
-    ]).withMessage('Invalid extraction type'),
+    body('type').isIn(extractionTypes).withMessage('Invalid extraction type'),
     body('startDate').isISO8601().withMessage('Start date must be a valid ISO date'),
     body('endDate').isISO8601().withMessage('End date must be a valid ISO date'),
     body('priority').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid priority'),
-    body('parameters').optional().isObject().withMessage('Parameters must be an object')
+    body('parameters').optional().isObject().withMessage('Parameters must be an object'),
+    body('parameters.eventType').optional().isIn(['interactiveUser', 'nonInteractiveUser', 'servicePrincipal']).withMessage('Invalid sign-in event type'),
+    body('parameters.ipAddresses').optional().isArray().withMessage('ipAddresses must be an array'),
+    body('parameters.auditDataOnly').optional().isBoolean().withMessage('auditDataOnly must be a boolean'),
+    body('parameters.splitFiles').optional().isBoolean().withMessage('splitFiles must be a boolean'),
+    body('parameters.maxEventsPerFile').optional().isInt({ min: 1 }).withMessage('maxEventsPerFile must be a positive integer'),
+    body('parameters.outputFormat').optional().isIn(['JSON', 'JSONL', 'CSV', 'SOF-ELK']).withMessage('Invalid output format')
   ],
   async (req, res) => {
     try {
@@ -138,6 +130,13 @@ router.post('/',
       }
 
       const { type, startDate, endDate, priority = 'medium', parameters = {} } = req.body;
+      const capability = getExtractionCapability(type);
+
+      if (!capability) {
+        return res.status(400).json({
+          error: 'Unsupported extraction type'
+        });
+      }
 
       // Validate date range
       const start = new Date(startDate);
@@ -146,6 +145,12 @@ router.post('/',
       if (start >= end) {
         return res.status(400).json({
           error: 'Start date must be before end date'
+        });
+      }
+
+      if (type === 'ual_graph' && parameters.maxEventsPerFile && !parameters.splitFiles) {
+        return res.status(400).json({
+          error: 'splitFiles must be enabled when maxEventsPerFile is set'
         });
       }
 

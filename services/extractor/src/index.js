@@ -7,7 +7,15 @@ const crypto = require('crypto');
 const { logger, createExtractionLogger } = require('./logger');
 const { updateExtractionProgress } = require('./progressMonitor');
 const axios = require('axios');
+const { getExtractionCapability, getAutoAnalysisType } = require('./platformCapabilities');
 require('dotenv').config();
+const requiredEnvVars = ['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Redis connection configuration
 const redisConnection = {
@@ -29,12 +37,31 @@ const analysisQueue = new Queue('analysis-jobs', {
 // PowerShell script paths
 const EXTRACTOR_SUITE_PATH = '/extractor-suite';
 const OUTPUT_PATH = '/output';
+const CERT_PASSWORD_FILE_PATH = path.join(OUTPUT_PATH, 'cert_password.txt');
 
 // Helper function to create organization-scoped output path
 const getOrganizationOutputPath = (organizationId, extractionId) => {
   // Sanitize organizationId to prevent path traversal
   const safeOrgId = (organizationId || 'default').replace(/[^a-zA-Z0-9-]/g, '');
   return path.join(OUTPUT_PATH, 'orgs', safeOrgId, extractionId);
+};
+
+const getDefaultCertificatePassword = async () => {
+  if (process.env.CERT_PASSWORD) {
+    return process.env.CERT_PASSWORD;
+  }
+
+  try {
+    const password = await fs.readFile(CERT_PASSWORD_FILE_PATH, 'utf8');
+    const trimmedPassword = password.trim();
+    if (trimmedPassword) {
+      return trimmedPassword;
+    }
+  } catch (error) {
+    logger.warn(`Default certificate password file unavailable at ${CERT_PASSWORD_FILE_PATH}`);
+  }
+
+  throw new Error('Default certificate password is not configured. Set CERT_PASSWORD or provide a user certificate password.');
 };
 
 // Process extraction jobs with proper error handling
@@ -328,17 +355,44 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     Import-Module Microsoft.Graph.Authentication -Force;
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Microsoft.Graph.Authentication module loaded successfully";
   `;
+
+  const buildArrayParameter = (name, values) => {
+    if (!Array.isArray(values) || values.length === 0) return '';
+    const escapedValues = values
+      .filter(Boolean)
+      .map((value) => `'${String(value).replace(/'/g, "''")}'`)
+      .join(', ');
+
+    return ` -${name} @(${escapedValues})`;
+  };
+
+  const buildSwitchParameter = (name, enabled) => (enabled ? ` -${name}` : '');
+
+  const buildScalarParameter = (name, value) => {
+    if (value === undefined || value === null || value === '') return '';
+    return ` -${name} '${String(value).replace(/'/g, "''")}'`;
+  };
   
   // Load additional Graph modules based on extraction type
   const graphModuleMap = {
     'azure_signin_logs': ['Microsoft.Graph.Identity.SignIns'],
-    'azure_audit_logs': ['Microsoft.Graph.Identity.DirectoryManagement'], 
+    'azure_audit_logs': ['Microsoft.Graph.Identity.DirectoryManagement'],
     'mfa_status': ['Microsoft.Graph.Users', 'Microsoft.Graph.Identity.SignIns'],
     'risky_users': ['Microsoft.Graph.Users'],
     'risky_detections': ['Microsoft.Graph.Identity.SignIns'],
     'devices': ['Microsoft.Graph.DeviceManagement'],
     'ual_graph': ['Microsoft.Graph.Identity.SignIns'],
-    'licenses': ['Microsoft.Graph.Users']
+    'licenses': ['Microsoft.Graph.Users'],
+    'licenses_by_user': ['Microsoft.Graph.Users'],
+    'conditional_access_policies': ['Microsoft.Graph.Identity.SignIns'],
+    'admin_users': ['Microsoft.Graph.Identity.DirectoryManagement'],
+    'groups': ['Microsoft.Graph.Groups'],
+    'group_members': ['Microsoft.Graph.Groups'],
+    'dynamic_groups': ['Microsoft.Graph.Groups'],
+    'pim_assignments': ['Microsoft.Graph.Identity.Governance'],
+    'role_activity': ['Microsoft.Graph.Identity.DirectoryManagement'],
+    'security_alerts': ['Microsoft.Graph.Security'],
+    'entra_security_defaults': ['Microsoft.Graph.Identity.DirectoryManagement']
   };
   
   let moduleLoadCommand = baseCommand;
@@ -370,7 +424,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     const mountedCertPath = '/certs/app.pfx';
     const fallbackCertPath = '/output/app.pfx';
     let certPath = mountedCertPath;
-    let certPassword = process.env.CERT_PASSWORD || 'Password123'; // Use environment variable or fallback
+    let certPassword = await getDefaultCertificatePassword();
     
     // Use user certificate if available
     if (userCertInfo) {
@@ -383,14 +437,14 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
           certPassword = decryptedPassword;
           logger.info(`Using user certificate with custom password: ${userCertInfo.filename}`);
         } else {
-          logger.warn(`Failed to decrypt password for user certificate: ${userCertInfo.filename}, using default password`);
+          logger.warn(`Failed to decrypt password for user certificate: ${userCertInfo.filename}, using default certificate password`);
         }
       } else {
-        logger.info(`Using user certificate with default password: ${userCertInfo.filename}`);
+        logger.info(`Using user certificate with default certificate password: ${userCertInfo.filename}`);
       }
     } else {
       certPath = credentials.certificateFilePath || mountedCertPath;
-      certPassword = credentials.certificatePassword || process.env.CERT_PASSWORD || 'Password123';
+      certPassword = credentials.certificatePassword || await getDefaultCertificatePassword();
       logger.info(`Using default certificate: ${certPath}`);
     }
     command += `
@@ -523,8 +577,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
   }
   
   // Add UAL validation after authentication for relevant extraction types
-  const ualDependentTypes = ['unified_audit_log', 'full_extraction'];
-  if (ualDependentTypes.includes(type)) {
+  if (getExtractionCapability(type)?.requiresUalCheck) {
     command += `
       Write-Host 'Checking Unified Audit Log availability...';
       try {
@@ -550,7 +603,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
       Write-Host "Starting Unified Audit Log extraction...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
       try {
-        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}';
+        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'${buildArrayParameter('UserIds', parameters.filterUsers)}${buildArrayParameter('Operations', parameters.filterOperations)}${buildArrayParameter('IPAddresses', parameters.ipAddresses)}${buildSwitchParameter('AuditDataOnly', parameters.auditDataOnly)};
         Write-Host "UAL extraction completed successfully.";
       } catch {
         Write-Error "UAL extraction failed: $_";
@@ -575,7 +628,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}';
+          Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'${buildScalarParameter('EventType', parameters.eventType)};
           Write-Host "Graph Sign-In Logs extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -637,6 +690,16 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         }
       }
     `,
+    'admin_audit_log': `
+      Write-Host "Starting Admin Audit Log extraction...";
+      try {
+        Get-AdminAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}';
+        Write-Host "Admin Audit Log extraction completed successfully.";
+      } catch {
+        Write-Error "Admin Audit Log extraction failed: $_";
+        throw;
+      }
+    `,
     'mfa_status': `
       Write-Host "Starting MFA Status extraction via Graph...";
       try {
@@ -647,14 +710,23 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         throw;
       }
     `,
-    'oauth_permissions': `Get-OAuthPermissions -OutputDir '${orgOutputPath}'`,
+    'oauth_permissions': `
+      Write-Host "Starting OAuth permissions extraction via Graph...";
+      try {
+        Get-OAuthPermissionsGraph -OutputDir '${orgOutputPath}';
+        Write-Host "OAuth permissions extraction completed successfully.";
+      } catch {
+        Write-Error "OAuth permissions extraction failed: $_";
+        throw;
+      }
+    `,
     'risky_users': `
       Write-Host "Starting Risky Users extraction via Graph...";
       try {
-        Get-Users -OutputDir '${orgOutputPath}';
-        Write-Host "Users extraction completed successfully.";
+        Get-RiskyUsers -OutputDir '${orgOutputPath}';
+        Write-Host "Risky users extraction completed successfully.";
       } catch {
-        Write-Error "Users extraction failed: $_";
+        Write-Error "Risky users extraction failed: $_";
         throw;
       }
     `,
@@ -671,7 +743,32 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         throw;
       }
     `,
-    'full_extraction': `Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${orgOutputPath}'`,
+    'mailbox_rules': `Get-MailboxRules -OutputDir '${orgOutputPath}'`,
+    'transport_rules': `Get-TransportRules -OutputDir '${orgOutputPath}'`,
+    'activity_logs': `Get-ActivityLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
+    'directory_activity_logs': `Get-DirectoryActivityLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
+    'admin_users': `Get-AdminUsers -OutputDir '${orgOutputPath}'`,
+    'conditional_access_policies': `Get-ConditionalAccessPolicies -OutputDir '${orgOutputPath}'`,
+    'mailbox_audit_status': `Get-MailboxAuditStatus -OutputDir '${orgOutputPath}'`,
+    'mailbox_permissions': `Get-MailboxPermissions -OutputDir '${orgOutputPath}'`,
+    'licenses_by_user': `Get-LicensesByUser -OutputDir '${orgOutputPath}'`,
+    'license_compatibility': `Get-LicenseCompatibility -OutputDir '${orgOutputPath}'`,
+    'entra_security_defaults': `Get-EntraSecurityDefaults -OutputDir '${orgOutputPath}'`,
+    'groups': `Get-Groups -OutputDir '${orgOutputPath}'`,
+    'group_members': `Get-GroupMembers -OutputDir '${orgOutputPath}'`,
+    'dynamic_groups': `Get-DynamicGroups -OutputDir '${orgOutputPath}'`,
+    'pim_assignments': `Get-PIMAssignments -OutputDir '${orgOutputPath}'`,
+    'role_activity': `Get-AllRoleActivity -OutputDir '${orgOutputPath}'`,
+    'security_alerts': `Get-SecurityAlerts -OutputDir '${orgOutputPath}'`,
+    'full_extraction': `
+      if (Get-Command Get-AllEvidence -ErrorAction SilentlyContinue) {
+        Get-AllEvidence -OutputDir '${orgOutputPath}';
+      } elseif (Get-Command Start-EvidenceCollection -ErrorAction SilentlyContinue) {
+        Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${orgOutputPath}';
+      } else {
+        throw 'Neither Get-AllEvidence nor Start-EvidenceCollection is available in Microsoft-Extractor-Suite';
+      }
+    `,
     'ual_graph': `
       Write-Host "Starting UAL extraction via Graph...";
       Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
@@ -690,7 +787,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}';
+          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -Output '${parameters.outputFormat || 'JSON'}' -MergeOutput -OutputDir '${orgOutputPath}'${buildSwitchParameter('SplitFiles', parameters.splitFiles)}${parameters.maxEventsPerFile ? ` -MaxEventsPerFile ${parameters.maxEventsPerFile}` : ''};
           Write-Host "UAL Graph extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -721,10 +818,24 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         Write-Error "Licenses extraction failed: $_";
         throw;
       }
+    `,
+    'licenses_by_user': `
+      Write-Host "Starting per-user license extraction via Graph...";
+      try {
+        Get-LicensesByUser -OutputDir '${orgOutputPath}';
+        Write-Host "Per-user license extraction completed successfully.";
+      } catch {
+        Write-Error "Per-user license extraction failed: $_";
+        throw;
+      }
     `
   };
-  
-  command += extractionCommands[type] || '';
+
+  if (!extractionCommands[type]) {
+    throw new Error(`Unsupported extraction type: ${type}`);
+  }
+
+  command += extractionCommands[type];
   
   return command;
 }
@@ -747,7 +858,7 @@ async function buildTestConnectionCommand(parameters) {
     
     let certPath = '/certs/app.pfx';
     const fallbackCertPath = '/output/app.pfx';
-    let certPassword = process.env.CERT_PASSWORD || 'Password123';
+    let certPassword = await getDefaultCertificatePassword();
     
     // Use user certificate if available
     if (userCertInfo) {
@@ -760,10 +871,10 @@ async function buildTestConnectionCommand(parameters) {
           certPassword = decryptedPassword;
           logger.info(`Connection test using user certificate with custom password: ${userCertInfo.filename}`);
         } else {
-          logger.warn(`Failed to decrypt password for user certificate: ${userCertInfo.filename}, using default password`);
+          logger.warn(`Failed to decrypt password for user certificate: ${userCertInfo.filename}, using default certificate password`);
         }
       } else {
-        logger.info(`Connection test using user certificate with default password: ${userCertInfo.filename}`);
+        logger.info(`Connection test using user certificate with default certificate password: ${userCertInfo.filename}`);
       }
     } else {
       logger.info(`Connection test using default certificate: ${certPath}`);
@@ -1342,22 +1453,12 @@ setInterval(healthCheck, 5 * 60 * 1000);
 // Helper function to trigger analysis after extraction
 async function triggerAnalysis(extractionId, extractionType, organizationId, outputFiles) {
   try {
-    // Map extraction types to analysis types
-    const analysisTypeMap = {
-      'unified_audit_log': 'ual_analysis',
-      'azure_signin_logs': 'signin_analysis',
-      'azure_audit_logs': 'audit_analysis',
-      'mfa_status': 'mfa_analysis',
-      'oauth_permissions': 'oauth_analysis',
-      'risky_users': 'risky_user_analysis',
-      'risky_detections': 'risky_detection_analysis',
-      'devices': 'device_analysis',
-      'ual_graph': 'ual_analysis',
-      'licenses': 'comprehensive_analysis',
-      'full_extraction': 'comprehensive_analysis'
-    };
-    
-    const analysisType = analysisTypeMap[extractionType] || 'ual_analysis';
+    const analysisType = getAutoAnalysisType(extractionType);
+
+    if (!analysisType) {
+      logger.info(`Skipping auto-analysis for extraction ${extractionId} (${extractionType}) because no analyzer is configured`);
+      return;
+    }
     
     logger.info(`Triggering ${analysisType} analysis for extraction ${extractionId}`);
     

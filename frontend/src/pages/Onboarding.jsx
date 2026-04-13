@@ -104,7 +104,7 @@ const Onboarding = () => {
   const steps = [
     {
       label: 'Welcome & Security',
-      description: 'Change default password and learn about MAES'
+      description: 'Review security setup and finalize your administrator account'
     },
     {
       label: 'Create Your Organization',

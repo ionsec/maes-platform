@@ -70,6 +70,10 @@ router.get('/logs',
     } catch (error) {
       logger.error('System logs API error:', error);
       
+      if (error.response?.status === 503) {
+        return res.status(503).json(error.response.data);
+      }
+
       if (error.response?.status === 401) {
         return res.status(500).json({ error: 'Internal service authentication failed' });
       }
@@ -135,6 +139,11 @@ router.get('/logs/stats',
 
     } catch (error) {
       logger.error('System log stats error:', error);
+
+      if (error.response?.status === 503) {
+        return res.status(503).json(error.response.data);
+      }
+
       res.status(500).json({ 
         error: 'Failed to fetch log statistics',
         details: error.message 

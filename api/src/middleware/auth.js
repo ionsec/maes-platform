@@ -108,7 +108,7 @@ const isTokenBlacklisted = async (token) => {
 };
 
 // Service authentication token for internal service communication
-const SERVICE_AUTH_TOKEN = process.env.SERVICE_AUTH_TOKEN || 'internal-service-token';
+const SERVICE_AUTH_TOKEN = process.env.SERVICE_AUTH_TOKEN;
 
 // Enhanced permission mapping for MSSP roles
 // Simplified permission mapping for clean RBAC

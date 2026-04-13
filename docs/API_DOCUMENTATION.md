@@ -28,7 +28,7 @@ Authenticate user and receive JWT token.
 **Request Body:**
 ```json
 {
-  "username": "admin@maes.local",
+  "username": "admin@example.com",
   "password": "your_password"
 }
 ```
@@ -40,8 +40,8 @@ Authenticate user and receive JWT token.
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "user": {
     "id": "uuid",
-    "username": "admin@maes.local",
-    "email": "admin@maes.local",
+    "username": "admin@example.com",
+    "email": "admin@example.com",
     "firstName": "Admin",
     "lastName": "User",
     "role": "admin",

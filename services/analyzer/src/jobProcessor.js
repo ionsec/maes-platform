@@ -865,7 +865,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
       try {
         const uploadResponse = await axios.get(`http://api:3000/api/upload/data/${extractionId}`, {
           headers: {
-            'x-service-token': process.env.SERVICE_AUTH_TOKEN || 'service_internal_token_change_in_production',
+            'x-service-token': process.env.SERVICE_AUTH_TOKEN,
             'x-organization-id': organizationId
           },
           timeout: 30000
@@ -980,6 +980,18 @@ if (!isMainThread && workerData.type === 'job_processor') {
       
       // Determine which analyzer to use based on the analysis type
       switch (data.analysisType || 'ual_analysis') {
+        case 'ual_analysis':
+        case 'signin_analysis':
+        case 'audit_analysis':
+        case 'oauth_analysis':
+        case 'risky_detection_analysis':
+        case 'message_trace_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
         case 'mfa_analysis':
           analysisResult = await EnhancedAnalyzer.analyzeMfaData(auditData, {
             analysisId,
@@ -1019,13 +1031,7 @@ if (!isMainThread && workerData.type === 'job_processor') {
           }
           break;
         default:
-          // Default to audit log analysis for UAL and other types
-          analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
-            analysisId,
-            extractionId,
-            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
-          });
-          break;
+          throw new Error(`Unsupported analysis type: ${data.analysisType}`);
       }
       
       parentPort.postMessage({

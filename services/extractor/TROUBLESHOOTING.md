@@ -58,6 +58,8 @@ docker-compose exec extractor pwsh
 # Check installed modules
 Get-Module -ListAvailable Microsoft-Extractor-Suite
 Get-Module -ListAvailable ExchangeOnlineManagement
+Get-Module -ListAvailable Microsoft.Graph.Authentication
+Get-Module -ListAvailable Microsoft.Graph.Groups
 ```
 
 ### 3. Authentication Issues
