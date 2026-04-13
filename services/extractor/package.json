@@ -8,19 +8,23 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
+    "axios": "^1.15.0",
     "bullmq": "^5.0.0",
-    "redis": "^5.6.0",
-    "ioredis": "^5.6.1",
-    "winston": "^3.17.0",
-    "winston-transport": "^4.9.0",
     "dotenv": "^17.2.0",
-    "express": "^4.21.1",
+    "express": "^4.22.1",
+    "ioredis": "^5.6.1",
+    "node-schedule": "^2.1.1",
     "pg": "^8.16.3",
-    "axios": "^1.10.0",
-    "node-schedule": "^2.1.1"
+    "redis": "^5.6.0",
+    "winston": "^3.17.0",
+    "winston-transport": "^4.9.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"
+  },
+  "overrides": {
+    "body-parser": "1.20.4",
+    "path-to-regexp": "0.1.13"
   },
   "engines": {
     "node": ">=20.0.0"

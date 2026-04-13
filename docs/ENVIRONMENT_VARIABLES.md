@@ -1,123 +1,56 @@
-# Environment Variables Configuration
+# Environment Variables
 
-## Required Environment Variables
+Use [.env.example](../.env.example) as the source template.
 
-Copy these variables to your `.env` file for Docker deployment:
+## Required Secrets
+
+These values must be set before `docker compose up`:
 
 ```bash
-# Database Configuration
-POSTGRES_PASSWORD=maes_secure_password
-DATABASE_URL=postgresql://maes_user:maes_secure_password@postgres:5432/maes_db
-
-# Redis Configuration
-REDIS_PASSWORD=redis_secure_password
-REDIS_URL=redis://:redis_secure_password@redis:6379
-
-# Elasticsearch Configuration
-ELASTICSEARCH_URL=http://elasticsearch:9200
-ELASTICSEARCH_USERNAME=
-ELASTICSEARCH_PASSWORD=
-
-# JWT Configuration
-JWT_SECRET=your_jwt_secret_here_change_in_production
-JWT_EXPIRY=24h
-
-# Service Authentication
-SERVICE_AUTH_TOKEN=service_internal_token_change_in_production
-
-# Encryption
-ENCRYPTION_KEY=your-32-character-secret-key-here!
-
-# API Configuration
-NODE_ENV=production
-PORT=3000
-API_URL=http://localhost:3000
-
-# CORS Configuration
-# Optional: Specific CORS origin override (if not set, will auto-detect based on DOMAIN)
-CORS_ORIGIN=
-# Domain for the application (used for CORS and SSL)
-DOMAIN=localhost
-# Frontend URL (for development and documentation)
-FRONTEND_URL=http://localhost:8080
-
-# Rate Limiting
-RATE_LIMIT_WINDOW_MS=900000
-RATE_LIMIT_MAX_REQUESTS=100
-
-# Logging
-LOG_LEVEL=info
-LOG_FILE=logs/app.log
-
-# File Upload
-MAX_FILE_SIZE=100mb
-UPLOAD_PATH=uploads
-
-# SIEM Integration
-SIEM_EXPORT_LIMIT=1000
-SIEM_RATE_LIMIT=50
-
-# Security
-HELMET_ENABLED=true
-COMPRESSION_ENABLED=true
+POSTGRES_PASSWORD=
+REDIS_PASSWORD=
+JWT_SECRET=
+SERVICE_AUTH_TOKEN=
+ENCRYPTION_KEY=
+CERT_PASSWORD=
+GRAFANA_PASSWORD=
 ```
 
-## Docker Deployment
+Recommended generation:
 
-1. Create a `.env` file in the root directory
-2. Copy the variables above and update the values
-3. Run `docker-compose up -d`
+```bash
+openssl rand -hex 24   # POSTGRES_PASSWORD / REDIS_PASSWORD
+openssl rand -hex 32   # JWT_SECRET / SERVICE_AUTH_TOKEN / ENCRYPTION_KEY / CERT_PASSWORD / GRAFANA_PASSWORD
+```
 
-## Security Notes
+Rules:
 
-- **JWT_SECRET**: Use a strong, random string in production
-- **ENCRYPTION_KEY**: Must be exactly 32 characters
-- **SERVICE_AUTH_TOKEN**: Change in production for internal service communication
-- **POSTGRES_PASSWORD**: Use a strong password
-- **REDIS_PASSWORD**: Use a strong password
+- `ENCRYPTION_KEY` must be at least 32 characters.
+- `SERVICE_AUTH_TOKEN` must be the same across internal services.
+- `CERT_PASSWORD` protects the default extractor certificate bundle.
 
-## Development vs Production
+## Common Runtime Settings
 
-For development, you can use the default values. For production:
+```bash
+DOMAIN=localhost
+API_URL=https://localhost
+FRONTEND_URL=https://localhost
+NODE_ENV=production
+USE_LETS_ENCRYPT=false
+LETSENCRYPT_STAGING=false
+ENABLE_DOCKER_LOGS=false
+SIEM_EXPORT_LIMIT=1000
+SIEM_RATE_LIMIT=50
+POWERSHELL_TIMEOUT=1800000
+QUEUE_STALLED_INTERVAL=30000
+QUEUE_MAX_STALLED_COUNT=1
+```
 
-1. Generate strong passwords for all secrets
-2. Use HTTPS URLs for API_URL and CORS_ORIGIN
-3. Set NODE_ENV=production
-4. Configure proper logging levels
-5. Set appropriate rate limits
+## Notes
 
-## SIEM Integration Variables
-
-The new SIEM integration features use these variables:
-
-- `SIEM_EXPORT_LIMIT`: Maximum events to export (default: 1000)
-- `SIEM_RATE_LIMIT`: Rate limit for SIEM exports (default: 50 requests/minute)
-
-## Elasticsearch Configuration
-
-The Elasticsearch integration uses these variables:
-
-- `ELASTICSEARCH_URL`: Elasticsearch server URL (default: http://elasticsearch:9200)
-- `ELASTICSEARCH_USERNAME`: Elasticsearch username (optional, for authentication)
-- `ELASTICSEARCH_PASSWORD`: Elasticsearch password (optional, for authentication)
-
-## CORS and Domain Configuration
-
-The application now supports dynamic CORS configuration based on the deployment environment:
-
-### Automatic CORS Origins
-The API automatically allows the following origins:
-- `localhost` with various ports (for development)
-- The domain specified in `DOMAIN` environment variable
-- Any explicit `CORS_ORIGIN` if provided
-
-### Public IP to Localhost Redirects
-The application handles scenarios where:
-1. Frontend is accessed via public IP
-2. User gets redirected to localhost (common in development)
-3. API calls work properly despite the domain change
-
-### Environment Variables for CORS
+- `ENABLE_DOCKER_LOGS=false` keeps the API container unprivileged by default.
+- In production, prefer `https://` origins and avoid broad `CORS_ORIGIN` values.
+- The platform no longer ships with a seeded default administrator account.
 - `DOMAIN`: Sets the primary domain for the application
 - `CORS_ORIGIN`: Optional override for specific CORS origin
 - `API_URL`: Used by frontend to determine API endpoint

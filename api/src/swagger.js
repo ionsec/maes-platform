@@ -1,4 +1,8 @@
 const swaggerJsdoc = require('swagger-jsdoc');
+const capabilities = require('../../../shared/platformCapabilities.json');
+
+const extractionTypes = Object.keys(capabilities.extractions);
+const analysisTypes = Object.keys(capabilities.analysisTypes);
 
 const options = {
   definition: {
@@ -140,7 +144,7 @@ const options = {
             },
             type: {
               type: 'string',
-              enum: ['unified_audit_log', 'azure_signin_logs', 'azure_audit_logs', 'mfa_status', 'oauth_permissions', 'risky_users', 'mailbox_audit', 'message_trace', 'devices']
+              enum: extractionTypes
             },
             status: {
               type: 'string',
@@ -172,7 +176,7 @@ const options = {
             },
             type: {
               type: 'string',
-              enum: ['ual_analysis', 'signin_analysis', 'audit_analysis', 'mfa_analysis', 'oauth_analysis', 'risky_detection_analysis', 'risky_user_analysis', 'message_trace_analysis', 'device_analysis', 'comprehensive_analysis']
+              enum: analysisTypes
             },
             status: {
               type: 'string',

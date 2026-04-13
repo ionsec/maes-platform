@@ -1,11 +1,7 @@
-FROM node:24-alpine
+FROM node:24-alpine@sha256:01743339035a5c3c11a373cd7c83aeab6ed1457b55da6a69e014a95ac4e4700b
 
-# Update package index and install required packages
-RUN apk update && apk add --no-cache \
-    git \
-    ca-certificates \
-    curl \
-    wget
+# Install required packages
+RUN apk add --no-cache ca-certificates dumb-init
 
 # Set timezone
 ENV TZ=UTC
@@ -24,7 +20,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Install Node.js dependencies
-RUN npm ci --only=production
+RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy application code
 COPY . .
@@ -41,4 +37,8 @@ RUN chown -R analyzer:analyzer /app /input /output
 
 USER analyzer
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+  CMD node -e "const http = require('http'); const req = http.request('http://127.0.0.1:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.end();"
+
+ENTRYPOINT ["dumb-init", "--"]
 CMD ["node", "src/index.js"]

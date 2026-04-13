@@ -1,0 +1,351 @@
+{
+  "extractions": {
+    "unified_audit_log": {
+      "label": "Unified Audit Log",
+      "description": "Microsoft 365 audit events via Exchange Online",
+      "command": "Get-UAL",
+      "requiresDateRange": true,
+      "requiresUalCheck": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "ual_analysis",
+      "analysisLabel": "UAL Analysis",
+      "parameters": [
+        "filterUsers",
+        "filterOperations",
+        "ipAddresses",
+        "auditDataOnly",
+        "customFilters"
+      ]
+    },
+    "azure_signin_logs": {
+      "label": "Entra Sign-In Logs (Graph)",
+      "description": "Microsoft Entra sign-in activity via Microsoft Graph",
+      "command": "Get-GraphEntraSignInLogs",
+      "requiresDateRange": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "signin_analysis",
+      "analysisLabel": "Sign-In Analysis",
+      "parameters": [
+        "eventType",
+        "customFilters"
+      ]
+    },
+    "azure_audit_logs": {
+      "label": "Entra Audit Logs (Graph)",
+      "description": "Microsoft Entra audit activity via Microsoft Graph",
+      "command": "Get-GraphEntraAuditLogs",
+      "requiresDateRange": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": [
+        "customFilters"
+      ]
+    },
+    "admin_audit_log": {
+      "label": "Admin Audit Log",
+      "description": "Exchange Online administrator audit activity",
+      "command": "Get-AdminAuditLog",
+      "requiresDateRange": true,
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": [
+        "customFilters"
+      ]
+    },
+    "mailbox_audit": {
+      "label": "Mailbox Audit",
+      "description": "Exchange Online mailbox activity",
+      "command": "Get-MailboxAuditLog",
+      "requiresDateRange": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": [
+        "customFilters"
+      ]
+    },
+    "message_trace": {
+      "label": "Message Trace",
+      "description": "Email message tracking across Exchange Online",
+      "command": "Get-MessageTraceLog",
+      "requiresDateRange": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "message_trace_analysis",
+      "analysisLabel": "Message Trace Analysis",
+      "parameters": [
+        "customFilters"
+      ]
+    },
+    "oauth_permissions": {
+      "label": "OAuth Permissions (Graph)",
+      "description": "Application permissions and consent grants via Microsoft Graph",
+      "command": "Get-OAuthPermissionsGraph",
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "oauth_analysis",
+      "analysisLabel": "OAuth Analysis",
+      "parameters": [
+        "customFilters"
+      ]
+    },
+    "mfa_status": {
+      "label": "MFA Status (Graph)",
+      "description": "Multi-factor authentication coverage for users",
+      "command": "Get-MFA",
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "mfa_analysis",
+      "analysisLabel": "MFA Analysis",
+      "parameters": []
+    },
+    "risky_users": {
+      "label": "Risky Users",
+      "description": "Identity Protection risky users",
+      "command": "Get-RiskyUsers",
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "risky_user_analysis",
+      "analysisLabel": "Risky User Analysis",
+      "parameters": []
+    },
+    "risky_detections": {
+      "label": "Risky Detections",
+      "description": "Identity Protection risky detection events",
+      "command": "Get-RiskyDetections",
+      "requiresDateRange": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "risky_detection_analysis",
+      "analysisLabel": "Risky Detection Analysis",
+      "parameters": []
+    },
+    "devices": {
+      "label": "Devices (Graph)",
+      "description": "Device registration and compliance information",
+      "command": "Get-Devices",
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "device_analysis",
+      "analysisLabel": "Device Analysis",
+      "parameters": []
+    },
+    "ual_graph": {
+      "label": "UAL via Graph",
+      "description": "Unified Audit Log via Microsoft Graph API",
+      "command": "Get-UALGraph",
+      "requiresDateRange": true,
+      "supportsAnalysis": true,
+      "analysisType": "ual_analysis",
+      "analysisLabel": "UAL Analysis",
+      "parameters": [
+        "splitFiles",
+        "maxEventsPerFile",
+        "outputFormat",
+        "customFilters"
+      ]
+    },
+    "licenses": {
+      "label": "Licenses (Graph)",
+      "description": "Tenant license inventory and usage",
+      "command": "Get-Licenses",
+      "supportsAnalysis": true,
+      "analysisType": "comprehensive_analysis",
+      "analysisLabel": "Comprehensive Analysis",
+      "parameters": []
+    },
+    "mailbox_rules": {
+      "label": "Mailbox Rules",
+      "description": "Mailbox inbox rule export",
+      "command": "Get-MailboxRules",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "transport_rules": {
+      "label": "Transport Rules",
+      "description": "Exchange transport rule export",
+      "command": "Get-TransportRules",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "activity_logs": {
+      "label": "Azure Activity Logs",
+      "description": "Azure activity logs via Az",
+      "command": "Get-ActivityLogs",
+      "requiresDateRange": true,
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": []
+    },
+    "directory_activity_logs": {
+      "label": "Directory Activity Logs",
+      "description": "Azure directory activity logs via Az",
+      "command": "Get-DirectoryActivityLogs",
+      "requiresDateRange": true,
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": []
+    },
+    "admin_users": {
+      "label": "Admin Users",
+      "description": "Administrative directory roles and members",
+      "command": "Get-AdminUsers",
+      "supportsAnalysis": true,
+      "analysisType": "risky_user_analysis",
+      "analysisLabel": "Risky User Analysis",
+      "parameters": []
+    },
+    "conditional_access_policies": {
+      "label": "Conditional Access Policies",
+      "description": "Conditional access configuration export",
+      "command": "Get-ConditionalAccessPolicies",
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": []
+    },
+    "mailbox_audit_status": {
+      "label": "Mailbox Audit Status",
+      "description": "Mailbox auditing configuration state",
+      "command": "Get-MailboxAuditStatus",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "mailbox_permissions": {
+      "label": "Mailbox Permissions",
+      "description": "Delegated mailbox permissions",
+      "command": "Get-MailboxPermissions",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "licenses_by_user": {
+      "label": "Licenses by User",
+      "description": "License assignments for all users",
+      "command": "Get-LicensesByUser",
+      "supportsAnalysis": true,
+      "analysisType": "comprehensive_analysis",
+      "analysisLabel": "Comprehensive Analysis",
+      "parameters": []
+    },
+    "license_compatibility": {
+      "label": "License Compatibility",
+      "description": "License capability and limitation check",
+      "command": "Get-LicenseCompatibility",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "entra_security_defaults": {
+      "label": "Entra Security Defaults",
+      "description": "Security defaults status",
+      "command": "Get-EntraSecurityDefaults",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "groups": {
+      "label": "Groups",
+      "description": "Group inventory and metadata",
+      "command": "Get-Groups",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "group_members": {
+      "label": "Group Members",
+      "description": "Group membership export",
+      "command": "Get-GroupMembers",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "dynamic_groups": {
+      "label": "Dynamic Groups",
+      "description": "Dynamic group rules and definitions",
+      "command": "Get-DynamicGroups",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "pim_assignments": {
+      "label": "PIM Assignments",
+      "description": "Privileged Identity Management role assignments",
+      "command": "Get-PIMAssignments",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "role_activity": {
+      "label": "Role Activity",
+      "description": "Directory role membership and recent activity",
+      "command": "Get-AllRoleActivity",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
+    "security_alerts": {
+      "label": "Security Alerts",
+      "description": "Microsoft security alert export",
+      "command": "Get-SecurityAlerts",
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": []
+    },
+    "full_extraction": {
+      "label": "Full Extraction",
+      "description": "Comprehensive evidence collection across supported sources",
+      "command": "Get-AllEvidence",
+      "fallbackCommand": "Start-EvidenceCollection",
+      "requiresDateRange": true,
+      "requiresUalCheck": true,
+      "supportsAnalysis": true,
+      "analysisType": "comprehensive_analysis",
+      "analysisLabel": "Comprehensive Analysis",
+      "parameters": []
+    }
+  },
+  "analysisTypes": {
+    "ual_analysis": {
+      "label": "UAL Analysis",
+      "description": "Unified Audit Log analysis for suspicious activities"
+    },
+    "signin_analysis": {
+      "label": "Sign-In Analysis",
+      "description": "Entra sign-in pattern analysis"
+    },
+    "audit_analysis": {
+      "label": "Audit Analysis",
+      "description": "Audit and configuration change analysis"
+    },
+    "mfa_analysis": {
+      "label": "MFA Analysis",
+      "description": "Multi-factor authentication analysis"
+    },
+    "oauth_analysis": {
+      "label": "OAuth Analysis",
+      "description": "OAuth application permission analysis"
+    },
+    "risky_detection_analysis": {
+      "label": "Risky Detection Analysis",
+      "description": "Identity Protection risky detection analysis"
+    },
+    "risky_user_analysis": {
+      "label": "Risky User Analysis",
+      "description": "Risky or privileged user analysis"
+    },
+    "message_trace_analysis": {
+      "label": "Message Trace Analysis",
+      "description": "Email message flow analysis"
+    },
+    "device_analysis": {
+      "label": "Device Analysis",
+      "description": "Device posture and security analysis"
+    },
+    "comprehensive_analysis": {
+      "label": "Comprehensive Analysis",
+      "description": "Broad analysis across supported datasets"
+    }
+  }
+}

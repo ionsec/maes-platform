@@ -4,18 +4,17 @@
 
 | Service | URL | Login | Purpose |
 |---------|-----|-------|---------|
-| **Grafana** | https://localhost/grafana/ | admin / admin | Dashboards |
+| **Grafana** | https://localhost/grafana/ | credentials from `.env` | Dashboards |
 | **Prometheus** | https://localhost/prometheus/ | No auth | Metrics |
-| **Live Logs** | MAES Dashboard → Live Container Logs | - | Real-time logs |
+| **Live Logs** | MAES Dashboard → Live Container Logs | opt-in | Real-time logs when Docker log access is enabled |
 
-## 🔐 Default Credentials
+## 🔐 Grafana Access
 
-**Grafana**: `admin` / `admin` ⚠️ **Change in production!**
+Grafana uses the credentials defined in `.env`:
 
 ```bash
-# Change via environment variables
-GRAFANA_USER=your_username
-GRAFANA_PASSWORD=your_secure_password
+GRAFANA_USER=admin
+GRAFANA_PASSWORD=<generated-secret>
 ```
 
 ## 📊 Key Dashboards

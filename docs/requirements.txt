@@ -1,0 +1,7 @@
+sphinx>=7.0
+sphinx-rtd-theme>=2.0
+sphinx-autodoc-typehints>=1.25
+sphinxcontrib-mermaid>=0.9
+recommonmark>=0.7
+sphinx-copybutton>=0.5
+sphinx-tabs>=3.4

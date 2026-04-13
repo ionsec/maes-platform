@@ -9,22 +9,14 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
 const crypto = require('crypto');
+const { extractionCapabilities, getAutoAnalysisType } = require('../utils/platformCapabilities');
 
 const router = express.Router();
 
 // Map data types to analysis types
-const DATA_TYPE_TO_ANALYSIS_TYPE = {
-  'unified_audit_log': 'ual_analysis',
-  'azure_signin_logs': 'signin_analysis',
-  'azure_audit_logs': 'audit_analysis',
-  'mfa_status': 'mfa_analysis',
-  'oauth_permissions': 'oauth_analysis',
-  'risky_users': 'risky_user_analysis',
-  'risky_detections': 'risky_detection_analysis',
-  'mailbox_audit': 'audit_analysis',
-  'message_trace': 'message_trace_analysis',
-  'devices': 'device_analysis'
-};
+const UPLOAD_DATA_TYPES = Object.entries(extractionCapabilities)
+  .filter(([, capability]) => capability.supportsUpload)
+  .map(([type]) => type);
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -120,7 +112,7 @@ router.get('/data/:extractionId',
   async (req, res) => {
     // Check for service token
     const serviceToken = req.headers['x-service-token'];
-    const SERVICE_AUTH_TOKEN = process.env.SERVICE_AUTH_TOKEN || 'service_internal_token_change_in_production';
+    const SERVICE_AUTH_TOKEN = process.env.SERVICE_AUTH_TOKEN;
     
     if (serviceToken !== SERVICE_AUTH_TOKEN) {
       return res.status(401).json({
@@ -194,18 +186,7 @@ router.post('/logs',
   requirePermission('canRunAnalysis'),
   upload.single('file'),
   [
-    body('dataType').isIn([
-      'unified_audit_log',
-      'azure_signin_logs',
-      'azure_audit_logs',
-      'mfa_status',
-      'oauth_permissions',
-      'risky_users',
-      'risky_detections',
-      'mailbox_audit',
-      'message_trace',
-      'devices'
-    ]).withMessage('Invalid data type'),
+    body('dataType').isIn(UPLOAD_DATA_TYPES).withMessage('Invalid data type'),
     body('metadata').optional().isJSON().withMessage('Metadata must be valid JSON')
   ],
   async (req, res) => {
@@ -401,7 +382,7 @@ router.post('/logs',
 
       // Automatically create and queue analysis job for uploaded data
       try {
-        const analysisType = DATA_TYPE_TO_ANALYSIS_TYPE[dataType] || 'comprehensive_analysis';
+        const analysisType = getAutoAnalysisType(dataType) || 'comprehensive_analysis';
         
         logger.info('Creating automatic analysis job', {
           extractionId: extraction.id,

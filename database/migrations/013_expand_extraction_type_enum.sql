@@ -1,0 +1,19 @@
+-- Expand extraction_type enum to align with current Microsoft-Extractor-Suite capabilities
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'admin_audit_log';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'mailbox_rules';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'transport_rules';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'activity_logs';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'directory_activity_logs';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'admin_users';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'conditional_access_policies';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'mailbox_audit_status';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'mailbox_permissions';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'licenses_by_user';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'license_compatibility';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'entra_security_defaults';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'groups';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'group_members';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'dynamic_groups';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'pim_assignments';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'role_activity';
+ALTER TYPE maes.extraction_type ADD VALUE IF NOT EXISTS 'security_alerts';

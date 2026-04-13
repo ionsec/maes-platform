@@ -16,14 +16,33 @@ CREATE TYPE extraction_type AS ENUM (
     'unified_audit_log',
     'azure_signin_logs', 
     'azure_audit_logs',
+    'admin_audit_log',
     'mailbox_audit',
     'message_trace',
-    'emails',
     'oauth_permissions',
     'mfa_status',
     'risky_users',
     'risky_detections',
     'devices',
+    'ual_graph',
+    'licenses',
+    'mailbox_rules',
+    'transport_rules',
+    'activity_logs',
+    'directory_activity_logs',
+    'admin_users',
+    'conditional_access_policies',
+    'mailbox_audit_status',
+    'mailbox_permissions',
+    'licenses_by_user',
+    'license_compatibility',
+    'entra_security_defaults',
+    'groups',
+    'group_members',
+    'dynamic_groups',
+    'pim_assignments',
+    'role_activity',
+    'security_alerts',
     'full_extraction'
 );
 CREATE TYPE job_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled');
@@ -260,17 +279,8 @@ CREATE TRIGGER update_alerts_updated_at BEFORE UPDATE ON alerts
 CREATE TRIGGER update_reports_updated_at BEFORE UPDATE ON reports
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Insert default admin user (password: admin123 - change in production!)
-INSERT INTO organizations (id, name, tenant_id) VALUES 
-    ('00000000-0000-0000-0000-000000000001', 'MAES Default Organization', 'maes-default-tenant');
-
-INSERT INTO users (organization_id, email, username, password, role, permissions) VALUES 
-    ('00000000-0000-0000-0000-000000000001', 
-     'admin@maes.local', 
-     'admin', 
-     '$2a$10$TVQSYBn13hZpQ9O/uXKsTu32UmErtxG3m2FHUDL7DOhBLwUS7l1fm', -- bcrypt hash of 'admin123'
-     'admin',
-     '{"canManageExtractions": true, "canRunAnalysis": true, "canViewReports": true, "canManageAlerts": true, "canManageUsers": true, "canManageOrganization": true, "canManageSystemSettings": true}');
+-- Initial users are no longer seeded with default credentials.
+-- Create the first administrator account through the registration flow after deployment.
 
 -- Create migrations table for tracking applied migrations
 CREATE TABLE IF NOT EXISTS migrations (

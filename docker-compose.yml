@@ -2,12 +2,12 @@ name: maes-platform
 
 services:
   postgres:
-    image: timescale/timescaledb:latest-pg14
+    image: timescale/timescaledb:latest-pg14@sha256:0f5553d37abbe0f20bfe0a04dab5d1238955b5cda2711aba403090f95b6e51ff
     container_name: maes-postgres
     environment:
       POSTGRES_DB: maes_db
       POSTGRES_USER: maes_user
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maes_secure_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     # Removed port exposure for security - database only accessible internally
     # ports:
     #   - "5432:5432"
@@ -26,9 +26,9 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.8-alpine@sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065
     container_name: maes-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-redis_secure_password}
+    command: redis-server --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD}
     # Removed port exposure for security - Redis only accessible internally
     # ports:
     #   - "6379:6379"
@@ -45,21 +45,24 @@ services:
 
 
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: api/Dockerfile
     image: maes-api:latest
     container_name: maes-api
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
+      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/maes_db
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
-      JWT_SECRET: ${JWT_SECRET:-your_jwt_secret_here}
-      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-your-32-character-secret-key-here!}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:?set SERVICE_AUTH_TOKEN}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
       SIEM_EXPORT_LIMIT: ${SIEM_EXPORT_LIMIT:-1000}
       SIEM_RATE_LIMIT: ${SIEM_RATE_LIMIT:-50}
       PORT: 3000
+      ENABLE_DOCKER_LOGS: ${ENABLE_DOCKER_LOGS:-false}
       # Domain configuration for CORS
       DOMAIN: ${DOMAIN:-localhost}
       PUBLIC_IP: ${PUBLIC_IP:-}
@@ -73,7 +76,6 @@ services:
       - ./certs:/app/certs:ro
       - extractor_output:/output:ro
       - user_certificates:/app/uploads/certificates
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,15 +87,18 @@ services:
     command: ${API_COMMAND:-node src/index.js}
 
   extractor:
-    build: ./services/extractor
+    build:
+      context: .
+      dockerfile: services/extractor/Dockerfile
     image: maes-extractor:latest
     container_name: maes-extractor
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
-      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
-      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/maes_db
+      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:?set SERVICE_AUTH_TOKEN}
+      CERT_PASSWORD: ${CERT_PASSWORD:?set CERT_PASSWORD}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       NODE_ENV: ${NODE_ENV:-production}
       POWERShell_TIMEOUT: ${POWERShell_TIMEOUT:-1800000}
@@ -124,9 +129,9 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
-      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
-      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/maes_db
+      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:?set SERVICE_AUTH_TOKEN}
     volumes:
       - extractor_output:/output:ro
       - analyzer_output:/analyzer_output
@@ -146,12 +151,11 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_secure_password}
-      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:-maes_secure_password}@postgres:5432/maes_db
-      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:-service_internal_token_change_in_production}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      DATABASE_URL: postgresql://maes_user:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/maes_db
+      SERVICE_AUTH_TOKEN: ${SERVICE_AUTH_TOKEN:?set SERVICE_AUTH_TOKEN}
       COMPLIANCE_PORT: 3002
       LOG_LEVEL: info
-      CERT_PASSWORD: ${CERT_PASSWORD:-Password123}
     volumes:
       - ./certs:/certs:ro
       - compliance-reports:/app/reports
@@ -165,7 +169,9 @@ services:
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
     image: maes-frontend:latest
     container_name: maes-frontend
     environment:
@@ -215,7 +221,7 @@ services:
     container_name: maes-grafana
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=https://localhost/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true

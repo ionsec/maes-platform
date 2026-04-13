@@ -5,6 +5,7 @@ const EncryptionUtil = require('../utils/encryption');
 const { logger } = require('../utils/logger');
 
 const execAsync = promisify(exec);
+const dockerLogsEnabled = process.env.ENABLE_DOCKER_LOGS === 'true';
 
 const router = express.Router();
 
@@ -81,6 +82,13 @@ router.post('/encrypt', async (req, res) => {
  */
 router.get('/system-logs', async (req, res) => {
   try {
+    if (!dockerLogsEnabled) {
+      return res.status(503).json({
+        error: 'Docker log access is disabled',
+        message: 'Set ENABLE_DOCKER_LOGS=true and explicitly mount Docker access to enable this endpoint.'
+      });
+    }
+
     const { 
       container = 'all', 
       lines = '100', 

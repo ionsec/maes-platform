@@ -30,6 +30,13 @@ const systemRoutes = require('./routes/system');
 const complianceRoutes = require('./routes/compliance');
 
 const app = express();
+const requiredEnvVars = ['JWT_SECRET', 'SERVICE_AUTH_TOKEN', 'ENCRYPTION_KEY'];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Trust proxy for rate limiting behind nginx
 app.set('trust proxy', 1);
@@ -40,7 +47,7 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"], // Allow inline scripts for Swagger UI
+      scriptSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "https:"],
       fontSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
@@ -55,25 +62,30 @@ app.use(compression());
 const buildCorsOrigins = () => {
   const origins = [];
 
-  // Always include localhost for development
-  origins.push(
-    'https://localhost',
-    'https://localhost:443',
-    'http://localhost:8080',
-    'http://localhost',
-    'http://localhost:3000',
-    'https://localhost:3000'
-  );
+  const isDevelopment = (process.env.NODE_ENV || 'development') !== 'production';
+
+  if (isDevelopment) {
+    origins.push(
+      'https://localhost',
+      'https://localhost:443',
+      'http://localhost:8080',
+      'http://localhost',
+      'http://localhost:3000',
+      'https://localhost:3000'
+    );
+  }
 
   // Add DOMAIN if provided
   if (process.env.DOMAIN) {
     const domain = process.env.DOMAIN;
     origins.push(
       `https://${domain}`,
-      `http://${domain}`,
-      `https://${domain}:443`,
-      `http://${domain}:80`
+      `https://${domain}:443`
     );
+
+    if (isDevelopment) {
+      origins.push(`http://${domain}`, `http://${domain}:80`);
+    }
   }
 
   // Add PUBLIC_IP if provided
@@ -81,10 +93,12 @@ const buildCorsOrigins = () => {
     const publicIP = process.env.PUBLIC_IP;
     origins.push(
       `https://${publicIP}`,
-      `http://${publicIP}`,
-      `https://${publicIP}:443`,
-      `http://${publicIP}:80`
+      `https://${publicIP}:443`
     );
+
+    if (isDevelopment) {
+      origins.push(`http://${publicIP}`, `http://${publicIP}:80`);
+    }
   }
 
   // Add FRONTEND_URL if provided

@@ -22,6 +22,13 @@ const extractionQueue = new Queue('extraction', {
 // Initialize job processor and enhanced analyzer
 const jobProcessor = new JobProcessor();
 const enhancedAnalyzer = new EnhancedAnalyzer();
+const requiredEnvVars = ['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
+
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    throw new Error(`Missing required environment variable: ${envVar}`);
+  }
+}
 
 // Workers will be initialized in setupQueueProcessors
 let analysisWorker, extractionWorker;
@@ -418,12 +425,60 @@ async function processUploadedExtraction(extractionId, analysisType, job) {
       await analysisJob.save();
     }
     
-    // Analyze the audit data using enhanced analyzer
-    const analysisResult = await enhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
-      analysisId,
-      extractionId,
-      organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
-    });
+    let analysisResult;
+
+    switch (analysisType || 'ual_analysis') {
+      case 'ual_analysis':
+      case 'signin_analysis':
+      case 'audit_analysis':
+      case 'oauth_analysis':
+      case 'risky_detection_analysis':
+      case 'message_trace_analysis':
+        analysisResult = await enhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
+          analysisId,
+          extractionId,
+          organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+        });
+        break;
+      case 'mfa_analysis':
+        analysisResult = await enhancedAnalyzer.analyzeMfaData(auditData, {
+          analysisId,
+          extractionId,
+          organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+        });
+        break;
+      case 'device_analysis':
+        analysisResult = await enhancedAnalyzer.analyzeDeviceData(auditData, {
+          analysisId,
+          extractionId,
+          organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+        });
+        break;
+      case 'risky_user_analysis':
+        analysisResult = await enhancedAnalyzer.analyzeUserData(auditData, {
+          analysisId,
+          extractionId,
+          organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+        });
+        break;
+      case 'comprehensive_analysis':
+        if (auditData.length > 0 && (auditData[0].skuPartNumber || auditData[0].SkuPartNumber)) {
+          analysisResult = await enhancedAnalyzer.analyzeLicenseData(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+        } else {
+          analysisResult = await enhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+        }
+        break;
+      default:
+        throw new Error(`Unsupported analysis type: ${analysisType}`);
+    }
     
     await job.progress(80);
     

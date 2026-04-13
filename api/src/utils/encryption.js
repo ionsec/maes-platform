@@ -1,8 +1,11 @@
 const crypto = require('crypto');
 
-// Use environment variable for encryption key or generate a default one
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'your-32-character-secret-key-here!';
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 const ALGORITHM = 'aes-256-cbc';
+
+if (!ENCRYPTION_KEY || ENCRYPTION_KEY.length < 32) {
+  throw new Error('ENCRYPTION_KEY must be set and at least 32 characters long');
+}
 
 // Generate a proper 32-byte key from the string
 const getKey = () => {
