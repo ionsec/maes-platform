@@ -1,31 +1,40 @@
 # MAES Platform
 
-MAES is a Microsoft 365 extraction, analysis, reporting, and compliance platform built around queue-driven services for API, extractor, analyzer, compliance, and frontend delivery.
-
-This release aligns the platform with current upstream extractor/analyzer capabilities and hardens the deployment for production use.
+MAES is a Microsoft 365 extraction, analysis, reporting, and compliance platform with built-in security operations capabilities including UEBA, case management, automated playbooks, and threat intelligence enrichment.
 
 ## Version
 
-- Current release target: `v1.1.0`
+- Current release: **v1.2.0**
 - Upstream extractor reference: [`invictus-ir/Microsoft-Extractor-Suite`](https://github.com/invictus-ir/Microsoft-Extractor-Suite)
 - Upstream analyzer reference: [`LETHAL-FORENSICS/Microsoft-Analyzer-Suite`](https://github.com/LETHAL-FORENSICS/Microsoft-Analyzer-Suite)
 
-## What Changed In v1.1.0
+## What's New in v1.2.0
 
-- Added a shared extraction capability registry used by API, extractor, and frontend.
-- Updated extractor command bindings to current upstream cmdlets.
-- Expanded supported extraction types and parameter handling.
-- Removed seeded default credentials from the database bootstrap.
-- Removed insecure fallback secrets from runtime code and `docker-compose.yml`.
-- Upgraded vulnerable Node dependencies and regenerated lockfiles until production `npm audit` was clean.
-- Pinned previously floating container base images and hardened the service Dockerfiles.
-- Disabled Docker socket based system-log access by default. It is now explicit opt-in.
+### UEBA (User Entity Behavior Analytics)
+Behavioral baselines built from 30-day audit history, with geographic, temporal, and operational anomaly detection. Risk scores (0–100) drive automated recommendations and high-risk alerting.
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v1.1.0.md](docs/releases/v1.1.0.md) for release notes.
+### Case Management
+Full incident lifecycle — new → investigating → contained → resolved → closed — with timeline tracking, evidence management, and user assignment.
+
+### Automated Playbooks
+Three built-in playbooks (Compromised Account, Phishing Email, Privileged Access Abuse) with approval gates for destructive actions and database-backed execution tracking.
+
+### Threat Intelligence Integration
+Multi-provider IOC enrichment (VirusTotal, AbuseIPDB, Shodan, IPQualityScore) for IPs, domains, and file hashes. Saved IOC tracking with risk-level classification and 1-hour caching.
+
+### Bug Fixes
+- Eliminated duplicate `require()` calls and duplicate `app` declarations that would crash startup
+- Fixed broken sidebar menu array, duplicate frontend routes, and duplicate imports
+- Replaced insecure `pool.query('BEGIN')` transactions with proper client-based transactions
+- Parameterized SQL query in `getUserCountries()` (was injectable)
+- Fixed route ordering so `/stats/summary` and `/meta/playbooks` match before `/:id`
+- Aligned RBAC permission names across all new routes to the actual system permissions
+
+See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v1.2.0.md](docs/releases/v1.2.0.md) for full details.
 
 ## Architecture
 
-- `api/`: authentication, orchestration, uploads, reporting, and internal service APIs
+- `api/`: authentication, orchestration, uploads, reporting, UEBA, incidents, threat intel
 - `frontend/`: React UI behind nginx
 - `services/extractor/`: Microsoft 365 extraction worker
 - `services/analyzer/`: analysis worker
@@ -65,9 +74,18 @@ Notes:
 - `ENCRYPTION_KEY` must be at least 32 characters.
 - `SERVICE_AUTH_TOKEN` is required for internal API calls between services.
 - `CERT_PASSWORD` protects the default extractor certificate bundle.
-- There is no seeded `admin@maes.local / admin123` account anymore.
+- There is no seeded `admin@maes.local / admin123` account.
 
-Copy the baseline from [.env.example](.env.example) and replace every placeholder before deployment.
+## Optional Threat Intelligence API Keys
+
+These enable external IOC enrichment; the platform runs without them (enrichment endpoints return empty results):
+
+```bash
+VIRUSTOTAL_API_KEY=        # VirusTotal file hash and domain reputation
+ABUSEIPDB_API_KEY=         # AbuseIPDB IP reputation
+SHODAN_API_KEY=            # Shodan IP exposure and vulnerability data
+IPQUALITYSCORE_API_KEY=    # IPQualityScore fraud and abuse scoring
+```
 
 ## Deployment
 
@@ -80,8 +98,17 @@ Copy the baseline from [.env.example](.env.example) and replace every placeholde
 docker compose up -d --build
 ```
 
-5. Open the platform at `https://localhost` for local deployment, or your configured domain for production.
-6. Create the first administrator account through the registration flow.
+5. Apply database migrations:
+
+```bash
+docker compose exec -T postgres psql -U maes_user -d maes_db \
+  < database/migrations/007_add_ueba_incidents_playbooks.sql
+docker compose exec -T postgres psql -U maes_user -d maes_db \
+  < database/migrations/008_add_saved_iocs.sql
+```
+
+6. Open the platform at `https://localhost` for local deployment, or your configured domain for production.
+7. Create the first administrator account through the registration flow.
 
 ## First-Time Setup
 
@@ -90,39 +117,79 @@ docker compose up -d --build
 - Configure Microsoft Entra / Microsoft 365 application credentials.
 - Upload a certificate or use the extractor-managed default certificate.
 - Run a connection test before scheduling extractions.
+- Optionally configure threat intelligence API keys in `.env` for IOC enrichment.
+
+## API Endpoints
+
+### Authentication & Core
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/login` | Authenticate user |
+| `GET` | `/api/extractions` | List extractions |
+| `POST` | `/api/extractions` | Start extraction |
+| `GET` | `/api/analysis` | List analysis jobs |
+| `POST` | `/api/analysis` | Create analysis job |
+| `GET` | `/api/alerts` | List security alerts |
+| `GET` | `/api/reports` | List reports |
+
+### UEBA
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/ueba/baseline/:userId` | Get user behavior baseline |
+| `GET` | `/api/ueba/risk/:userId` | Get user risk score |
+| `GET` | `/api/ueba/baselines` | List all baselines |
+| `POST` | `/api/ueba/process-activity` | Process activity for anomalies |
+| `GET` | `/api/ueba/stats` | UEBA statistics |
+
+### Incident Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/incidents` | List incidents |
+| `POST` | `/api/incidents` | Create incident |
+| `GET` | `/api/incidents/stats/summary` | Incident statistics |
+| `GET` | `/api/incidents/meta/playbooks` | List available playbooks |
+| `GET` | `/api/incidents/:id` | Get incident details |
+| `PUT` | `/api/incidents/:id/status` | Update incident status |
+| `PUT` | `/api/incidents/:id/assign` | Assign incident |
+| `POST` | `/api/incidents/:id/evidence` | Add evidence |
+| `POST` | `/api/incidents/:id/playbook` | Execute playbook |
+
+### Threat Intelligence
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/threat-intel/enrich/ip/:ip` | Enrich IP address |
+| `GET` | `/api/threat-intel/enrich/domain/:domain` | Enrich domain |
+| `GET` | `/api/threat-intel/enrich/hash/:hash` | Enrich file hash |
+| `POST` | `/api/threat-intel/enrich/bulk` | Bulk enrichment |
+| `GET` | `/api/threat-intel/stats` | Provider status and cache size |
+| `GET` | `/api/threat-intel/saved` | List saved IOCs |
+| `POST` | `/api/threat-intel/saved` | Save an IOC |
+| `DELETE` | `/api/threat-intel/saved/:id` | Delete saved IOC |
 
 ## Security Posture
 
-This release intentionally changes startup behavior:
-
-- Services now fail fast when required secrets are missing.
-- The database bootstrap no longer seeds a default admin account.
-- The API no longer accepts hardcoded fallback internal service tokens.
-- Docker-based system log collection is disabled unless `ENABLE_DOCKER_LOGS=true` is set and Docker access is mounted explicitly.
-- CSP and CORS defaults are tighter in production mode.
-- Previously floating container image references are pinned.
+- Services fail fast when required secrets are missing.
+- No seeded default admin account.
+- No hardcoded fallback internal service tokens.
+- Docker log collection is disabled unless explicitly enabled.
+- CSP and CORS defaults are tight in production mode.
+- Container image references are pinned.
+- All SQL queries use parameterized inputs.
+- All new API endpoints enforce RBAC permissions and rate limiting.
 
 ## Optional Docker Log Access
 
-System log collection from Docker containers is no longer enabled by default.
-
-If you explicitly want it:
+System log collection from Docker containers is not enabled by default. To enable it:
 
 1. Set `ENABLE_DOCKER_LOGS=true` in the API environment.
 2. Restore a read-only Docker socket mount for the API service.
 3. Accept that this increases the privilege level of that container.
 
-If you do not enable it, `/api/system/logs` returns `503` instead of silently attempting Docker access.
-
-## Verification
-
-The security remediation for `v1.1.0` was verified with:
-
-- `npm audit --omit=dev --json` in `api/`, `frontend/`, `services/analyzer/`, `services/extractor/`, and `services/compliance/`
-- frontend production build
-- syntax checks on modified service files
-
-Container image scanning via Docker Scout requires authenticated Docker access in the execution environment. Base-image pinning and Dockerfile hardening were applied in-repo regardless.
+If you do not enable it, `/api/system/logs` returns `503`.
 
 ## Development
 
@@ -140,6 +207,7 @@ For local development, you may set development-only origins with `CORS_ORIGIN` o
 - [Monitoring Quick Reference](docs/MONITORING_QUICK_REFERENCE.md)
 - [API Documentation](docs/API_DOCUMENTATION.md)
 - [Release Notes: v1.1.0](docs/releases/v1.1.0.md)
+- [Release Notes: v1.2.0](docs/releases/v1.2.0.md)
 
 ## License
 
