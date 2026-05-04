@@ -68,11 +68,11 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
             │  │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐│    │
             │  │  │  Extractor Service  │  │  Analyzer Service   │  │ Compliance Service  ││    │
             │  │  │                     │  │                     │  │                     ││    │
-            │  │  │  • PowerShell       │  │  • Multi-threaded   │  │  • CIS Benchmarks   ││    │
+            │  │  │  • Native Graph API │  │  • Multi-threaded   │  │  • CIS Benchmarks   ││    │
             │  │  │  • M365 Connection  │  │  • Pattern Analysis │  │  • Certificate Auth ││    │
-            │  │  │  • Graph API        │  │  • MITRE ATT&CK     │  │  • Tenant Analysis  ││    │
+            │  │  │  • PS Sidecar (T3)  │  │  • MITRE ATT&CK     │  │  • Tenant Analysis  ││    │
             │  │  │  • Data Extraction  │  │  • Alert Generation │  │  • Entity Tracking  ││    │
-            │  │  │  • Progress Monitor │  │  • Findings Report  │  │  • HTML Reports     ││    │
+            │  │  │  • Event Progress  │  │  • Findings Report  │  │  • HTML Reports     ││    │
             │  │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘│    │
             │  └─────────────────────────────────────────────────────────────────────────────┘    │
             │                                     │                                                │
@@ -135,8 +135,8 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
      │                     │   7. Job Created  │                     │                  │
      │                     │◄──────────────────│                     │                  │
      │                     │                   │                     │                  │
-     │                     │                   │                     │   8. PowerShell │
-     │                     │                   │                     │   Execution     │
+     │                     │                   │                     │   8. Native Graph│
+     │                     │                   │                     │   API + PS Sidecar│
      │                     │                   │                     │   (M365/Graph)  │
      │                     │                   │                     │────────────────►│
      │                     │                   │                     │                  │
@@ -279,70 +279,96 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3. Extractor Service (Node.js + PowerShell)
+### 3. Extractor Service (Node.js + Native Graph API + PowerShell Sidecar)
+
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                            Extractor Architecture                                   │
+│                     Extractor Architecture (Dual-Path)                              │
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
     ┌─────────────────────────────────────────────────────────────────────────────────┐
-    │                              Job Processing                                     │
+    │                           Job Processing & Dispatch                            │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-    │  │   BullMQ Worker     │  │   Job Scheduler     │  │   Progress Monitor  │     │
-    │  │                     │  │                     │  │                     │     │
-    │  │  • Queue Consumer   │  │  • Priority Queue   │  │  • Real-time Updates│     │
-    │  │  • Job Validation   │  │  • Retry Logic      │  │  • Log Streaming    │     │
-    │  │  • Error Handling   │  │  • Timeout Mgmt     │  │  • Status Sync      │     │
-    │  │  • Concurrency     │  │  • Health Checks    │  │  • API Communication│     │
-    │  │  • Status Updates   │  │  • Recovery Logic   │  │  • Metric Collection│     │
+    │  │   BullMQ Worker     │  │  Extraction         │  │   Progress Tracker  │
+    │  │                     │  │  Dispatcher          │  │                     │
+    │  │  • Queue Consumer   │  │  • Type Registry    │  │  • Event-driven     │
+    │  │  • Job Validation   │  │  • isNativeGraph()  │  │  • Phase-based      │
+    │  │  • Error Handling   │  │  • requiresPS()     │  │  • BullMQ progress  │
+    │  │  • Concurrency     │  │  • Fallback routing  │  │  • Record counting  │
+    │  │  • Status Updates   │  │  • Legacy compat    │  │  • API updates      │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                            │
-                                           │
-    ┌─────────────────────────────────────────────────────────────────────────────────┐
-    │                          PowerShell Execution Engine                           │
+                              ┌────────────┴────────────┐
+                              │                         │
+                    ┌────────▼────────┐      ┌─────────▼─────────┐
+                    │  Tier 1 & 2:    │      │  Tier 3:           │
+                    │  Native Graph   │      │  PowerShell Sidecar│
+                    └────────┬────────┘      └─────────┬─────────┘
+                             │                         │
+    ┌────────────────────────▼─────────────────────────▼──────────────────────────────┐
+    │                     Native Graph API Path (Tier 1 & 2)                          │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-    │  │   Command Builder   │  │   Process Manager   │  │   Output Processor  │     │
-    │  │                     │  │                     │  │                     │     │
-    │  │  • Dynamic Commands │  │  • Process Spawning │  │  • File Processing  │     │
-    │  │  • Parameter Injection│ │  • Timeout Control │  │  • Data Validation  │     │
-    │  │  • Security Checks  │  │  • Memory Mgmt      │  │  • Format Conversion│     │
-    │  │  • Template Engine  │  │  • Error Capture    │  │  • Storage Mgmt     │     │
+    │  │   Graph Auth         │  │   Graph Client       │  │   Extractor Modules│     │
+    │  │   (graphAuth.js)     │  │   (graphClient.js)   │  │   (extractors/)    │     │
+    │  │                     │  │                     │  │                     │
+    │  │  • MSAL cert auth   │  │  • @odata.nextLink │  │  • 20 Tier 1       │     │
+    │  │  • Token caching    │  │  • Auto pagination │  │  • 3 Tier 2        │     │
+    │  │  • Auto refresh     │  │  • 429 rate limit  │  │  • BaseExtractor   │     │
+    │  │  • Per-org clients  │  │  • Exponential backoff│ │  • OutputWriter  │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                            │
-                                           │
     ┌─────────────────────────────────────────────────────────────────────────────────┐
-    │                           Microsoft 365 Integration                            │
+    │                    PowerShell Sidecar Path (Tier 3)                            │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-    │  │  Exchange Online    │  │   Microsoft Graph   │  │   Authentication    │     │
-    │  │                     │  │                     │  │                     │     │
-    │  │  • UAL Extraction   │  │  • User Data        │  │  • Certificate Auth │     │
-    │  │  • Mailbox Audit    │  │  • Device Data      │  │  • Token Management │     │
-    │  │  • Message Trace    │  │  • MFA Status       │  │  • Tenant Routing   │     │
-    │  │  • Transport Rules  │  │  • License Data     │  │  • Permission Mgmt  │     │
+    │  │  PS Adapter         │  │  Extractor Sidecar   │  │  Exchange Online   │     │
+    │  │  (powershellAdapter│  │  (extractor-sidecar) │  │                     │     │
+    │  │   .js)              │  │                     │  │  • UAL Extraction   │     │
+    │  │                     │  │  • HTTP API :3001   │  │  • Admin Audit      │     │
+    │  │  • HTTP client      │  │  • PowerShell 7     │  │  • Mailbox Audit    │     │
+    │  │  • Timeout mgmt     │  │  • MS-Extractor-   │  │  • Transport Rules  │     │
+    │  │  • Health check     │  │    Suite module     │  │  • Message Trace    │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
                                            │
-                                           │
     ┌─────────────────────────────────────────────────────────────────────────────────┐
-    │                              Data Extraction Types                             │
+    │                     Certificate & Auth Infrastructure                          │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
-    │  │   Audit Logs        │  │   Sign-in Logs      │  │   Security Data     │     │
-    │  │                     │  │                     │  │                     │     │
-    │  │  • Unified Audit    │  │  • Authentication   │  │  • MFA Status       │     │
-    │  │  • Admin Audit      │  │  • Risk Events      │  │  • Risky Users      │     │
-    │  │  • Mailbox Audit    │  │  • Conditional Access│ │  • Device Compliance│     │
-    │  │  • Azure AD Audit   │  │  • B2B/B2C Logins   │  │  • OAuth Apps       │     │
-    │  │  • UAL Graph        │  │  • Device Logs      │  │  • Licenses         │     │
+    │  │  Certificate Mgr   │  │  Graph Auth Service  │  │  Connection Testing│     │
+    │  │  (certificateManager│  │  (graphAuth.js)      │  │                     │     │
+    │  │   .js)              │  │                     │  │  • 4 Graph endpoints│     │
+    │  │                     │  │  • MSAL CCA         │  │  • Permission check│     │
+    │  │  • PFX parse (forge)│  │  • Client cert auth │  │  • Token validation│     │
+    │  │  • Thumbprint calc  │  │  • Token caching    │  │  • Native Graph    │     │
+    │  │  • Expiry check     │  │  • Per-org clients  │  │    (no PowerShell) │     │
     │  └─────────────────────┘  └─────────────────────┘  └─────────────────────┘     │
     └─────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+#### Extraction Type Tiers
+
+| Tier | Count | Implementation | Examples |
+|------|-------|---------------|----------|
+| Tier 1 — Full Graph | 20 | Native `@microsoft/microsoft-graph-client` SDK | sign-in logs, audit logs, MFA status, devices, groups, licenses, conditional access, PIM, risky users, security alerts |
+| Tier 2 — Partial Graph | 3 | Graph API with documented limitations | mailbox rules, mailbox audit status, mailbox permissions |
+| Tier 3 — PowerShell Sidecar | 5 | HTTP API to `extractor-sidecar` container | unified audit log, admin audit log, mailbox audit, transport rules, message trace |
+
+#### Key Components
+
+- **Extraction Dispatcher** (`extractors/index.js`): Routes extraction types to native Graph extractors or the PowerShell sidecar adapter based on `isNativeGraph()` / `requiresPowerShell()` checks
+- **Graph Auth Service** (`auth/graphAuth.js`): MSAL `ConfidentialClientApplication` with per-organization client caching, certificate-based authentication, and automatic token refresh
+- **Graph Client Wrapper** (`clients/graphClient.js`): Handles `@odata.nextLink` pagination, 429 rate limiting with exponential backoff + jitter, and retry on 503 errors
+- **Certificate Manager** (`auth/certificateManager.js`): Native PFX/PKCS12 parsing via `node-forge` — replaces PowerShell`s `X509Certificate2` for both extraction auth and API cert validation
+- **Progress Tracker** (`utils/progressTracker.js`): Event-driven phase tracking (authenticating, fetching, paginating, writing) replaces stdout regex parsing
+- **Output Writer** (`utils/outputWriter.js`): JSON/CSV file writing with metadata envelope (format version 2.0, extraction type, timestamp, record count)
+- **PowerShell Adapter** (`adapters/powershellAdapter.js`): HTTP client for the sidecar`s `/api/extract` endpoint with timeout and health check support
+
 
 ### 4. Compliance Service (Node.js + Certificate Authentication)
 
@@ -429,7 +455,7 @@ The MAES (Microsoft 365 Audit & Exchange Security) Platform is a comprehensive s
 └─────────────────────────────────────────────────────────────────────────────────────┘
 
     ┌─────────────────────────────────────────────────────────────────────────────────┐
-    │                              Job Processing                                     │
+    │                           Job Processing & Dispatch                            │
     │                                                                                 │
     │  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐     │
     │  │   BullMQ Worker     │  │   Job Processor     │  │   Worker Pool Mgmt  │     │
@@ -510,10 +536,10 @@ Microsoft 365          MAES Platform              Data Processing           Anal
 │  Online         │   │   Service       │   │   Validation    │   │   Service       │
 │                 │   │                 │   │                 │   │                 │
 │  ┌─────────────┐│   │  ┌─────────────┐│   │  ┌─────────────┐│   │  ┌─────────────┐│
-│  │ UAL         ││   │  │ PowerShell  ││   │  │ Format      ││   │  │ Pattern     ││
-│  │ Mailbox     ││◄──┤  │ Execution   ││──►│  │ Validation  ││──►│  │ Matching    ││
-│  │ Message     ││   │  │ Progress    ││   │  │ Deduplication│   │  │ Anomaly     ││
-│  │ Trace       ││   │  │ Monitoring  ││   │  │ Enrichment  ││   │  │ Detection   ││
+│  │ UAL         ││   │  │ Native Graph││   │  │ Format      ││   │  │ Pattern     ││
+│  │ Mailbox     ││◄──┤  │ API + PS    ││──►│  │ Validation  ││──►│  │ Matching    ││
+│  │ Message     ││   │  │ Sidecar     ││   │  │ Deduplication│   │  │ Anomaly     ││
+│  │ Trace       ││   │  │ Event Prog. ││   │  │ Enrichment  ││   │  │ Detection   ││
 │  └─────────────┘│   │  └─────────────┘│   │  └─────────────┘│   │  └─────────────┘│
 │                 │   │                 │   │                 │   │                 │
 │  Graph API      │   │   Certificate   │   │   Time Series   │   │   Multi-thread  │
@@ -622,7 +648,7 @@ External Network                    Docker Bridge Network                 Intern
 │  │                     │              │                     │                    │
 │  │  Port: 5432         │              │  No External Port   │                    │
 │  │  Exposed for Dev    │              │  Network: maes-net  │                    │
-│  │  Network: maes-net  │              │  PowerShell Runner  │                    │
+│  │  Network: maes-net  │              │  Graph API + Sidecar│                    │
 │  └─────────────────────┘              └─────────────────────┘                    │
 │             │                                    │                               │
 │             │                                    │                               │
@@ -816,9 +842,9 @@ Frontend Stack                 Backend Stack                  Infrastructure Sta
 │                 │     │                 │              │                 │
 │   Web Server    │     │   Processing    │              │   Monitoring    │
 │                 │     │                 │              │                 │
-│   Nginx         │     │   PowerShell    │              │   Prometheus    │
-│   SSL/TLS       │     │   Worker        │              │   Grafana       │
-│   Compression   │     │   Threads       │              │   AlertManager  │
+│   Nginx         │     │   Graph API     │              │   Prometheus    │
+│   SSL/TLS       │     │   + PS Sidecar  │              │   Grafana       │
+│   Compression   │     │   Worker        │              │   AlertManager  │
 │   Static Files  │     │   Multi-        │              │   Loki          │
 │   Proxy         │     │   processing    │              │   Jaeger        │
 │   Load          │     │   Pattern       │              │   OpenTelemetry │
