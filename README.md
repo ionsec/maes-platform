@@ -4,9 +4,32 @@ MAES is a Microsoft 365 extraction, analysis, reporting, and compliance platform
 
 ## Version
 
-- Current release: **v1.2.0**
-- Upstream extractor reference: [`invictus-ir/Microsoft-Extractor-Suite`](https://github.com/invictus-ir/Microsoft-Extractor-Suite)
+- Current release: **v1.3.0**
+- Upstream extractor reference: [`invictus-ir/Microsoft-Extractor-Suite`](https://github.com/invictus-ir/Microsoft-Extractor-Suite) (Tier 3 Exchange-only sidecar)
 - Upstream analyzer reference: [`LETHAL-FORENSICS/Microsoft-Analyzer-Suite`](https://github.com/LETHAL-FORENSICS/Microsoft-Analyzer-Suite)
+
+## What's New in v1.3.0
+
+### Native Graph API Extraction Engine
+The extractor service now calls Microsoft Graph API directly via `@azure/msal-node` + `@microsoft/microsoft-graph-client` for 23 of 28 extraction types, eliminating the PowerShell runtime dependency and reducing the Docker image by ~300-500 MB. A lightweight PowerShell sidecar (`extractor-sidecar`) handles the 5 Exchange-only types that have no Graph API equivalent.
+
+### Dual-Path Extraction Architecture
+| Path | Types | Implementation |
+|------|-------|---------------|
+| Tier 1 — Native Graph | 20 types (sign-in logs, audit logs, MFA, devices, groups, licenses, conditional access, PIM, risky users, etc.) | Direct Graph SDK calls with `@odata.nextLink` pagination and 429 rate limit retry |
+| Tier 2 — Partial Graph | 3 types (mailbox rules, mailbox audit status, mailbox permissions) | Graph API with documented limitations |
+| Tier 3 — PowerShell Sidecar | 5 types (unified audit log, admin audit log, mailbox audit, transport rules, message trace) | HTTP API sidecar running `Microsoft-Extractor-Suite` |
+
+### Native Certificate Parsing
+PFX/PKCS12 certificate validation in the API service now uses `node-forge` instead of spawning `pwsh`. Certificate thumbprint, expiry, and private key extraction are handled entirely in JavaScript.
+
+### Event-Driven Progress Tracking
+Replaced stdout regex parsing with a `ProgressTracker` class that updates BullMQ job progress through phase-based events (authenticating, fetching, paginating, writing).
+
+### Output Format v2.0
+Native Graph extractors produce output in Graph API's native JSON format with a metadata envelope (format version, extraction type, timestamp, record count) for format detection by downstream services.
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ## What's New in v1.2.0
 
@@ -36,7 +59,8 @@ See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v1.2.0.md](docs/releases/v1.
 
 - `api/`: authentication, orchestration, uploads, reporting, UEBA, incidents, threat intel
 - `frontend/`: React UI behind nginx
-- `services/extractor/`: Microsoft 365 extraction worker
+- `services/extractor/`: Microsoft 365 extraction worker (native Graph API + PowerShell sidecar dispatcher)
+- `services/extractor-sidecar/`: PowerShell sidecar for Exchange-only extractions (unified audit log, admin audit, mailbox audit, transport rules, message trace)
 - `services/analyzer/`: analysis worker
 - `services/compliance/`: compliance assessment worker and report service
 - `database/`: bootstrap schema and migrations

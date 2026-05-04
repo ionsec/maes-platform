@@ -28,6 +28,8 @@ MAES Platform Documentation
    architecture/overview
    architecture/api
    architecture/extractor
+   architecture/extractor-sidecar
+   architecture/migration-graph-api
    architecture/analyzer
    architecture/compliance
    architecture/frontend
