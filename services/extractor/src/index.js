@@ -8,6 +8,7 @@ const { logger, createExtractionLogger } = require('./logger');
 const { updateExtractionProgress } = require('./progressMonitor');
 const axios = require('axios');
 const { getExtractionCapability, getAutoAnalysisType } = require('./platformCapabilities');
+const { dispatchExtraction, isNativeGraph } = require('./extractors');
 require('dotenv').config();
 const requiredEnvVars = ['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
 
@@ -83,37 +84,64 @@ const processExtractionJob = async (job) => {
   try {
     // Update job progress
     await job.updateProgress(10);
-    
-    // Start monitoring LogFile.txt for progress updates
-    progressMonitor = updateExtractionProgress(extractionId, job);
-    
-    // Prepare PowerShell command based on extraction type
-    const psCommand = await buildPowerShellCommand(type, parameters, credentials, extractionId, orgOutputPath);
-    
-    // Log the command for debugging (sanitize sensitive data)
-    const sanitizedCommand = psCommand.replace(/ConvertTo-SecureString\s+'[^']+'/g, 'ConvertTo-SecureString ***');
-    logger.debug(`Executing PowerShell command for extraction ${extractionId}: ${sanitizedCommand.substring(0, 500)}...`);
-    extractionLogger.info('Connecting to Microsoft 365...');
-    
-    // Execute PowerShell script
-    const result = await executePowerShell(psCommand, job, extractionLogger);
-    
-    // Stop progress monitoring
-    if (progressMonitor && progressMonitor.stop) {
-      progressMonitor.stop();
+
+    let outputFiles;
+    let statistics;
+
+    if (isNativeGraph(type)) {
+      // Use native Graph API extraction
+      extractionLogger.info(`Using native Graph API for extraction type: ${type}`);
+      const nativeResults = await dispatchExtraction(type, parameters, credentials, organizationId, orgOutputPath, job);
+      if (nativeResults) {
+        outputFiles = nativeResults;
+        statistics = {
+          totalEvents: nativeResults.reduce((sum, f) => sum + (f.recordCount || 0), 0),
+          uniqueUsers: 0,
+          uniqueOperations: 0
+        };
+      }
+    } else {
+      // Use PowerShell sidecar for Tier 3 (Exchange-only) extractions
+      const PowerShellAdapter = require('./adapters/powershellAdapter');
+
+      if (PowerShellAdapter.requiresPowerShell(type)) {
+        extractionLogger.info(`Using PowerShell sidecar for Tier 3 extraction type: ${type}`);
+        const sidecarResult = await PowerShellAdapter.execute(
+          type, parameters, credentials, organizationId, extractionId
+        );
+
+        // Sidecar writes files directly to shared volume; scan for output files
+        outputFiles = await processOutput(extractionId, type, organizationId);
+        statistics = sidecarResult.statistics;
+      } else {
+        // Legacy PowerShell path (for any types not yet migrated)
+        progressMonitor = updateExtractionProgress(extractionId, job);
+
+        const psCommand = await buildPowerShellCommand(type, parameters, credentials, extractionId, orgOutputPath);
+
+        const sanitizedCommand = psCommand.replace(/ConvertTo-SecureString\s+'[^']+'/g, 'ConvertTo-SecureString ***');
+        logger.debug(`Executing PowerShell command for extraction ${extractionId}: ${sanitizedCommand.substring(0, 500)}...`);
+        extractionLogger.info('Connecting to Microsoft 365 (PowerShell)...');
+
+        const result = await executePowerShell(psCommand, job, extractionLogger);
+
+        if (progressMonitor && progressMonitor.stop) {
+          progressMonitor.stop();
+        }
+
+        outputFiles = await processOutput(extractionId, type, organizationId);
+        statistics = result.statistics;
+      }
     }
-    
-    // Parse and store results
-    const outputFiles = await processOutput(extractionId, type, organizationId);
-    
+
     logger.info(`Extraction job ${extractionId} completed successfully`);
     extractionLogger.info('Extraction completed successfully');
-    
+
     // Log completion statistics
     extractionLogger.info(`Job ${extractionId} completed successfully:`);
-    extractionLogger.success(`Total Events: ${result.statistics.totalEvents || 0}`);
-    extractionLogger.success(`Unique Users: ${result.statistics.uniqueUsers || 0}`);
-    extractionLogger.success(`Unique Operations: ${result.statistics.uniqueOperations || 0}`);
+    extractionLogger.success(`Total Events: ${statistics.totalEvents || 0}`);
+    extractionLogger.success(`Unique Users: ${statistics.uniqueUsers || 0}`);
+    extractionLogger.success(`Unique Operations: ${statistics.uniqueOperations || 0}`);
     extractionLogger.success(`Output Files: ${outputFiles.length}`);
     
     // Log output files details
@@ -192,54 +220,76 @@ const processExtractionJob = async (job) => {
   }
 };
 
-// Process connection test jobs with proper error handling
+// Process connection test jobs — native Graph API connection test
 const processTestConnectionJob = async (job) => {
   const { testId, parameters } = job.data;
-  
+
   logger.info(`Starting connection test ${testId}`);
-  
+
   try {
-    // Update job progress
-    await job.updateProgress(50);
-    
-    // Build test connection command  
-    const testCommand = await buildTestConnectionCommand(parameters);
-    
-    // Execute PowerShell test
-    const result = await executePowerShell(testCommand, job);
-    
-    logger.info(`Connection test ${testId} completed successfully`);
-    
-    // Extract UAL status from output
-    let ualStatus = 'unknown';
-    if (result.stdout.includes('UAL_STATUS:TRUE')) {
-      ualStatus = 'enabled';
-    } else if (result.stdout.includes('UAL_STATUS:FALSE')) {
-      ualStatus = 'disabled';
-    } else if (result.stdout.includes('UAL_STATUS:ERROR')) {
-      ualStatus = 'error';
-    }
-    
-    // Extract Graph connection status
-    let graphStatus = 'unknown';
-    if (result.stdout.includes('GRAPH_CONNECTION_SUCCESS')) {
-      graphStatus = 'success';
-    } else if (result.stdout.includes('GRAPH_CONNECTION_ERROR')) {
-      graphStatus = 'error';
-    }
-    
-    return {
-      success: true,
-      testId,
-      result: result.stdout,
-      connectionStatus: result.stdout.includes('CONNECTION_SUCCESS') ? 'success' : 'failed',
-      ualStatus,
-      graphStatus
+    await job.updateProgress(10);
+
+    const graphAuthService = require('./auth/graphAuth');
+
+    // Build credentials from test parameters
+    const credentials = {
+      tenantId: parameters.tenantId || parameters.fqdn,
+      clientId: parameters.applicationId,
+      certPath: parameters.certificateFilePath || '/certs/app.pfx',
+      certPassword: parameters.certificatePassword || await getDefaultCertificatePassword()
     };
-    
+
+    // Check for user-uploaded certificate
+    const userCertInfo = await getUserCertificateInfo(parameters.organizationId || 'default', '1');
+    if (userCertInfo) {
+      credentials.certPath = userCertInfo.path;
+      if (userCertInfo.encryptedPassword) {
+        const decrypted = await decryptPassword(userCertInfo.encryptedPassword);
+        if (decrypted) {
+          credentials.certPassword = decrypted;
+        }
+      }
+    }
+
+    await job.updateProgress(30);
+
+    // Authenticate with Graph API
+    const graphClient = await graphAuthService.getGraphClient(
+      parameters.organizationId || 'default',
+      credentials
+    );
+
+    await job.updateProgress(60);
+
+    // Test connection and permissions
+    const GraphClientWrapper = require('./clients/graphClient');
+    const clientWrapper = new GraphClientWrapper(graphClient);
+    const testResult = await graphAuthService.testConnection(graphClient);
+
+    await job.updateProgress(90);
+
+    logger.info(`Connection test ${testId} completed: ${testResult.summary}`);
+
+    return {
+      success: testResult.success,
+      testId,
+      connectionStatus: testResult.success ? 'success' : 'failed',
+      graphStatus: testResult.success ? 'success' : 'error',
+      ualStatus: 'unknown', // UAL check requires Exchange PowerShell — not available in native mode
+      details: testResult.tests,
+      summary: testResult.summary
+    };
+
   } catch (error) {
     logger.error(`Connection test ${testId} failed:`, error);
-    throw error;
+    return {
+      success: false,
+      testId,
+      connectionStatus: 'failed',
+      graphStatus: 'error',
+      ualStatus: 'unknown',
+      error: error.message
+    };
   }
 };
 

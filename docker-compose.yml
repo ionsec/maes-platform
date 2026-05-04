@@ -104,6 +104,7 @@ services:
       POWERShell_TIMEOUT: ${POWERShell_TIMEOUT:-1800000}
       QUEUE_STALLED_INTERVAL: ${QUEUE_STALLED_INTERVAL:-30000}
       QUEUE_MAX_STALLED_COUNT: ${QUEUE_MAX_STALLED_COUNT:-1}
+      SIDECAR_URL: ${SIDECAR_URL:-http://extractor-sidecar:3001}
     volumes:
       - extractor_output:/output
       - ./certs:/certs:ro
@@ -113,6 +114,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      extractor-sidecar:
+        condition: service_started
     networks:
       - maes-network
     restart: unless-stopped
@@ -120,6 +123,31 @@ services:
       test: ["CMD", "node", "-e", "console.log('Health check passed')"]
       interval: 30s
       timeout: 10s
+      retries: 3
+
+  extractor-sidecar:
+    build:
+      context: .
+      dockerfile: services/extractor-sidecar/Dockerfile
+    image: maes-extractor-sidecar:latest
+    container_name: maes-extractor-sidecar
+    environment:
+      SIDECAR_PORT: 3001
+      CERT_PASSWORD: ${CERT_PASSWORD:?set CERT_PASSWORD}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - extractor_output:/output
+      - ./certs:/certs:ro
+      - user_certificates:/user_certificates:ro
+    networks:
+      - maes-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const req = http.request('http://127.0.0.1:3001/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
       retries: 3
 
   analyzer:

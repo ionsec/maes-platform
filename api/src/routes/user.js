@@ -5,9 +5,6 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
@@ -710,103 +707,62 @@ router.post('/certificate', certificateUpload.single('certificate'), async (req,
       return res.status(400).json({ error: 'Invalid file format. Only .pfx and .p12 files are allowed' });
     }
     
-    // Validate certificate with password
+    // Validate certificate with password using native node-forge (no PowerShell dependency)
     let thumbprint;
     let encryptedPassword;
-    
+
     try {
-      // Try PowerShell validation first (if available)
-      logger.info('Attempting certificate validation with PowerShell...');
-      
-      const psCommand = `
-        try {
-          $certPath = '${certificateFile.path.replace(/\\/g, '/')}';
-          $certPassword = '${password.replace(/'/g, "''")}';
-          $securePwd = ConvertTo-SecureString $certPassword -AsPlainText -Force;
-          
-          # Try to load the certificate with the provided password
-          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-            $certPath,
-            $securePwd,
-            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
-          );
-          
-          # Check if certificate has private key
-          if (-not $cert.HasPrivateKey) {
-            Write-Output "ERROR: Certificate does not contain a private key";
-            exit 1;
-          }
-          
-          # Check if certificate is expired
-          $now = Get-Date;
-          if ($cert.NotAfter -lt $now) {
-            Write-Output "WARNING: Certificate expired on $($cert.NotAfter)";
-          }
-          
-          # Output certificate details
-          Write-Output "SUCCESS";
-          Write-Output "Thumbprint: $($cert.Thumbprint)";
-          Write-Output "Subject: $($cert.Subject)";
-          Write-Output "ValidFrom: $($cert.NotBefore)";
-          Write-Output "ValidUntil: $($cert.NotAfter)";
-          exit 0;
-        } catch {
-          Write-Output "ERROR: $_";
-          exit 1;
+      const forge = require('node-forge');
+      const certBuffer = fs.readFileSync(certificateFile.path);
+
+      const p12Asn1 = forge.asn1.fromDer(certBuffer.toString('binary'));
+      const p12 = forge.pkcs12.pkcs12FromAsn1(p12Asn1, password);
+
+      // Extract private key
+      const keyBags = p12.getBags({ bagType: forge.pki.oids.pkcs8ShrappedKeyBag });
+      const keyBagsFallback = p12.getBags({ bagType: forge.pki.oids.keyBag });
+      let privateKey = null;
+      for (const bagType of [keyBags, keyBagsFallback]) {
+        const bags = bagType[Object.keys(bagType)[0]];
+        if (bags && bags.length > 0 && bags[0].key) {
+          privateKey = bags[0].key;
+          break;
         }
-      `;
-      
-      const { stdout, stderr } = await execPromise(`pwsh -Command "${psCommand}"`, { timeout: 10000 });
-      
-      if (stderr || !stdout.includes('SUCCESS')) {
-        throw new Error(`PowerShell validation failed: ${stdout} ${stderr}`);
       }
-      
-      // Extract thumbprint from output
-      const thumbprintMatch = stdout.match(/Thumbprint:\s*([A-F0-9]+)/);
-      thumbprint = thumbprintMatch ? thumbprintMatch[1] : null;
-      
-      // Extract certificate details for logging
-      const subjectMatch = stdout.match(/Subject:\s*(.+)/);
-      logger.info('Certificate validated successfully with PowerShell:', {
-        thumbprint: thumbprint,
-        subject: subjectMatch ? subjectMatch[1] : 'Unknown'
-      });
-      
-      // Check if certificate is expired
-      if (stdout.includes('WARNING: Certificate expired')) {
+
+      if (!privateKey) {
+        fs.unlinkSync(certificateFile.path);
+        return res.status(400).json({ error: 'Certificate does not contain a private key' });
+      }
+
+      // Extract certificate
+      const certBags = p12.getBags({ bagType: forge.pki.oids.certBag });
+      const certBagArray = certBags[Object.keys(certBags)[0]];
+      if (!certBagArray || certBagArray.length === 0) {
+        fs.unlinkSync(certificateFile.path);
+        return res.status(400).json({ error: 'No certificate found in PFX file' });
+      }
+      const certificate = certBagArray[0].cert;
+
+      // Calculate thumbprint
+      const certDer = forge.asn1.toDer(forge.pki.certificateToAsn1(certificate)).getBytes();
+      thumbprint = crypto.createHash('sha1').update(certDer, 'binary').digest('hex').toUpperCase();
+
+      // Check expiry
+      if (certificate.validity.notAfter < new Date()) {
         fs.unlinkSync(certificateFile.path);
         return res.status(400).json({ error: 'Certificate has expired. Please upload a valid certificate.' });
       }
-      
-    } catch (psError) {
-      // PowerShell validation failed, fall back to basic validation
-      logger.warn('PowerShell validation failed, using basic validation:', psError.message);
-      
-      // Basic file validation - just check if it's a valid certificate file
-      try {
-        const certBuffer = fs.readFileSync(certificateFile.path);
-        
-        // Check for .pfx/.p12 file signatures
-        if (certBuffer.length < 100) {
-          throw new Error('Certificate file too small');
-        }
-        
-        // Generate a simple thumbprint for storage
-        thumbprint = crypto.createHash('sha1')
-          .update(certBuffer)
-          .digest('hex')
-          .toUpperCase();
-          
-        logger.info('Certificate validated with basic method:', { thumbprint });
-        
-      } catch (basicError) {
-        fs.unlinkSync(certificateFile.path);
-        logger.error('Basic certificate validation failed:', basicError);
-        return res.status(400).json({ 
-          error: 'Certificate validation failed. Please ensure the file is a valid .pfx certificate and PowerShell is available.' 
-        });
-      }
+
+      const subject = certificate.subject.attributes.map(a => `${a.shortName || a.name}=${a.value}`).join(', ');
+      logger.info('Certificate validated successfully:', { thumbprint, subject });
+
+    } catch (certError) {
+      fs.unlinkSync(certificateFile.path);
+      logger.error('Certificate validation failed:', certError);
+      return res.status(400).json({
+        error: 'Certificate validation failed. Ensure valid .pfx file and correct password.'
+      });
     }
     
     // Encrypt the certificate password for storage
