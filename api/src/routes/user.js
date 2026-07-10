@@ -256,8 +256,14 @@ router.put('/profile',
         return res.status(404).json({ error: 'User not found' });
       }
 
-      // Update user profile in database
-      const updatedUser = await User.update(userId, req.body);
+      // Update user profile in database - only self-service profile fields.
+      // role / permissions / organizationId / isActive must never be set here;
+      // they have dedicated admin endpoints.
+      const PROFILE_FIELDS = ['firstName', 'lastName', 'phone', 'organization',
+        'department', 'jobTitle', 'location', 'bio', 'profilePicture', 'preferences'];
+      const patch = {};
+      for (const k of PROFILE_FIELDS) if (k in req.body) patch[k] = req.body[k];
+      const updatedUser = await User.update(userId, patch);
       
       if (!updatedUser) {
         return res.status(500).json({ error: 'Failed to update profile' });

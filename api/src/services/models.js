@@ -57,8 +57,8 @@ const UserModel = {
     // Whitelist of allowed fields to prevent SQL injection
     const allowedFields = [
       'username', 'email', 'firstName', 'lastName', 'phone', 'organization',
-      'department', 'jobTitle', 'location', 'bio', 'profilePicture', 
-      'preferences', 'isActive', 'organizationId', 'role', 'permissions'
+      'department', 'jobTitle', 'location', 'bio', 'profilePicture',
+      'preferences'
     ];
     
     const fields = [];
