@@ -31,6 +31,16 @@ async function getDefaultCertificatePassword() {
 }
 
 /**
+ * Wrap a value as a safe PowerShell single-quoted string literal. Inside a
+ * single-quoted PowerShell string the only special character is ' itself, and
+ * it is escaped by doubling it. This is what makes an interpolated value safe
+ * to embed in a command built with spawn('pwsh', ['-Command', ...]).
+ */
+function psQuote(value) {
+  return "'" + String(value ?? '').replace(/'/g, "''") + "'";
+}
+
+/**
  * Build PowerShell command for Tier 3 Exchange-only extractions.
  */
 function buildPowerShellCommand(type, parameters, credentials, orgOutputPath) {
@@ -45,23 +55,23 @@ function buildPowerShellCommand(type, parameters, credentials, orgOutputPath) {
     const certPassword = credentials.certPassword;
 
     authCommand = `
-      $securePwd = ConvertTo-SecureString '${certPassword}' -AsPlainText -Force;
+      $securePwd = ConvertTo-SecureString ${psQuote(certPassword)} -AsPlainText -Force;
       $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-        '${certPath}',
+        ${psQuote(certPath)},
         $securePwd,
         [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
       );
-      Connect-M365 -AppId '${credentials.applicationId}' -Organization '${parameters.fqdn || parameters.organization}' -Certificate $cert -ErrorAction Stop;
-      Connect-MgGraph -ApplicationId '${credentials.applicationId}' -Certificate $cert -TenantId '${parameters.tenantId}' -ErrorAction Stop;
+      Connect-M365 -AppId ${psQuote(credentials.applicationId)} -Organization ${psQuote(parameters.fqdn || parameters.organization)} -Certificate $cert -ErrorAction Stop;
+      Connect-MgGraph -ApplicationId ${psQuote(credentials.applicationId)} -Certificate $cert -TenantId ${psQuote(parameters.tenantId)} -ErrorAction Stop;
     `;
   }
 
   const extractionCommands = {
-    'unified_audit_log': `Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'admin_audit_log': `Get-AdminAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'transport_rules': `Get-TransportRules -OutputDir '${orgOutputPath}'`,
-    'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`
+    'unified_audit_log': `Get-UAL -StartDate ${psQuote(parameters.startDate)} -EndDate ${psQuote(parameters.endDate)} -Output JSON -MergeOutput -OutputDir ${psQuote(orgOutputPath)}`,
+    'admin_audit_log': `Get-AdminAuditLog -StartDate ${psQuote(parameters.startDate)} -EndDate ${psQuote(parameters.endDate)} -Output JSON -MergeOutput -OutputDir ${psQuote(orgOutputPath)}`,
+    'mailbox_audit': `Get-MailboxAuditLog -StartDate ${psQuote(parameters.startDate)} -EndDate ${psQuote(parameters.endDate)} -Output JSON -MergeOutput -OutputDir ${psQuote(orgOutputPath)}`,
+    'transport_rules': `Get-TransportRules -OutputDir ${psQuote(orgOutputPath)}`,
+    'message_trace': `Get-MessageTraceLog -StartDate ${psQuote(parameters.startDate)} -EndDate ${psQuote(parameters.endDate)} -OutputDir ${psQuote(orgOutputPath)}`
   };
 
   const extractionCmd = extractionCommands[type];
