@@ -1,43 +1,40 @@
 import React from 'react'
+import { Box, Collapse, Tooltip, Menu, MenuItem, ListItemIcon } from '@mui/material'
 import {
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Toolbar,
-  Divider,
-  Box
-} from '@mui/material'
-import {
-  Dashboard,
+  SpaceDashboard,
+  NotificationsActive,
+  FolderSpecial,
   CloudDownload,
-  Analytics,
-  Warning,
-  Assessment,
-  Settings,
-  Security,
-  Description,
-  Search,
-  Shield,
-  Computer,
+  TravelExplore,
   Fingerprint,
-  Timeline,
-  BugReport,
-  Visibility,
-  Storage,
+  GppMaybe,
+  Description,
+  VerifiedUser,
+  Group,
+  Tune,
   ConnectedTv,
+  BookmarkBorder,
+  ChevronRight,
+  UnfoldMore,
   TrendingUp,
-  Memory,
   Speed,
-  People
+  Visibility,
+  Memory,
+  MenuBook,
+  Shield,
+  Security,
+  AccountCircle,
+  ExitToApp,
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getApiUrl } from '../config/api'
 import { useAuth } from '../contexts/AuthContext'
+import { useAuthStore } from '../stores/authStore'
+import { useAlerts } from '../hooks/useAlerts'
+import { surface, line, ink, accent, severity, SIDEBAR_WIDTH, TOPBAR_HEIGHT, EASE, MONO } from '../theme/tokens'
 
-const drawerWidth = 240
+// Baked in by the frontend image build (APP_VERSION build arg).
+const APP_VERSION = `v${import.meta.env.VITE_APP_VERSION || '1.4.0'}`
 
 // Compact role -> permission fallback mirroring api/src/middleware/auth.js
 // ROLE_PERMISSIONS. Only the keys the sidebar gates on are included. A user's
@@ -99,308 +96,344 @@ function hasPermission(user, permission) {
   return !!(ROLE_PERMISSIONS[user.role] && ROLE_PERMISSIONS[user.role][permission])
 }
 
-const menuItems = [
+/**
+ * Navigation grouped Operate / Investigate / Govern, per the redesign. Grouping
+ * follows the analyst's workflow rather than the feature list: what you watch,
+ * what you dig into, what you administer.
+ */
+const NAV_GROUPS = [
   {
-    text: 'Command Center',
-    icon: <Shield />,
-    path: '/dashboard',
-    description: 'Security Operations Dashboard'
+    label: 'Operate',
+    items: [
+      { text: 'Command Center', icon: <SpaceDashboard />, path: '/dashboard' },
+      { text: 'Alerts', icon: <NotificationsActive />, path: '/alerts', badge: 'alerts', permission: 'canManageAlerts' },
+      { text: 'Cases', icon: <FolderSpecial />, path: '/incidents', permission: 'canManageIncidents' },
+    ],
   },
   {
-    text: 'Data Extraction',
-    icon: <Storage />,
-    path: '/extractions',
-    description: 'M365 Evidence Collection',
-    permission: 'canManageExtractions'
+    label: 'Investigate',
+    items: [
+      { text: 'Collection', icon: <CloudDownload />, path: '/extractions', permission: 'canManageExtractions' },
+      { text: 'Analysis', icon: <TravelExplore />, path: '/analysis', permission: 'canRunAnalysis' },
+      { text: 'Behavior Analytics', icon: <Fingerprint />, path: '/ueba', permission: 'canUseAdvancedAnalytics' },
+      { text: 'Threat Intel', icon: <GppMaybe />, path: '/threat-intel', permission: 'canAccessThreatIntel' },
+      { text: 'Saved IOCs', icon: <BookmarkBorder />, path: '/saved-iocs', permission: 'canAccessThreatIntel' },
+      { text: 'Reports', icon: <Description />, path: '/reports', permission: 'canViewReports' },
+    ],
   },
   {
-    text: 'Forensic Analysis',
-    icon: <Search />,
-    path: '/analysis',
-    description: 'Threat Detection & Investigation',
-    permission: 'canRunAnalysis'
+    label: 'Govern',
+    items: [
+      { text: 'Compliance', icon: <VerifiedUser />, path: '/compliance', permission: 'canManageCompliance' },
+      { text: 'Users & Access', icon: <Group />, path: '/users', permission: 'canManageUsers' },
+      { text: 'SIEM Integration', icon: <ConnectedTv />, path: '/siem', permission: 'canManageIntegrations' },
+      { text: 'Settings', icon: <Tune />, path: '/settings', permission: 'canManageSystemSettings' },
+    ],
   },
-  {
-    text: 'Security Alerts',
-    icon: <Warning />,
-    path: '/alerts',
-    description: 'Threat Intelligence & IOCs',
-    permission: 'canManageAlerts'
-  },
-  {
-    text: 'Incident Response',
-    icon: <Timeline />,
-    path: '/incidents',
-    description: 'Case Management & Playbooks',
-    permission: 'canManageIncidents'
-  },
-  {
-    text: 'Threat Intelligence',
-    icon: <BugReport />,
-    path: '/threat-intel',
-    description: 'IOC Enrichment & Lookup',
-    permission: 'canAccessThreatIntel'
-  },
-  {
-    text: 'Behavior Analytics',
-    icon: <Fingerprint />,
-    path: '/ueba',
-    description: 'User Entity Behavior Analytics',
-    permission: 'canUseAdvancedAnalytics'
-  },
-  {
-    text: 'Investigation Reports',
-    icon: <Assessment />,
-    path: '/reports',
-    description: 'DFIR Documentation',
-    permission: 'canViewReports'
-  },
-  {
-    text: 'SIEM Integration',
-    icon: <ConnectedTv />,
-    path: '/siem',
-    description: 'External Security Systems',
-    permission: 'canManageIntegrations'
-  },
-  {
-    text: 'Compliance Assessment',
-    icon: <Security />,
-    path: '/compliance',
-    description: 'CIS Benchmark & Security Controls',
-    permission: 'canManageCompliance'
-  },
-  {
-    text: 'System Configuration',
-    icon: <Settings />,
-    path: '/settings',
-    description: 'Platform Settings',
-    permission: 'canManageSystemSettings'
-  },
-  {
-    text: 'User Management',
-    icon: <People />,
-    path: '/users',
-    description: 'Manage Users & Permissions',
-    permission: 'canManageUsers'
-  }
 ]
 
-const Sidebar = ({ open, onClose }) => {
+// External observability + docs links. Kept out of the primary groups so the
+// analyst-facing nav stays the length the redesign calls for.
+const UTILITY_LINKS = [
+  { text: 'System Logs', icon: <Visibility />, path: '/system-logs' },
+  { text: 'Grafana', icon: <TrendingUp />, path: '/grafana/' },
+  { text: 'Prometheus', icon: <Speed />, path: '/prometheus/' },
+  { text: 'cAdvisor', icon: <Memory />, path: '/cadvisor/' },
+  { text: 'API Documentation', icon: <MenuBook />, external: () => `${getApiUrl()}/api/docs` },
+  { text: 'IONSEC.IO Services', icon: <Security />, external: () => 'https://ionsec.io' },
+]
+
+const GROUP_LABEL_SX = {
+  p: '12px 16px 4px',
+  fontSize: '.625rem',
+  fontWeight: 600,
+  letterSpacing: '.1em',
+  textTransform: 'uppercase',
+  color: ink.dim,
+}
+
+const NavRow = ({ item, active, badge, onClick }) => (
+  <Box
+    onClick={onClick}
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      height: 32,
+      m: '1px 8px',
+      px: '10px',
+      borderRadius: '6px',
+      fontSize: '.8125rem',
+      cursor: 'pointer',
+      ...(active
+        ? { background: accent.washSoft, color: accent.main, fontWeight: 600 }
+        : { color: ink.muted, fontWeight: 500, '&:hover': { background: 'rgba(255,255,255,.05)' } }),
+    }}
+  >
+    <Box
+      sx={{
+        flex: 'none',
+        display: 'flex',
+        color: active ? accent.main : ink.tertiary,
+        '& svg': { fontSize: 18 },
+      }}
+    >
+      {item.icon}
+    </Box>
+    <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {item.text}
+    </Box>
+    {badge ? (
+      <Box
+        component="span"
+        sx={{
+          flex: 'none',
+          fontSize: '.625rem',
+          fontWeight: 600,
+          fontFamily: MONO,
+          color: active ? accent.main : ink.faint,
+        }}
+      >
+        {badge}
+      </Box>
+    ) : null}
+  </Box>
+)
+
+/**
+ * 224px chrome rail. Permanent on desktop, an overlay drawer under 900px —
+ * both driven by the same markup, as in the design's `narrow` branch.
+ */
+const Sidebar = ({ open, onClose, narrow, health = {} }) => {
   const navigate = useNavigate()
   const location = useLocation()
   const { user } = useAuth()
+  const storeUser = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
+  const { alertStats } = useAlerts()
+  const [utilOpen, setUtilOpen] = React.useState(false)
+  const [userAnchor, setUserAnchor] = React.useState(null)
 
-  // Only render menu items the current user is permitted to see.
-  const visibleItems = menuItems.filter((item) => hasPermission(user, item.permission))
+  const identity = user || storeUser
+  const badges = { alerts: alertStats?.unread ? String(alertStats.unread) : '' }
 
-  const handleNavigation = (path) => {
-    // Check if it's an external link or monitoring service
-    if (path.startsWith('http') || 
-        path.startsWith('/grafana/') || 
-        path.startsWith('/prometheus/') || 
-        path.startsWith('/loki/') || 
-        path.startsWith('/cadvisor/')) {
-      // External link or monitoring service - open in new tab
-      window.open(path, '_blank')
+  const groups = NAV_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((it) => hasPermission(identity, it.permission)) }))
+    .filter((g) => g.items.length > 0)
+
+  const go = (path) => {
+    if (path.startsWith('http') || /^\/(grafana|prometheus|loki|cadvisor)\//.test(path)) {
+      window.open(path, '_blank', 'noopener')
     } else {
       navigate(path)
     }
-    // Only close on mobile
-    if (window.innerWidth < 900) {
-      onClose()
-    }
+    if (narrow) onClose?.()
   }
 
-  const drawer = (
-    <Box>
-      <Toolbar />
-      <List>
-        {visibleItems.map((item) => (
-          <ListItem key={item.text} disablePadding>
-            <ListItemButton
-              selected={location.pathname === item.path}
-              onClick={() => handleNavigation(item.path)}
-              sx={{
-                minHeight: 56,
-                px: 2.5,
-                '&.Mui-selected': {
-                  backgroundColor: 'rgba(0, 229, 255, 0.12)',
-                  borderRight: '3px solid',
-                  borderRightColor: 'primary.main',
-                  '&:hover': {
-                    backgroundColor: 'rgba(0, 229, 255, 0.16)',
-                  },
-                },
-                '&:hover': {
-                  backgroundColor: 'rgba(0, 229, 255, 0.08)',
-                },
-              }}
-            >
-              <ListItemIcon sx={{ 
-                color: location.pathname === item.path ? 'primary.main' : 'inherit',
-                minWidth: 40 
-              }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText 
-                primary={item.text}
-                secondary={item.description}
-                primaryTypographyProps={{
-                  fontSize: '0.875rem',
-                  fontWeight: location.pathname === item.path ? 600 : 500,
-                  color: location.pathname === item.path ? 'primary.main' : 'inherit',
-                }}
-                secondaryTypographyProps={{
-                  fontSize: '0.75rem',
-                  color: 'text.secondary',
-                }}
-              />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
-      <Divider />
-      
-      {/* Monitoring Services Section */}
-      <List>
-        <ListItem>
-          <ListItemText 
-            primary="System Monitoring"
-            primaryTypographyProps={{
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              color: 'text.secondary',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}
-          />
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={() => handleNavigation('/grafana/')}
-            sx={{ pl: 4 }}
-          >
-            <ListItemIcon sx={{ minWidth: 32 }}>
-              <TrendingUp fontSize="small" />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Grafana"
-              secondary="Dashboards & Visualization"
-              primaryTypographyProps={{ fontSize: '0.875rem' }}
-              secondaryTypographyProps={{ fontSize: '0.75rem' }}
-            />
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={() => handleNavigation('/prometheus/')}
-            sx={{ pl: 4 }}
-          >
-            <ListItemIcon sx={{ minWidth: 32 }}>
-              <Speed fontSize="small" />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Prometheus"
-              secondary="Metrics Collection"
-              primaryTypographyProps={{ fontSize: '0.875rem' }}
-              secondaryTypographyProps={{ fontSize: '0.75rem' }}
-            />
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={() => handleNavigation('/loki/')}
-            sx={{ pl: 4 }}
-          >
-            <ListItemIcon sx={{ minWidth: 32 }}>
-              <Visibility fontSize="small" />
-            </ListItemIcon>
-            <ListItemText 
-              primary="Loki"
-              secondary="Log Aggregation"
-              primaryTypographyProps={{ fontSize: '0.875rem' }}
-              secondaryTypographyProps={{ fontSize: '0.75rem' }}
-            />
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={() => handleNavigation('/cadvisor/')}
-            sx={{ pl: 4 }}
-          >
-            <ListItemIcon sx={{ minWidth: 32 }}>
-              <Memory fontSize="small" />
-            </ListItemIcon>
-            <ListItemText 
-              primary="cAdvisor"
-              secondary="Container Metrics"
-              primaryTypographyProps={{ fontSize: '0.875rem' }}
-              secondaryTypographyProps={{ fontSize: '0.75rem' }}
-            />
-          </ListItemButton>
-        </ListItem>
-      </List>
-      <Divider />
-      
-      <List>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={() => handleNavigation(`${getApiUrl()}/api/docs`)}
-          >
-            <ListItemIcon><Description /></ListItemIcon>
-            <ListItemText primary="API Documentation" />
-          </ListItemButton>
-        </ListItem>
-        <ListItem disablePadding>
-          <ListItemButton
-            onClick={() => handleNavigation('https://ionsec.io')}
-          >
-            <ListItemIcon><Security /></ListItemIcon>
-            <ListItemText 
-              primary="IONSEC.IO Services" 
-              secondary="Incident Response & Forensics"
-            />
-          </ListItemButton>
-        </ListItem>
-      </List>
-    </Box>
-  )
+  const initials =
+    `${identity?.firstName?.[0] || ''}${identity?.lastName?.[0] || ''}`.trim() ||
+    identity?.username?.[0]?.toUpperCase() ||
+    'U'
+  const displayName =
+    [identity?.firstName, identity?.lastName].filter(Boolean).join(' ') ||
+    identity?.username ||
+    identity?.email ||
+    'Signed in'
+  const roleLabel = (identity?.role || 'user').replace(/_/g, ' ')
+
+  const healthy = health.overallStatus ? health.overallStatus === 'healthy' : true
+  const healthLabel = health.overallStatus
+    ? healthy
+      ? 'All services healthy'
+      : `Service ${health.overallStatus}`
+    : 'Checking services…'
 
   return (
-    <Box>
-      {/* Permanent drawer for desktop */}
-      <Drawer
-        variant="permanent"
+    <Box
+      component="nav"
+      sx={{
+        width: SIDEBAR_WIDTH,
+        flex: 'none',
+        background: surface.chrome,
+        borderRight: `1px solid ${line.base}`,
+        display: 'flex',
+        flexDirection: 'column',
+        ...(narrow
+          ? {
+              position: 'fixed',
+              top: 0,
+              bottom: 0,
+              left: 0,
+              zIndex: 50,
+              transition: `transform .16s ${EASE}`,
+              transform: `translateX(${open ? '0' : '-100%'})`,
+            }
+          : { position: 'sticky', top: 0, height: '100vh' }),
+      }}
+    >
+      {/* Brand */}
+      <Box
+        onClick={() => go('/dashboard')}
         sx={{
-          display: { xs: 'none', sm: 'block' },
-          '& .MuiDrawer-paper': {
-            boxSizing: 'border-box',
-            width: drawerWidth,
-          },
-        }}
-        open
-      >
-        {drawer}
-      </Drawer>
-      
-      {/* Temporary drawer for mobile */}
-      <Drawer
-        variant="temporary"
-        open={open}
-        onClose={onClose}
-        ModalProps={{
-          keepMounted: true,
-        }}
-        sx={{
-          display: { xs: 'block', sm: 'none' },
-          '& .MuiDrawer-paper': {
-            boxSizing: 'border-box',
-            width: drawerWidth,
-          },
+          height: TOPBAR_HEIGHT,
+          flex: 'none',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          px: 2,
+          borderBottom: `1px solid ${line.base}`,
+          cursor: 'pointer',
         }}
       >
-        {drawer}
-      </Drawer>
+        <Shield sx={{ fontSize: 22, color: accent.main }} />
+        <Box component="span" sx={{ fontSize: '.9375rem', fontWeight: 700, letterSpacing: '-.3px' }}>
+          MAES
+        </Box>
+        <Box
+          component="span"
+          sx={{
+            ml: 'auto',
+            fontSize: '.625rem',
+            fontWeight: 600,
+            letterSpacing: '.06em',
+            color: ink.faint,
+            border: `1px solid ${line.strong}`,
+            borderRadius: '3px',
+            p: '1px 5px',
+          }}
+        >
+          {APP_VERSION}
+        </Box>
+      </Box>
+
+      {/* Grouped navigation */}
+      <Box sx={{ flex: 1, overflow: 'auto', py: 1 }}>
+        {groups.map((g) => (
+          <Box key={g.label}>
+            <Box sx={GROUP_LABEL_SX}>{g.label}</Box>
+            {g.items.map((it) => (
+              <NavRow
+                key={it.path}
+                item={it}
+                active={location.pathname === it.path}
+                badge={it.badge ? badges[it.badge] : ''}
+                onClick={() => go(it.path)}
+              />
+            ))}
+          </Box>
+        ))}
+
+        <Box
+          onClick={() => setUtilOpen((v) => !v)}
+          sx={{ ...GROUP_LABEL_SX, display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+        >
+          Platform
+          <ChevronRight
+            sx={{ fontSize: 14, transition: `transform .16s ${EASE}`, transform: utilOpen ? 'rotate(90deg)' : 'none' }}
+          />
+        </Box>
+        <Collapse in={utilOpen} unmountOnExit>
+          {UTILITY_LINKS.map((it) => (
+            <NavRow
+              key={it.text}
+              item={it}
+              active={location.pathname === it.path}
+              onClick={() => go(it.external ? it.external() : it.path)}
+            />
+          ))}
+        </Collapse>
+      </Box>
+
+      {/* Health + identity footer */}
+      <Box sx={{ flex: 'none', borderTop: `1px solid ${line.base}`, p: '8px 12px 12px' }}>
+        <Tooltip title="Open system logs">
+          <Box
+            onClick={() => go('/system-logs')}
+            sx={{ display: 'flex', alignItems: 'center', gap: 1, p: '6px 4px', cursor: 'pointer', borderRadius: '4px' }}
+          >
+            <Box
+              component="span"
+              sx={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                flex: 'none',
+                background: healthy ? severity.ok : severity.critical,
+              }}
+            />
+            <Box component="span" sx={{ fontSize: '.75rem', color: ink.secondary, flex: 1 }}>
+              {healthLabel}
+            </Box>
+            <ChevronRight sx={{ fontSize: 16, color: ink.dim }} />
+          </Box>
+        </Tooltip>
+        <Box
+          onClick={(e) => setUserAnchor(e.currentTarget)}
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, p: '6px 4px', cursor: 'pointer', borderRadius: '4px' }}
+        >
+          <Box
+            sx={{
+              width: 26,
+              height: 26,
+              borderRadius: '50%',
+              background: surface.knob,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '.6875rem',
+              fontWeight: 600,
+              flex: 'none',
+            }}
+          >
+            {initials}
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Box
+              sx={{
+                fontSize: '.75rem',
+                fontWeight: 500,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {displayName}
+            </Box>
+            <Box sx={{ fontSize: '.6875rem', color: ink.faint, textTransform: 'capitalize' }}>{roleLabel}</Box>
+          </Box>
+          <UnfoldMore sx={{ fontSize: 18, color: ink.dim }} />
+        </Box>
+        <Menu
+          anchorEl={userAnchor}
+          open={Boolean(userAnchor)}
+          onClose={() => setUserAnchor(null)}
+          anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        >
+          <MenuItem
+            onClick={() => {
+              setUserAnchor(null)
+              go('/profile')
+            }}
+          >
+            <ListItemIcon>
+              <AccountCircle sx={{ fontSize: 17 }} />
+            </ListItemIcon>
+            Profile
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setUserAnchor(null)
+              logout()
+            }}
+          >
+            <ListItemIcon>
+              <ExitToApp sx={{ fontSize: 17 }} />
+            </ListItemIcon>
+            Log out
+          </MenuItem>
+        </Menu>
+      </Box>
     </Box>
   )
 }

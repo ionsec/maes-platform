@@ -4,9 +4,29 @@ MAES is a Microsoft 365 extraction, analysis, reporting, and compliance platform
 
 ## Version
 
-- Current release: **v1.3.1**
+- Current release: **v1.4.0**
 - Upstream extractor reference: [`invictus-ir/Microsoft-Extractor-Suite`](https://github.com/invictus-ir/Microsoft-Extractor-Suite) (Tier 3 Exchange-only sidecar)
 - Upstream analyzer reference: [`LETHAL-FORENSICS/Microsoft-Analyzer-Suite`](https://github.com/LETHAL-FORENSICS/Microsoft-Analyzer-Suite)
+
+## What's New in v1.4.0
+
+Interface release implementing the MAES redesign. No API or extraction behavior changes.
+
+### Design System
+A single source of truth for the interface: design tokens (`frontend/src/theme/tokens.js`), an MUI theme built from them (`frontend/src/theme/maesTheme.js`, registered as the default `MAES Command` theme), and shared primitives in `frontend/src/components/ui/` — severity pills, status dots, KPI strips, filter chips, panels, and evidence/timeline rows. Because the theme overrides the shared MUI components, every screen inherits the new surfaces, density, and control geometry.
+
+### Command Center
+The dashboard is now organized around security posture rather than widgets: an unassigned-critical-first KPI strip, the triage queue as the primary column, collection pipeline and platform health alongside, and a detection trend over the selected time range. Panels degrade independently, so a permission-gated summary returning 403 no longer blanks the page.
+
+The previous drag-and-drop widget board was removed along with the fabricated panels it hosted — randomly generated CPU/memory/disk/network figures and hardcoded "recent errors" and "container logs" lists. Real service health comes from `/api/health`; real logs remain at `/system-logs`.
+
+### Two-Pane Alert Triage
+Alerts is a filterable queue beside a detail pane carrying evidence, a lifecycle timeline derived from the alert's own timestamps, and recommended actions. Adds assign-to-self, bulk triage over the filtered queue, and escalation of an alert into a case.
+
+### Navigation
+Regrouped into Operate / Investigate / Govern in a 224px sidebar with live alert badges, platform health, and identity in the footer. The topbar is reduced to 52px with an organization switcher, global search (⌘K), the shared time range, notifications, and help. Role-based visibility is unchanged. Below 900px the layout collapses to a single column with an overlay navigation rail.
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
 
 ## What's New in v1.3.1
 
@@ -66,7 +86,7 @@ See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v1.2.0.md](docs/releases/v1.
 ## Architecture
 
 - `api/`: authentication, orchestration, uploads, reporting, UEBA, incidents, threat intel
-- `frontend/`: React UI behind nginx
+- `frontend/`: React UI behind nginx (`src/theme/` design tokens and themes, `src/components/ui/` shared primitives)
 - `services/extractor/`: Microsoft 365 extraction worker (native Graph API + PowerShell sidecar dispatcher)
 - `services/extractor-sidecar/`: PowerShell sidecar for Exchange-only extractions (unified audit log, admin audit, mailbox audit, transport rules, message trace)
 - `services/analyzer/`: analysis worker

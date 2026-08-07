@@ -1,6 +1,9 @@
 import React, { useEffect } from 'react'
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { Container, Box } from '@mui/material'
+import { Box, useMediaQuery } from '@mui/material'
+import { surface } from './theme/tokens'
+import useSystemHealth from './hooks/useSystemHealth'
+import { ShellContext } from './contexts/ShellContext'
 
 // Component to handle external redirects
 const ExternalRedirect = ({ url }) => {
@@ -47,6 +50,11 @@ function App() {
   const isHydrated = useAuthStore((state) => state.isHydrated)
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const navigate = useNavigate()
+  // The redesign collapses to a single column and an overlay rail under 900px.
+  const narrow = useMediaQuery('(max-width:899px)')
+  // Time range is shell state: the topbar owns the control, screens read it.
+  const [range, setRange] = React.useState('7d')
+  const { status: health, refresh: refreshHealth } = useSystemHealth()
 
   // Set navigate function for axios interceptor
   useEffect(() => {
@@ -68,6 +76,11 @@ function App() {
     
     return () => clearTimeout(timer)
   }, [])
+
+  // Widening back to the two-column layout leaves no overlay to dismiss.
+  useEffect(() => {
+    if (!narrow) setSidebarOpen(false)
+  }, [narrow])
 
   // Wait for hydration before rendering
   if (!isHydrated) {
@@ -103,22 +116,32 @@ function App() {
   return (
     <OrganizationProvider>
       <TourProvider>
-        <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-          <Header onMenuClick={toggleSidebar} />
-          <div style={{ display: 'flex', flex: 1 }}>
-            <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <Container 
-            maxWidth={false} 
-            sx={{ 
-              mt: 8, 
-              ml: { xs: 0, sm: '240px' }, // Always account for sidebar on desktop
-              transition: 'margin-left 0.3s',
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column'
-            }}
-          >
-            <Box sx={{ flex: 1 }}>
+        <ShellContext.Provider value={{ range, setRange, health, narrow }}>
+        <Box sx={{ display: 'flex', minHeight: '100vh', background: surface.page }}>
+          {/* Scrim behind the overlay rail on narrow viewports */}
+          {narrow && sidebarOpen && (
+            <Box
+              onClick={() => setSidebarOpen(false)}
+              sx={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 40 }}
+            />
+          )}
+          <Sidebar
+            open={sidebarOpen}
+            onClose={() => setSidebarOpen(false)}
+            narrow={narrow}
+            health={health}
+          />
+          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <Header
+              onMenuClick={toggleSidebar}
+              narrow={narrow}
+              range={range}
+              onRangeChange={setRange}
+              health={health}
+              onRefreshHealth={refreshHealth}
+            />
+            <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -142,15 +165,16 @@ function App() {
                 <Route path="/loki/*" element={<ExternalRedirect url="/loki/" />} />
                 <Route path="/cadvisor/*" element={<ExternalRedirect url="/cadvisor/" />} />
               </Routes>
+              </Box>
+              <Footer />
             </Box>
-            <Footer />
-          </Container>
-        </div>
-        <SOSButton />
-        <Tour />
-      </div>
-    </TourProvider>
-  </OrganizationProvider>
+          </Box>
+          <SOSButton />
+          <Tour />
+        </Box>
+        </ShellContext.Provider>
+      </TourProvider>
+    </OrganizationProvider>
   )
 }
 
