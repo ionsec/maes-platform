@@ -1,3 +1,11 @@
+## [1.3.1] - 2026-08-07
+
+### Fixed
+- API startup crash under Express 5 / path-to-regexp v8: the compliance module's optional-param route `/controls/:assessmentType?` is no longer valid syntax. Registered both `/controls` and `/controls/:assessmentType` to the same handler so the existing API contract is preserved.
+- API `Cannot find module 'uuid'` at boot: `uuid` was only reachable as a hoisted transitive dependency; declared it as a direct dependency (and pinned it via overrides).
+- Misleading `Failed to read migrations directory` error on API boot: the optional migration directory is now skipped cleanly when absent (the SQL schema is applied by the postgres init scripts).
+- Frontend login blocked by Content-Security-Policy: the auth store fell back to a hardcoded cross-origin `http://localhost:3000` API base; it now uses the same-origin API base proxied by nginx.
+
 ## [1.2.0] - 2026-04-13
 
 ### Added

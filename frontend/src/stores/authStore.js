@@ -1,8 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import axios from 'axios'
+import { getApiUrl } from '../config/api'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+// Use the same-origin API base as the rest of the app (proxied by nginx via
+// /api/*). A hardcoded absolute fallback like http://localhost:3000 violates
+// the frontend CSP (connect-src 'self') because the app is served over https.
+const API_URL = getApiUrl()
 
 export const useAuthStore = create(
   persist(
