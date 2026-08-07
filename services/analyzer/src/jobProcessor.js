@@ -771,9 +771,6 @@ if (!isMainThread && workerData.type === 'job_processor') {
       let result;
       
       switch (job.type) {
-        case 'extraction':
-          result = await processExtractionJob(job.data);
-          break;
         case 'analysis':
           result = await processAnalysisJob(job.data, jobId);
           break;
@@ -799,42 +796,6 @@ if (!isMainThread && workerData.type === 'job_processor') {
         }
       });
     }
-  }
-
-  // Process extraction job
-  async function processExtractionJob(data) {
-    const { extractionId, organizationId } = data;
-    
-    // Update progress
-    parentPort.postMessage({
-      type: 'job_progress',
-      jobId: data.id,
-      data: { progress: 10, message: 'Starting extraction' }
-    });
-
-    // Simulate extraction processing
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    parentPort.postMessage({
-      type: 'job_progress',
-      jobId: data.id,
-      data: { progress: 50, message: 'Extracting data' }
-    });
-
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    parentPort.postMessage({
-      type: 'job_progress',
-      jobId: data.id,
-      data: { progress: 90, message: 'Finalizing extraction' }
-    });
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    return {
-      success: true,
-      message: 'Extraction completed successfully'
-    };
   }
 
   // Process analysis job
