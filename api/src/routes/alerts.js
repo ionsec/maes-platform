@@ -269,8 +269,10 @@ router.put('/:id/resolve',
   }
 );
 
-// Create new alert (internal service endpoint)
+// Create new alert (internal service endpoint — analyzer posts here with a
+// service token; interactive users require canManageAlerts)
 router.post('/',
+  requirePermission('canManageAlerts'),
   [
     body('title').notEmpty().withMessage('Title is required'),
     body('description').notEmpty().withMessage('Description is required'),
