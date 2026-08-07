@@ -10,7 +10,8 @@ import {
   Add as AddIcon, Visibility as ViewIcon, Security as SecurityIcon,
   Timeline as TimelineIcon, Folder as FolderIcon, Assignment as AssignmentIcon,
   CheckCircle as CheckCircleIcon, Warning as WarningIcon,
-  Refresh as RefreshIcon, PlayArrow as PlayArrowIcon
+  Refresh as RefreshIcon, PlayArrow as PlayArrowIcon,
+  MenuBook as MenuBookIcon
 } from '@mui/icons-material';
 import axios from '../utils/axios';
 import dayjs from 'dayjs';
@@ -23,6 +24,9 @@ const Incidents = () => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [stats, setStats] = useState(null);
   const [tabValue, setTabValue] = useState(0);
+  const [playbooks, setPlaybooks] = useState([]);
+  const [playbookDialogOpen, setPlaybookDialogOpen] = useState(false);
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState('');
   const [newIncident, setNewIncident] = useState({
     title: '',
     description: '',
@@ -47,7 +51,17 @@ const Incidents = () => {
 
   useEffect(() => {
     fetchIncidents();
+    fetchPlaybooks();
   }, []);
+
+  const fetchPlaybooks = async () => {
+    try {
+      const response = await axios.get('/incidents/meta/playbooks');
+      setPlaybooks(response.data.playbooks || []);
+    } catch (error) {
+      console.error('Failed to fetch playbooks:', error);
+    }
+  };
 
   const handleViewIncident = async (id) => {
     try {
@@ -82,9 +96,17 @@ const Incidents = () => {
     }
   };
 
-  const handleExecutePlaybook = async (incidentId, playbookId) => {
+  const openPlaybookDialog = (incident) => {
+    setSelectedIncident(incident);
+    setSelectedPlaybookId(playbooks[0]?.id || '');
+    setPlaybookDialogOpen(true);
+  };
+
+  const handleExecutePlaybook = async (playbookId) => {
+    if (!selectedIncident || !playbookId) return;
     try {
-      await axios.post(`/incidents/${incidentId}/playbook`, { playbookId });
+      await axios.post(`/incidents/${selectedIncident.id}/playbook`, { playbookId });
+      setPlaybookDialogOpen(false);
       fetchIncidents();
     } catch (error) {
       console.error('Failed to execute playbook:', error);
@@ -267,7 +289,7 @@ const Incidents = () => {
                   <Button variant="outlined" startIcon={<CheckCircleIcon />} onClick={() => handleUpdateStatus(selectedIncident.id, 'contained')}>
                     Contain
                   </Button>
-                  <Button variant="outlined" startIcon={<PlayArrowIcon />} onClick={() => handleExecutePlaybook(selectedIncident.id, 'compromised-account')}>
+                  <Button variant="outlined" startIcon={<PlayArrowIcon />} onClick={() => openPlaybookDialog(selectedIncident)}>
                     Run Playbook
                   </Button>
                 </>
@@ -284,6 +306,60 @@ const Incidents = () => {
           </DialogActions>
         </Dialog>
       )}
+
+      {/* Run Playbook Dialog */}
+      <Dialog open={playbookDialogOpen} onClose={() => setPlaybookDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <MenuBookIcon color="primary" />
+          Run Playbook
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Select a playbook to execute against "{selectedIncident?.title}".
+          </Typography>
+          {playbooks.length === 0 ? (
+            <Alert severity="info">No playbooks are available.</Alert>
+          ) : (
+            <FormControl fullWidth>
+              <InputLabel>Playbook</InputLabel>
+              <Select
+                value={selectedPlaybookId}
+                label="Playbook"
+                onChange={(e) => setSelectedPlaybookId(e.target.value)}
+              >
+                {playbooks.map((pb) => (
+                  <MenuItem key={pb.id} value={pb.id}>
+                    {pb.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          {selectedPlaybookId && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                {playbooks.find((pb) => pb.id === selectedPlaybookId)?.description}
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ mt: 1 }} flexWrap="wrap">
+                {playbooks.find((pb) => pb.id === selectedPlaybookId)?.steps.map((step) => (
+                  <Chip key={step.id} label={step.name} size="small" variant="outlined" />
+                ))}
+              </Stack>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPlaybookDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            startIcon={<PlayArrowIcon />}
+            disabled={!selectedPlaybookId || playbooks.length === 0}
+            onClick={() => handleExecutePlaybook(selectedPlaybookId)}
+          >
+            Execute
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Create Incident Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)}>
