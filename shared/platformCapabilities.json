@@ -348,6 +348,57 @@
       "analysisLabel": "Audit Analysis",
       "parameters": []
     },
+    "secure_score": {
+      "label": "Secure Score (Graph)",
+      "description": "Microsoft 365 Secure Score and control scores via Microsoft Graph",
+      "command": "Get-SecureScore",
+      "implementation": "native-graph",
+      "graphEndpoint": "/security/secureScores",
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "comprehensive_analysis",
+      "analysisLabel": "Comprehensive Analysis",
+      "parameters": []
+    },
+    "azure_entra_graph_logs": {
+      "label": "Entra Graph Logs (Graph)",
+      "description": "Unified audit log via Microsoft Graph (upstream Get-AzureEntraGraphLogs)",
+      "command": "Get-AzureEntraGraphLogs",
+      "implementation": "native-graph",
+      "graphEndpoint": "/auditLogs/directoryAudits",
+      "requiresDateRange": true,
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "ual_analysis",
+      "analysisLabel": "UAL Analysis",
+      "parameters": [
+        "splitFiles",
+        "maxEventsPerFile",
+        "outputFormat",
+        "customFilters"
+      ]
+    },
+    "roles": {
+      "label": "Roles (Graph)",
+      "description": "Administrative directory roles and members (upstream Get-Roles)",
+      "command": "Get-Roles",
+      "implementation": "native-graph",
+      "graphEndpoint": "/directoryRoles",
+      "supportsUpload": true,
+      "supportsAnalysis": true,
+      "analysisType": "audit_analysis",
+      "analysisLabel": "Audit Analysis",
+      "parameters": []
+    },
+    "rules": {
+      "label": "Rules (Graph)",
+      "description": "Mailbox inbox rules via Microsoft Graph (upstream Get-Rules)",
+      "command": "Get-Rules",
+      "implementation": "native-graph",
+      "graphEndpoint": "/users/{id}/mailFolders/inbox/messageRules",
+      "supportsAnalysis": false,
+      "parameters": []
+    },
     "full_extraction": {
       "label": "Full Extraction",
       "description": "Comprehensive evidence collection across supported sources",
