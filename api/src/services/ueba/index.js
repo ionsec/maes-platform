@@ -20,9 +20,10 @@ class UebaService {
         activityData
       );
 
-      // Update baseline if activity is successful
+      // Update baseline if activity is successful, persisting the anomaly risk
+      // so it shows up in the risk score and trend history.
       if (activityData.is_success !== false) {
-        await this.updateBaseline(user_id, organization_id, activityData);
+        await this.updateBaseline(user_id, organization_id, activityData, anomalyResult);
       }
 
       return anomalyResult;
@@ -35,11 +36,11 @@ class UebaService {
   /**
    * Update user baseline with new activity
    */
-  static async updateBaseline(userId, organizationId, activity) {
+  static async updateBaseline(userId, organizationId, activity, anomalyResult) {
     try {
       const baseline = await UserBehaviorProfile.getBaseline(userId, organizationId);
       if (baseline) {
-        await UserBehaviorProfile.updateBaseline(baseline.id, activity);
+        await UserBehaviorProfile.updateBaseline(baseline.id, activity, anomalyResult);
       }
     } catch (error) {
       logger.warn('Failed to update baseline:', error);

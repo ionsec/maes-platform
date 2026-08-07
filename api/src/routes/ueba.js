@@ -55,6 +55,28 @@ router.get('/risk/:userId',
 );
 
 /**
+ * Get risk score history for a user (trend chart data)
+ */
+router.get('/risk/:userId/history',
+  requirePermission('canManageAlerts'),
+  async (req, res) => {
+    try {
+      const { userId } = req.params;
+      const limit = parseInt(req.query.limit, 10) || 30;
+      const history = await UserBehaviorProfile.getRiskHistory(userId, req.organizationId, limit);
+
+      res.json({
+        success: true,
+        history
+      });
+    } catch (error) {
+      logger.error('Error getting user risk history:', error);
+      res.status(500).json({ error: 'Failed to get risk history' });
+    }
+  }
+);
+
+/**
  * Get all user baselines for organization
  */
 router.get('/baselines', 

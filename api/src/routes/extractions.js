@@ -236,7 +236,13 @@ router.post('/:id/cancel',
       // Update status
       await Extraction.update(extraction.id, { status: 'cancelled' });
 
-      // TODO: Cancel the actual job in the queue
+      // Remove the queued BullMQ job so it no longer processes.
+      try {
+        const jobService = require('../services/jobService');
+        await jobService.cancelJobByEntityId(extraction.id, 'extraction');
+      } catch (jobError) {
+        logger.warn('Failed to cancel extraction queue job:', jobError.message);
+      }
 
       // Emit real-time update
       const io = req.app.get('io');
