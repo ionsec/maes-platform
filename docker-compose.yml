@@ -201,6 +201,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        # Sidebar version badge — inlined by Vite at build time.
+        APP_VERSION: ${APP_VERSION:-1.4.0}
     image: maes-frontend:latest
     container_name: maes-frontend
     environment:

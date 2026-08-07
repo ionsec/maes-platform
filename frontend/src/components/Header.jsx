@@ -1,703 +1,505 @@
 import React from 'react'
 import {
-  AppBar,
-  Toolbar,
+  Box,
   Typography,
   IconButton,
-  Avatar,
   Menu,
   MenuItem,
-  Box,
-  Tooltip,
-  Chip,
   Badge,
   Popover,
   List,
   ListItem,
   ListItemText,
-  ListItemIcon,
   Divider,
   Button,
-  FormControl,
-  Select
+  Tooltip,
+  ListItemIcon,
 } from '@mui/material'
 import {
   Menu as MenuIcon,
-  AccountCircle,
+  Apartment,
+  ExpandMore,
+  Search as SearchIcon,
   Notifications,
-  Settings,
-  ExitToApp,
-  Security,
-  Shield,
-  Search,
-  Computer,
-  Warning,
+  HelpOutline,
   CheckCircle,
-  Error as ErrorIcon,
-  Info as InfoIcon,
-  PriorityHigh,
   Close as CloseIcon,
   Refresh as RefreshIcon,
-  HelpOutline,
-  Storage as StorageIcon
+  MenuBook,
+  Security,
+  Tune,
+  ExitToApp,
+  AccountCircle,
 } from '@mui/icons-material'
+import { useNavigate } from 'react-router-dom'
+import dayjs from 'dayjs'
 import { useAuthStore } from '../stores/authStore'
 import { useAlerts } from '../hooks/useAlerts'
-import { useNavigate } from 'react-router-dom'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { HEALTH_SERVICES } from '../hooks/useSystemHealth'
+import { getApiUrl } from '../config/api'
 import ThemeSelector from './ThemeSelector'
-import dayjs from 'dayjs'
-import axios from '../utils/axios'
+import { Segmented, SeverityPill, StatusDot, EmptyState } from './ui'
+import { surface, line, ink, accent, severity, sev, TOPBAR_HEIGHT, MONO, MOTION } from '../theme/tokens'
 
-// Map a service status ('healthy' | 'degraded' | 'unhealthy' | 'unknown') to
-// a UI color. 'unknown' means the service isn't deployed, shown as neutral.
-const statusColor = (status) => {
-  if (status === 'healthy') return 'success'
-  if (status === 'degraded') return 'warning'
-  if (status === 'unknown') return 'default'
-  return 'error'
+const RANGES = [
+  { value: '24h', label: '24h' },
+  { value: '7d', label: '7d' },
+  { value: '30d', label: '30d' },
+  { value: '90d', label: '90d' },
+]
+
+const boxedControl = {
+  width: 30,
+  height: 30,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: `1px solid ${line.base}`,
+  borderRadius: '6px',
+  color: ink.strong,
+  flex: 'none',
 }
 
-const statusIcon = (status) => {
-  if (status === 'healthy') return <CheckCircle sx={{ color: 'success.main' }} />
-  if (status === 'degraded') return <Warning sx={{ color: 'warning.main' }} />
-  if (status === 'unknown') return <HelpOutline sx={{ color: 'text.disabled' }} />
-  return <ErrorIcon sx={{ color: 'error.main' }} />
-}
-
-const Header = ({ onMenuClick }) => {
+/**
+ * 52px topbar per the redesign: org switcher, global search with ⌘K, the
+ * shared time range, then notifications and help. System health and identity
+ * live in the sidebar footer; the health detail popover is reachable from the
+ * status dot here.
+ */
+const Header = ({ onMenuClick, narrow, range, onRangeChange, health, onRefreshHealth }) => {
   const { user, logout } = useAuthStore()
   const { alerts, alertStats, markAsRead, markAllAsRead, dismissAlert } = useAlerts()
   const { organizations, selectedOrganization, selectOrganization } = useOrganization()
   const navigate = useNavigate()
-  const [anchorEl, setAnchorEl] = React.useState(null)
-  const [alertsAnchorEl, setAlertsAnchorEl] = React.useState(null)
-  const [systemStatusAnchorEl, setSystemStatusAnchorEl] = React.useState(null)
-  const [systemStatus, setSystemStatus] = React.useState({
-    api: 'healthy',
-    database: 'healthy',
-    redis: 'healthy',
-    extractor: 'healthy',
-    analyzer: 'healthy',
-    storage: 'healthy',
-    lastCheck: new Date(),
-    overallStatus: 'healthy'
-  })
 
-  const handleMenu = (event) => {
-    setAnchorEl(event.currentTarget)
-  }
+  const [orgAnchor, setOrgAnchor] = React.useState(null)
+  const [alertsAnchor, setAlertsAnchor] = React.useState(null)
+  const [helpAnchor, setHelpAnchor] = React.useState(null)
+  const [healthAnchor, setHealthAnchor] = React.useState(null)
+  const [userAnchor, setUserAnchor] = React.useState(null)
 
-  const handleClose = () => {
-    setAnchorEl(null)
-  }
-
-  const handleAlertsClick = (event) => {
-    setAlertsAnchorEl(event.currentTarget)
-  }
-
-  const handleAlertsClose = () => {
-    setAlertsAnchorEl(null)
-  }
-
-  const handleSystemStatusClick = (event) => {
-    setSystemStatusAnchorEl(event.currentTarget)
-    checkSystemStatus()
-  }
-
-  const handleSystemStatusClose = () => {
-    setSystemStatusAnchorEl(null)
-  }
-
-  const checkSystemStatus = async () => {
-    try {
-      // Check API health (backend reports real database, redis, extractor,
-      // analyzer, and storage status; 'unknown' means the service is not deployed).
-      const apiHealth = await axios.get('/api/health').catch(() => ({ data: { status: 'unhealthy' } }))
-
-      const newStatus = {
-        api: apiHealth.data?.status === 'healthy' ? 'healthy' : 'unhealthy',
-        database: apiHealth.data?.database || 'unknown',
-        redis: apiHealth.data?.redis || 'unknown',
-        extractor: apiHealth.data?.extractor || 'unknown',
-        analyzer: apiHealth.data?.analyzer || 'unknown',
-        storage: apiHealth.data?.storage || 'unknown',
-        lastCheck: new Date()
-      }
-
-      // Determine overall status ('unknown' is treated as neutral, not degraded)
-      const statuses = Object.values(newStatus).filter(s => s === 'healthy' || s === 'unhealthy')
-      const hasUnhealthy = statuses.includes('unhealthy')
-
-      newStatus.overallStatus = hasUnhealthy ? 'unhealthy' : 'healthy'
-
-      setSystemStatus(newStatus)
-    } catch (error) {
-      setSystemStatus(prev => ({
-        ...prev,
-        api: 'unhealthy',
-        overallStatus: 'unhealthy',
-        lastCheck: new Date()
-      }))
-    }
-  }
-
-  // Check system status on component mount and periodically
+  // ⌘K / Ctrl-K focuses the search field the design advertises.
+  const searchRef = React.useRef(null)
   React.useEffect(() => {
-    checkSystemStatus()
-    const interval = setInterval(checkSystemStatus, 60000) // Check every minute
-    return () => clearInterval(interval)
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const handleLogout = () => {
-    logout()
-    handleClose()
+  const [query, setQuery] = React.useState('')
+  const submitSearch = (e) => {
+    e.preventDefault()
+    const q = query.trim()
+    if (q) navigate(`/threat-intel?q=${encodeURIComponent(q)}`)
   }
 
-  const getSeverityIcon = (severity) => {
-    switch (severity) {
-      case 'critical':
-        return <ErrorIcon sx={{ color: 'error.main' }} />
-      case 'high':
-        return <PriorityHigh sx={{ color: 'error.main' }} />
-      case 'medium':
-        return <Warning sx={{ color: 'warning.main' }} />
-      case 'low':
-        return <InfoIcon sx={{ color: 'info.main' }} />
-      default:
-        return <InfoIcon sx={{ color: 'info.main' }} />
-    }
-  }
+  const orgName = selectedOrganization?.organization_name || 'No organization'
+  const overall = health?.overallStatus
+  const healthColor = !overall ? ink.dim : overall === 'healthy' ? severity.ok : severity.critical
 
-  const getSeverityColor = (severity) => {
-    switch (severity) {
-      case 'critical':
-      case 'high':
-        return 'error'
-      case 'medium':
-        return 'warning'
-      case 'low':
-      default:
-        return 'info'
-    }
-  }
+  const openExternal = (url) => window.open(url, '_blank', 'noopener')
 
   return (
-    <AppBar position="fixed" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}>
-      <Toolbar>
-        <IconButton
-          edge="start"
-          color="inherit"
-          aria-label="menu"
-          onClick={onMenuClick}
-          sx={{ mr: 2 }}
-        >
-          <MenuIcon />
+    <Box
+      component="header"
+      sx={{
+        height: TOPBAR_HEIGHT,
+        flex: 'none',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        px: '20px',
+        background: surface.chrome,
+        borderBottom: `1px solid ${line.base}`,
+        position: 'sticky',
+        top: 0,
+        zIndex: 20,
+      }}
+    >
+      {narrow && (
+        <IconButton onClick={onMenuClick} sx={boxedControl} aria-label="Open navigation">
+          <MenuIcon sx={{ fontSize: 20 }} />
         </IconButton>
+      )}
 
-        <Box sx={{ display: 'flex', alignItems: 'center', flexGrow: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
-            <Shield sx={{ color: 'primary.main', mr: 1, fontSize: '1.75rem' }} />
+      {/* Organization switcher */}
+      <Box
+        onClick={(e) => organizations.length > 1 && setOrgAnchor(e.currentTarget)}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          height: 30,
+          px: '10px',
+          border: `1px solid ${line.strong}`,
+          borderRadius: '6px',
+          background: surface.page,
+          cursor: organizations.length > 1 ? 'pointer' : 'default',
+          flex: 'none',
+          maxWidth: 220,
+        }}
+      >
+        <Apartment sx={{ fontSize: 16, color: ink.secondary }} />
+        <Box
+          component="span"
+          sx={{
+            fontSize: '.8125rem',
+            fontWeight: 500,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {orgName}
+        </Box>
+        {organizations.length > 1 && <ExpandMore sx={{ fontSize: 16, color: ink.faint }} />}
+      </Box>
+      <Menu anchorEl={orgAnchor} open={Boolean(orgAnchor)} onClose={() => setOrgAnchor(null)}>
+        {organizations.map((org) => (
+          <MenuItem
+            key={org.organization_id}
+            selected={org.organization_id === selectedOrganization?.organization_id}
+            onClick={() => {
+              selectOrganization(org.organization_id)
+              setOrgAnchor(null)
+            }}
+          >
             <Box>
-              <Typography variant="h6" component="div" sx={{ 
-                fontWeight: 700,
-                letterSpacing: '-0.5px',
-                color: 'primary.main'
-              }}>
-                MAES
-              </Typography>
-              <Typography variant="caption" sx={{ 
-                color: 'text.secondary',
-                fontSize: '0.65rem',
-                lineHeight: 1,
-                display: 'block',
-                mt: -0.5
-              }}>
-                M365 Analyzer & Extractor Suite
-              </Typography>
+              <Typography sx={{ fontSize: '.8125rem' }}>{org.organization_name}</Typography>
+              {org.organization_fqdn && (
+                <Typography sx={{ fontSize: '.6875rem', color: ink.faint }}>{org.organization_fqdn}</Typography>
+              )}
             </Box>
-          </Box>
-          
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Chip
-              icon={<Security />}
-              label="DFIR"
-              size="small"
-              variant="outlined"
-              sx={{
-                borderColor: 'primary.main',
-                color: 'primary.main',
-                backgroundColor: 'rgba(0, 229, 255, 0.1)',
-                fontWeight: 600,
-                fontSize: '0.75rem'
-              }}
-            />
-            <Chip
-              icon={<Computer />}
-              label="M365"
-              size="small"
-              variant="outlined"
-              sx={{
-                borderColor: 'success.main',
-                color: 'success.main',
-                backgroundColor: 'rgba(0, 230, 118, 0.1)',
-                fontWeight: 600,
-                fontSize: '0.75rem'
-              }}
-            />
-            <Typography variant="caption" sx={{ 
-              color: 'text.secondary',
-              fontWeight: 'medium',
-              px: 1,
-              py: 0.5,
-              backgroundColor: 'rgba(0, 229, 255, 0.05)',
-              borderRadius: 1,
-              border: '1px solid rgba(0, 229, 255, 0.2)'
-            }}>
-              Powered by IONSEC.IO
-            </Typography>
+          </MenuItem>
+        ))}
+      </Menu>
+
+      {/* Global search */}
+      {!narrow && (
+        <Box
+          component="form"
+          onSubmit={submitSearch}
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            height: 30,
+            flex: 1,
+            maxWidth: 420,
+            px: '10px',
+            border: `1px solid ${line.base}`,
+            borderRadius: '6px',
+            background: surface.page,
+            color: ink.secondary,
+            transition: `border-color ${MOTION}`,
+            '&:hover': { borderColor: '#3A3A3A' },
+            '&:focus-within': { borderColor: accent.main },
+          }}
+        >
+          <SearchIcon sx={{ fontSize: 16 }} />
+          <Box
+            component="input"
+            ref={searchRef}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search users, IPs, hashes, cases…"
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              color: ink.primary,
+              fontFamily: 'inherit',
+              fontSize: '.8125rem',
+              '&::placeholder': { color: ink.secondary },
+            }}
+          />
+          <Box
+            component="span"
+            sx={{
+              fontSize: '.6875rem',
+              fontFamily: MONO,
+              color: ink.secondary,
+              border: `1px solid ${line.strong}`,
+              borderRadius: '3px',
+              p: '1px 4px',
+              flex: 'none',
+            }}
+          >
+            ⌘K
           </Box>
         </Box>
+      )}
 
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          {/* Organization Selector - Show if user has organizations */}
-          {organizations.length > 0 && (
-            <FormControl 
-              size="small" 
-              sx={{ 
-                mr: 2, 
-                minWidth: 200,
-                '& .MuiSelect-select': {
-                  py: 0.5,
-                  fontSize: '0.875rem'
-                }
-              }}
+      <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 1 }}>
+        {!narrow && <Segmented options={RANGES} value={range} onChange={onRangeChange} />}
+
+        {/* System health */}
+        <Tooltip title={`Platform: ${overall ? overall : 'checking…'}`}>
+          <IconButton onClick={(e) => setHealthAnchor(e.currentTarget)} sx={boxedControl} aria-label="System status">
+            <StatusDot color={healthColor} size={8} />
+          </IconButton>
+        </Tooltip>
+
+        {/* Alerts */}
+        <Tooltip title={`Alerts (${alertStats?.unread || 0} unread)`}>
+          <IconButton
+            onClick={(e) => setAlertsAnchor(e.currentTarget)}
+            sx={{ ...boxedControl, position: 'relative' }}
+            aria-label="Alerts"
+          >
+            <Badge
+              badgeContent={alertStats?.unread || 0}
+              max={99}
+              color={alertStats?.critical || alertStats?.high ? 'error' : 'warning'}
             >
-              <Select
-                value={selectedOrganization?.organization_id || ''}
-                onChange={(e) => selectOrganization(e.target.value)}
-                displayEmpty
-                disabled={organizations.length === 1}
+              <Notifications sx={{ fontSize: 17 }} />
+            </Badge>
+          </IconButton>
+        </Tooltip>
+
+        <ThemeSelector variant="icon" />
+
+        <Tooltip title="Help & resources">
+          <IconButton onClick={(e) => setHelpAnchor(e.currentTarget)} sx={boxedControl} aria-label="Help">
+            <HelpOutline sx={{ fontSize: 17 }} />
+          </IconButton>
+        </Tooltip>
+
+        {narrow && (
+          <IconButton onClick={(e) => setUserAnchor(e.currentTarget)} sx={boxedControl} aria-label="Account">
+            <AccountCircle sx={{ fontSize: 18 }} />
+          </IconButton>
+        )}
+      </Box>
+
+      {/* Help menu */}
+      <Menu anchorEl={helpAnchor} open={Boolean(helpAnchor)} onClose={() => setHelpAnchor(null)}>
+        <MenuItem
+          onClick={() => {
+            setHelpAnchor(null)
+            openExternal(`${getApiUrl()}/api/docs`)
+          }}
+        >
+          <ListItemIcon>
+            <MenuBook sx={{ fontSize: 17 }} />
+          </ListItemIcon>
+          API documentation
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setHelpAnchor(null)
+            navigate('/settings')
+          }}
+        >
+          <ListItemIcon>
+            <Tune sx={{ fontSize: 17 }} />
+          </ListItemIcon>
+          Settings
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setHelpAnchor(null)
+            openExternal('https://ionsec.io')
+          }}
+        >
+          <ListItemIcon>
+            <Security sx={{ fontSize: 17 }} />
+          </ListItemIcon>
+          IONSEC.IO incident response
+        </MenuItem>
+      </Menu>
+
+      {/* Account menu (narrow only — the sidebar footer owns this on desktop) */}
+      <Menu anchorEl={userAnchor} open={Boolean(userAnchor)} onClose={() => setUserAnchor(null)}>
+        <MenuItem
+          onClick={() => {
+            setUserAnchor(null)
+            navigate('/profile')
+          }}
+        >
+          <ListItemIcon>
+            <AccountCircle sx={{ fontSize: 17 }} />
+          </ListItemIcon>
+          {user?.username || 'Profile'}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setUserAnchor(null)
+            logout()
+          }}
+        >
+          <ListItemIcon>
+            <ExitToApp sx={{ fontSize: 17 }} />
+          </ListItemIcon>
+          Log out
+        </MenuItem>
+      </Menu>
+
+      {/* Alerts popover */}
+      <Popover
+        open={Boolean(alertsAnchor)}
+        anchorEl={alertsAnchor}
+        onClose={() => setAlertsAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { width: 400, maxHeight: 520, background: surface.chrome } } }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            p: '12px 16px',
+            borderBottom: `1px solid ${line.base}`,
+          }}
+        >
+          <Box sx={{ fontSize: '.8125rem', fontWeight: 600 }}>Alerts</Box>
+          <Box sx={{ fontSize: '.6875rem', color: ink.secondary }}>
+            {alertStats?.total || 0} total · {alertStats?.unread || 0} unread
+          </Box>
+          {alertStats?.unread > 0 && (
+            <Button size="small" variant="text" sx={{ ml: 'auto' }} onClick={markAllAsRead}>
+              Mark all read
+            </Button>
+          )}
+        </Box>
+
+        {alerts.length === 0 ? (
+          <EmptyState icon={<CheckCircle />} title="No open alerts" hint="The queue is clear." />
+        ) : (
+          <List sx={{ maxHeight: 380, overflow: 'auto', p: 0 }}>
+            {alerts.slice(0, 10).map((alert) => (
+              <ListItem
+                key={alert.id}
                 sx={{
-                  backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  '& .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'rgba(255, 255, 255, 0.2)'
-                  },
-                  '&:hover .MuiOutlinedInput-notchedOutline': {
-                    borderColor: organizations.length > 1 ? 'rgba(255, 255, 255, 0.4)' : 'rgba(255, 255, 255, 0.2)'
-                  },
-                  '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                    borderColor: 'primary.main'
-                  },
-                  '&.Mui-disabled': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.02)',
-                    '& .MuiSelect-icon': {
-                      display: organizations.length === 1 ? 'none' : 'block'
-                    }
-                  }
+                  display: 'flex',
+                  gap: 0,
+                  p: 0,
+                  borderBottom: `1px solid ${line.soft}`,
+                  background: alert.read ? 'transparent' : 'rgba(255,255,255,.02)',
                 }}
               >
-                {organizations.map((org) => (
-                  <MenuItem key={org.organization_id} value={org.organization_id}>
-                    <Box>
-                      <Typography variant="body2">{org.organization_name}</Typography>
-                      {org.organization_fqdn && (
-                        <Typography variant="caption" color="text.secondary">
-                          {org.organization_fqdn}
-                        </Typography>
-                      )}
+                <Box sx={{ width: 3, alignSelf: 'stretch', flex: 'none', background: sev(alert.severity) }} />
+                <Box sx={{ flex: 1, minWidth: 0, p: '10px 12px' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <SeverityPill level={alert.severity} />
+                    <Box
+                      sx={{
+                        fontSize: '.8125rem',
+                        fontWeight: alert.read ? 400 : 500,
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {alert.title || alert.message}
                     </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          
-          <ThemeSelector variant="icon" sx={{ mr: 1 }} />
-          <Tooltip title={`Security Alerts (${alertStats.unread} unread)`}>
-            <IconButton 
-              color="inherit" 
-              sx={{ mr: 1 }}
-              onClick={handleAlertsClick}
-            >
-              <Badge 
-                badgeContent={alertStats.unread} 
-                color={alertStats.critical > 0 || alertStats.high > 0 ? "error" : "warning"}
-                max={99}
-              >
-                <Warning />
-              </Badge>
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title={`System Status: ${systemStatus.overallStatus.toUpperCase()}`}>
-            <IconButton 
-              color="inherit" 
-              sx={{ mr: 1 }}
-              onClick={handleSystemStatusClick}
-            >
-              {systemStatus.overallStatus === 'healthy' && (
-                <CheckCircle sx={{ color: 'success.main' }} />
-              )}
-              {systemStatus.overallStatus === 'degraded' && (
-                <Warning sx={{ color: 'warning.main' }} />
-              )}
-              {systemStatus.overallStatus === 'unhealthy' && (
-                <ErrorIcon sx={{ color: 'error.main' }} />
-              )}
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title="Settings">
-            <IconButton color="inherit" sx={{ mr: 1 }}>
-              <Settings />
-            </IconButton>
-          </Tooltip>
-
-          <IconButton
-            size="large"
-            aria-label="account of current user"
-            aria-controls="menu-appbar"
-            aria-haspopup="true"
-            onClick={handleMenu}
-            color="inherit"
-          >
-            <Avatar sx={{ width: 32, height: 32 }}>
-              {user?.firstName?.[0] || user?.username?.[0] || 'U'}
-            </Avatar>
-          </IconButton>
-
-          <Menu
-            id="menu-appbar"
-            anchorEl={anchorEl}
-            anchorOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            keepMounted
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            open={Boolean(anchorEl)}
-            onClose={handleClose}
-          >
-            <MenuItem onClick={() => {
-              handleClose()
-              navigate('/profile')
-            }}>
-              <AccountCircle sx={{ mr: 1 }} />
-              Profile
-            </MenuItem>
-            <MenuItem onClick={handleLogout}>
-              <ExitToApp sx={{ mr: 1 }} />
-              Logout
-            </MenuItem>
-          </Menu>
-
-          {/* Alerts Popover */}
-          <Popover
-            open={Boolean(alertsAnchorEl)}
-            anchorEl={alertsAnchorEl}
-            onClose={handleAlertsClose}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'right',
-            }}
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            PaperProps={{
-              sx: { width: 400, maxHeight: 500 }
-            }}
-          >
-            <Box sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                  Security Alerts ({alertStats.total})
-                </Typography>
-                {alertStats.unread > 0 && (
-                  <Button 
-                    size="small" 
-                    onClick={markAllAsRead}
-                    sx={{ fontSize: '0.75rem' }}
-                  >
-                    Mark All Read
-                  </Button>
-                )}
-              </Box>
-              
-              {alerts.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 3 }}>
-                  <CheckCircle sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    No security alerts
-                  </Typography>
+                  </Box>
+                  <Box sx={{ fontSize: '.6875rem', color: ink.faint, mt: '3px' }}>
+                    {alert.source || 'MAES'} · {alert.createdAt ? dayjs(alert.createdAt).format('MMM D, HH:mm') : '—'}
+                  </Box>
                 </Box>
-              ) : (
-                <List sx={{ maxHeight: 350, overflow: 'auto', p: 0 }}>
-                  {alerts.slice(0, 10).map((alert, index) => (
-                    <React.Fragment key={alert.id}>
-                      <ListItem
-                        sx={{
-                          px: 0,
-                          py: 1,
-                          backgroundColor: alert.read ? 'transparent' : 'action.hover',
-                          borderRadius: 1,
-                          mb: 0.5
-                        }}
-                      >
-                        <ListItemIcon sx={{ minWidth: 36 }}>
-                          <Badge
-                            variant="dot"
-                            color={getSeverityColor(alert.severity)}
-                            invisible={alert.read}
-                          >
-                            {getSeverityIcon(alert.severity)}
-                          </Badge>
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={
-                            <Typography 
-                              variant="body2" 
-                              sx={{ 
-                                fontWeight: alert.read ? 400 : 600,
-                                fontSize: '0.875rem'
-                              }}
-                            >
-                              {alert.title || alert.message}
-                            </Typography>
-                          }
-                          secondary={
-                            <Box>
-                              <Typography variant="caption" color="text.secondary">
-                                {alert.source || 'MAES System'} • {dayjs(alert.createdAt).fromNow()}
-                              </Typography>
-                              {alert.description && (
-                                <Typography 
-                                  variant="caption" 
-                                  sx={{ display: 'block', mt: 0.5 }}
-                                  color="text.secondary"
-                                >
-                                  {alert.description.length > 80 
-                                    ? `${alert.description.substring(0, 80)}...` 
-                                    : alert.description
-                                  }
-                                </Typography>
-                              )}
-                            </Box>
-                          }
-                        />
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                          {!alert.read && (
-                            <IconButton
-                              size="small"
-                              onClick={() => markAsRead(alert.id)}
-                              sx={{ fontSize: '0.75rem' }}
-                            >
-                              <CheckCircle fontSize="small" />
-                            </IconButton>
-                          )}
-                          <IconButton
-                            size="small"
-                            onClick={() => dismissAlert(alert.id)}
-                            sx={{ fontSize: '0.75rem' }}
-                          >
-                            <CloseIcon fontSize="small" />
-                          </IconButton>
-                        </Box>
-                      </ListItem>
-                      {index < alerts.slice(0, 10).length - 1 && <Divider />}
-                    </React.Fragment>
-                  ))}
-                </List>
-              )}
-              
-              {alerts.length > 10 && (
-                <Box sx={{ textAlign: 'center', mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                  <Button 
-                    variant="outlined" 
-                    size="small"
-                    onClick={() => {
-                      handleAlertsClose()
-                      // Navigate to alerts page
-                      window.location.href = '/alerts'
-                    }}
-                  >
-                    View All Alerts ({alerts.length})
-                  </Button>
+                <Box sx={{ display: 'flex', flexDirection: 'column', p: '6px', flex: 'none' }}>
+                  {!alert.read && (
+                    <IconButton size="small" onClick={() => markAsRead(alert.id)} aria-label="Mark read">
+                      <CheckCircle sx={{ fontSize: 15 }} />
+                    </IconButton>
+                  )}
+                  <IconButton size="small" onClick={() => dismissAlert(alert.id)} aria-label="Dismiss">
+                    <CloseIcon sx={{ fontSize: 15 }} />
+                  </IconButton>
                 </Box>
-              )}
-            </Box>
-          </Popover>
+              </ListItem>
+            ))}
+          </List>
+        )}
 
-          {/* System Status Popover */}
-          <Popover
-            open={Boolean(systemStatusAnchorEl)}
-            anchorEl={systemStatusAnchorEl}
-            onClose={handleSystemStatusClose}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'right',
-            }}
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            PaperProps={{
-              sx: { width: 350, maxHeight: 400 }
+        <Box sx={{ p: '10px 16px', borderTop: `1px solid ${line.base}` }}>
+          <Button
+            fullWidth
+            variant="outlined"
+            size="small"
+            onClick={() => {
+              setAlertsAnchor(null)
+              navigate('/alerts')
             }}
           >
-            <Box sx={{ p: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                  System Status
-                </Typography>
-                <Chip
-                  label={systemStatus.overallStatus.toUpperCase()}
-                  color={systemStatus.overallStatus === 'healthy' ? 'success' : 
-                         systemStatus.overallStatus === 'degraded' ? 'warning' : 'error'}
-                  size="small"
-                />
-              </Box>
-              
-              <List sx={{ p: 0 }}>
-                {/* API Service */}
-                <ListItem sx={{ px: 0, py: 1 }}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {systemStatus.api === 'healthy' ? (
-                      <CheckCircle sx={{ color: 'success.main' }} />
-                    ) : (
-                      <ErrorIcon sx={{ color: 'error.main' }} />
-                    )}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="API Service"
-                    secondary="Core application services"
-                  />
-                  <Chip
-                    label={systemStatus.api.toUpperCase()}
-                    color={systemStatus.api === 'healthy' ? 'success' : 'error'}
-                    size="small"
-                  />
-                </ListItem>
-                <Divider />
-
-                {/* Database */}
-                <ListItem sx={{ px: 0, py: 1 }}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {statusIcon(systemStatus.database)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Database"
-                    secondary="Data storage and retrieval"
-                  />
-                  <Chip
-                    label={systemStatus.database.toUpperCase()}
-                    color={statusColor(systemStatus.database)}
-                    size="small"
-                  />
-                </ListItem>
-                <Divider />
-
-                {/* Redis */}
-                <ListItem sx={{ px: 0, py: 1 }}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {statusIcon(systemStatus.redis)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Redis"
-                    secondary="Job queues and cache"
-                  />
-                  <Chip
-                    label={systemStatus.redis.toUpperCase()}
-                    color={statusColor(systemStatus.redis)}
-                    size="small"
-                  />
-                </ListItem>
-                <Divider />
-
-                {/* Extractor Service */}
-                <ListItem sx={{ px: 0, py: 1 }}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {statusIcon(systemStatus.extractor)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Extractor Service"
-                    secondary="M365 data extraction"
-                  />
-                  <Chip
-                    label={systemStatus.extractor.toUpperCase()}
-                    color={statusColor(systemStatus.extractor)}
-                    size="small"
-                  />
-                </ListItem>
-                <Divider />
-
-                {/* Analyzer Service */}
-                <ListItem sx={{ px: 0, py: 1 }}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {statusIcon(systemStatus.analyzer)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Analyzer Service"
-                    secondary="Security analysis engine"
-                  />
-                  <Chip
-                    label={systemStatus.analyzer.toUpperCase()}
-                    color={statusColor(systemStatus.analyzer)}
-                    size="small"
-                  />
-                </ListItem>
-                <Divider />
-
-                {/* Storage Service */}
-                <ListItem sx={{ px: 0, py: 1 }}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    {statusIcon(systemStatus.storage)}
-                  </ListItemIcon>
-                  <ListItemText
-                    primary="Storage Service"
-                    secondary="File and artifact storage"
-                  />
-                  <Chip
-                    label={systemStatus.storage.toUpperCase()}
-                    color={statusColor(systemStatus.storage)}
-                    size="small"
-                  />
-                </ListItem>
-              </List>
-              
-              <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                <Typography variant="caption" color="text.secondary">
-                  Last updated: {dayjs(systemStatus.lastCheck).format('HH:mm:ss')}
-                </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                  <Button 
-                    size="small" 
-                    onClick={checkSystemStatus}
-                    startIcon={<RefreshIcon />}
-                  >
-                    Refresh
-                  </Button>
-                  <Button 
-                    size="small" 
-                    variant="outlined"
-                    onClick={() => {
-                      handleSystemStatusClose()
-                      navigate('/system-logs')
-                    }}
-                  >
-                    View Logs
-                  </Button>
-                </Box>
-              </Box>
-            </Box>
-          </Popover>
+            Open all alerts
+          </Button>
         </Box>
-      </Toolbar>
-    </AppBar>
+      </Popover>
+
+      {/* System health popover */}
+      <Popover
+        open={Boolean(healthAnchor)}
+        anchorEl={healthAnchor}
+        onClose={() => setHealthAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { width: 340, background: surface.chrome } } }}
+      >
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            p: '12px 16px',
+            borderBottom: `1px solid ${line.base}`,
+          }}
+        >
+          <Box sx={{ fontSize: '.8125rem', fontWeight: 600 }}>Platform health</Box>
+          <Box sx={{ ml: 'auto' }}>
+            <SeverityPill level={overall || 'info'} label={overall || 'checking'} />
+          </Box>
+        </Box>
+        <Box sx={{ p: '6px 16px 12px' }}>
+          {HEALTH_SERVICES.map((s) => (
+            <Box
+              key={s.key}
+              sx={{ display: 'flex', alignItems: 'center', gap: 1, py: '7px', borderBottom: `1px solid ${line.soft}` }}
+            >
+              <StatusDot level={health?.[s.key] || 'unknown'} size={8} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ fontSize: '.8125rem' }}>{s.label}</Box>
+                <Box sx={{ fontSize: '.6875rem', color: ink.faint }}>{s.description}</Box>
+              </Box>
+              <Box sx={{ fontSize: '.6875rem', fontFamily: MONO, color: ink.secondary }}>
+                {health?.[s.key] || 'unknown'}
+              </Box>
+            </Box>
+          ))}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: '12px' }}>
+            <Box sx={{ fontSize: '.6875rem', color: ink.dim, flex: 1 }}>
+              {health?.lastCheck ? `Checked ${dayjs(health.lastCheck).format('HH:mm:ss')}` : 'Not checked yet'}
+            </Box>
+            <Button size="small" variant="text" startIcon={<RefreshIcon sx={{ fontSize: 15 }} />} onClick={onRefreshHealth}>
+              Refresh
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                setHealthAnchor(null)
+                navigate('/system-logs')
+              }}
+            >
+              Logs
+            </Button>
+          </Box>
+        </Box>
+      </Popover>
+      <Divider sx={{ display: 'none' }} />
+    </Box>
   )
 }
 
