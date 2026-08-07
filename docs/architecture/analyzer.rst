@@ -77,6 +77,13 @@ Analysis Types
    * - ``comprehensive_analysis``
      - Broad analysis across supported datasets
 
+Each analysis type routes to a dedicated ``EnhancedAnalyzer`` method. The
+audit-family types (``ual_analysis``, ``signin_analysis``, ``audit_analysis``)
+share the Entra audit-log analyzer; ``oauth_analysis``, ``risky_detection_analysis``,
+``message_trace_analysis``, ``mfa_analysis``, ``device_analysis``,
+``risky_user_analysis``, and ``comprehensive_analysis`` (license data) each have
+their own data-shape-specific analyzer.
+
 Detection Engine — EnhancedAnalyzer
 -----------------------------------
 

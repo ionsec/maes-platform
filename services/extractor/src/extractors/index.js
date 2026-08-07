@@ -23,6 +23,7 @@ const PimAssignmentsExtractor = require('./pimAssignmentsExtractor');
 const RoleActivityExtractor = require('./roleActivityExtractor');
 const SecurityAlertsExtractor = require('./securityAlertsExtractor');
 const UalGraphExtractor = require('./ualGraphExtractor');
+const SecureScoreExtractor = require('./secureScoreExtractor');
 
 // Tier 2: Partial Graph extractors
 const MailboxRulesExtractor = require('./mailboxRulesExtractor');
@@ -52,8 +53,14 @@ const extractorRegistry = {
   role_activity: RoleActivityExtractor,
   security_alerts: SecurityAlertsExtractor,
   ual_graph: UalGraphExtractor,
+  secure_score: SecureScoreExtractor,
   activity_logs: AuditLogsExtractor,     // alias for azure_audit_logs
   directory_activity_logs: AuditLogsExtractor, // alias
+
+  // Upstream extractor-suite cmdlet aliases -> MAES native-graph equivalents
+  azure_entra_graph_logs: UalGraphExtractor,   // Get-AzureEntraGraphLogs (UAL via Graph)
+  roles: AdminUsersExtractor,                  // Get-Roles (directory roles)
+  rules: MailboxRulesExtractor,                // Get-Rules (inbox/mail rules via Graph)
 
   // Tier 2: Partial Graph
   mailbox_rules: MailboxRulesExtractor,

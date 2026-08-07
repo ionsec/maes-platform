@@ -983,10 +983,28 @@ if (!isMainThread && workerData.type === 'job_processor') {
         case 'ual_analysis':
         case 'signin_analysis':
         case 'audit_analysis':
-        case 'oauth_analysis':
-        case 'risky_detection_analysis':
-        case 'message_trace_analysis':
           analysisResult = await EnhancedAnalyzer.analyzeEntraAuditLogs(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+        case 'oauth_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeOAuthData(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+        case 'risky_detection_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeRiskyDetectionData(auditData, {
+            analysisId,
+            extractionId,
+            organizationId: organizationId || '00000000-0000-0000-0000-000000000001'
+          });
+          break;
+        case 'message_trace_analysis':
+          analysisResult = await EnhancedAnalyzer.analyzeMessageTraceData(auditData, {
             analysisId,
             extractionId,
             organizationId: organizationId || '00000000-0000-0000-0000-000000000001'

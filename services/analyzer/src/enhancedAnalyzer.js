@@ -1824,6 +1824,323 @@ class EnhancedAnalyzer {
       }
     };
   }
+
+  // Analyze OAuth application permissions from Microsoft Graph (oauth_permissions)
+  async analyzeOAuthData(oauthData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalApps: oauthData.length,
+      appsWithAppRoles: 0,
+      appsWithDelegatedPermissions: 0,
+      appsWithBroadPermissions: 0,
+      highPrivilegeApps: 0,
+      unusedApps: 0
+    };
+
+    for (const sp of oauthData) {
+      // Service principal fields from Graph /servicePrincipals + oauthPermissionsExtractor
+      const displayName = sp.displayName || sp.DisplayName || sp.appDisplayName || 'Unknown';
+      const appId = sp.appId || sp.AppId || sp.clientId || '';
+      const appRoles = sp.appRoles || sp.AppRoles || [];
+      const oauthPermissions = sp.oauth2PermissionScopes || sp.Oauth2PermissionScopes || [];
+      const delegatedPerms = sp.oauth2PermissionGrant || sp.delegatedPermissions || [];
+      const isEnabled = sp.accountEnabled !== undefined ? sp.accountEnabled : true;
+
+      if (appRoles.length > 0) statistics.appsWithAppRoles++;
+      if (oauthPermissions.length > 0) statistics.appsWithDelegatedPermissions++;
+
+      // Collect role names that indicate broad / privileged access
+      const broadScopes = [
+        'Directory.ReadWrite.All', 'Directory.Read.All', 'User.ReadWrite.All',
+        'User.Read.All', 'Application.ReadWrite.All', 'Group.ReadWrite.All',
+        'Group.Read.All', 'RoleManagement.ReadWrite.Directory',
+        'Mail.ReadWrite', 'MailboxSettings.ReadWrite', 'Files.ReadWrite.All',
+        'Sites.ReadWrite.All', 'DeviceManagementManagedDevices.ReadWrite.All'
+      ];
+      const privilegedRoles = (appRoles.map(r => r.value).concat(
+        oauthPermissions.map(p => p.value),
+        Array.isArray(delegatedPerms) ? delegatedPerms.map(p => p.scope || p.scopes || '') : []
+      )).filter(Boolean);
+
+      const broadMatches = privilegedRoles.filter(scope =>
+        broadScopes.some(b => (scope || '').toLowerCase().includes(b.toLowerCase()))
+      );
+
+      if (broadMatches.length > 0) {
+        statistics.appsWithBroadPermissions++;
+        const isHighPriv = broadMatches.some(s => s && s.toLowerCase().includes('write') || s && s.toLowerCase().includes('ReadWrite'));
+        if (isHighPriv) statistics.highPrivilegeApps++;
+
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: isHighPriv ? 'High-Privilege OAuth Application' : 'Broad-Permission OAuth Application',
+          severity: isHighPriv ? 'high' : 'medium',
+          description: `Service principal "${displayName}" (${appId || 'no id'}) holds broad permission scopes: ${broadMatches.join(', ')}`,
+          timestamp: new Date(),
+          source: 'oauth_graph_data',
+          type: isHighPriv ? 'high_privilege_app' : 'broad_permission_app',
+          category: 'security',
+          affectedEntities: {
+            applications: [displayName],
+            resources: [],
+            users: []
+          },
+          evidence: {
+            displayName,
+            appId,
+            broadScopes: broadMatches,
+            enabled: isEnabled
+          },
+          mitreAttack: {
+            tactics: ['Privilege Escalation', 'Persistence'],
+            techniques: ['T1134', 'T1078'],
+            subTechniques: ['T1134.001', 'T1078.004']
+          },
+          recommendations: [
+            'Review and reduce granted application permissions',
+            'Apply least-privilege to OAuth consents',
+            'Audit this application in the Microsoft Entra admin center'
+          ]
+        });
+      }
+
+      // Flag disabled service principals that still hold permissions (leftover)
+      if (!isEnabled && (appRoles.length > 0 || oauthPermissions.length > 0)) {
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Disabled Service Principal with Permissions',
+          severity: 'medium',
+          description: `Disabled service principal "${displayName}" still holds application permissions`,
+          timestamp: new Date(),
+          source: 'oauth_graph_data',
+          type: 'stale_service_principal',
+          category: 'security',
+          affectedEntities: { applications: [displayName], resources: [], users: [] },
+          evidence: { displayName, appId, enabled: isEnabled },
+          mitreAttack: {
+            tactics: ['Defense Evasion'],
+            techniques: ['T1078'],
+            subTechniques: ['T1078.004']
+          },
+          recommendations: ['Remove or clean up disabled service principals and their permissions']
+        });
+      }
+    }
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
+
+  // Analyze Identity Protection risky detections from Microsoft Graph (risky_detections)
+  async analyzeRiskyDetectionData(riskyData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalDetections: riskyData.length,
+      highRisk: 0,
+      mediumRisk: 0,
+      lowRisk: 0,
+      confirmedCompromised: 0,
+      uniqueUsers: new Set(),
+      uniqueRiskTypes: new Set()
+    };
+
+    const userRiskCount = {};
+
+    for (const d of riskyData) {
+      const riskLevel = (d.riskLevel || d.RiskLevel || 'unknown').toLowerCase();
+      const riskState = (d.riskState || d.RiskState || 'none').toLowerCase();
+      const userId = d.userPrincipalName || d.userId || d.UserId || d.id || 'Unknown';
+      const riskType = d.riskType || d.RiskType || d.riskEventType || 'unknown';
+
+      statistics.uniqueUsers.add(userId);
+      statistics.uniqueRiskTypes.add(String(riskType));
+      userRiskCount[userId] = (userRiskCount[userId] || 0) + 1;
+
+      if (riskLevel === 'high') statistics.highRisk++;
+      else if (riskLevel === 'medium') statistics.mediumRisk++;
+      else if (riskLevel === 'low') statistics.lowRisk++;
+      if (riskState === 'confirmedCompromised') statistics.confirmedCompromised++;
+
+      if (riskLevel === 'high' || riskState === 'confirmedCompromised') {
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: riskState === 'confirmedCompromised' ? 'Confirmed Compromised Account' : 'High-Risk Identity Detection',
+          severity: 'critical',
+          description: `${userId} has a ${riskLevel} risk detection (${riskType}) with state "${riskState}"`,
+          timestamp: new Date(),
+          source: 'risky_detection_graph_data',
+          type: riskState === 'confirmedCompromised' ? 'confirmed_compromise' : 'high_risk_detection',
+          category: 'security',
+          affectedEntities: { users: [userId], resources: [], applications: [] },
+          evidence: { userId, riskLevel, riskState, riskType },
+          mitreAttack: {
+            tactics: ['Initial Access', 'Credential Access'],
+            techniques: ['T1078', 'T1110'],
+            subTechniques: ['T1078.004', 'T1110.001']
+          },
+          recommendations: [
+            'Investigate immediately and validate the account',
+            'Force a password reset and revoke sessions',
+            'Review sign-in activity for this user'
+          ]
+        });
+      }
+    }
+
+    // Flag users with repeated detections
+    for (const [userId, count] of Object.entries(userRiskCount)) {
+      if (count > 3) {
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Repeat Risky Detections',
+          severity: 'high',
+          description: `User ${userId} has ${count} risky detections in the window`,
+          timestamp: new Date(),
+          source: 'risky_detection_graph_data',
+          type: 'repeat_risk_user',
+          category: 'security',
+          affectedEntities: { users: [userId], resources: [], applications: [] },
+          evidence: { userId, detectionCount: count },
+          mitreAttack: {
+            tactics: ['Credential Access'],
+            techniques: ['T1110'],
+            subTechniques: ['T1110.001']
+          },
+          recommendations: ['Investigate the user account and consider risk-based conditional access']
+        });
+      }
+    }
+
+    statistics.uniqueUsers = statistics.uniqueUsers.size;
+    statistics.uniqueRiskTypes = Array.from(statistics.uniqueRiskTypes);
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
+
+  // Analyze Exchange message trace (message_trace)
+  async analyzeMessageTraceData(traceData, parameters) {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const findings = [];
+    const statistics = {
+      totalMessages: traceData.length,
+      delivered: 0,
+      failed: 0,
+      spam: 0,
+      uniqueSenders: new Set(),
+      uniqueRecipients: new Set(),
+      highVolumeSender: null
+    };
+
+    const senderCount = {};
+
+    for (const m of traceData) {
+      const status = (m.status || m.Status || '').toLowerCase();
+      const sender = m.senderAddress || m.sender || m.FromAddress || 'Unknown';
+      const recipients = m.recipientAddress || m.recipients || m.ToAddress || '';
+      const subject = m.subject || '';
+      const messageId = m.messageId || '';
+
+      statistics.uniqueSenders.add(sender);
+      senderCount[sender] = (senderCount[sender] || 0) + 1;
+      recipients.split(/[;,]/).map(r => r.trim()).filter(Boolean).forEach(r => statistics.uniqueRecipients.add(r));
+
+      if (status.includes('delivered') || status === 'delivered' || status === 'success') statistics.delivered++;
+      else if (status.includes('fail') || status === 'failed') {
+        statistics.failed++;
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Message Delivery Failure',
+          severity: 'medium',
+          description: `Message from ${sender} to ${recipients} failed delivery (${status})`,
+          timestamp: new Date(),
+          source: 'message_trace_data',
+          type: 'message_delivery_failure',
+          category: 'email',
+          affectedEntities: { users: [sender], resources: [], applications: [] },
+          evidence: { sender, recipients, subject, status, messageId },
+          mitreAttack: {
+            tactics: ['Initial Access'],
+            techniques: ['T1566'],
+            subTechniques: ['T1566.001']
+          },
+          recommendations: ['Investigate failed delivery and check for sender compromise']
+        });
+      } else if (status.includes('spam')) {
+        statistics.spam++;
+      }
+    }
+
+    // Flag senders with abnormal outbound volume (potential spam/BEC)
+    for (const [sender, count] of Object.entries(senderCount)) {
+      if (count > 50 && sender !== 'Unknown') {
+        statistics.highVolumeSender = sender;
+        findings.push({
+          id: `finding_${findings.length + 1}`,
+          title: 'Abnormally High Outbound Volume',
+          severity: 'high',
+          description: `Sender ${sender} sent ${count} messages in the window - possible compromised account or mass mailer`,
+          timestamp: new Date(),
+          source: 'message_trace_data',
+          type: 'high_outbound_volume',
+          category: 'email',
+          affectedEntities: { users: [sender], resources: [], applications: [] },
+          evidence: { sender, messageCount: count },
+          mitreAttack: {
+            tactics: ['Collection', 'Exfiltration'],
+            techniques: ['T1114', 'T1041'],
+            subTechniques: ['T1114.003']
+          },
+          recommendations: [
+            'Investigate the sender account for compromise',
+            'Check outbound spam policy and throttling',
+            'Review for business email compromise (BEC)'
+          ]
+        });
+      }
+    }
+
+    statistics.uniqueSenders = statistics.uniqueSenders.size;
+    statistics.uniqueRecipients = statistics.uniqueRecipients.size;
+
+    return {
+      findings,
+      statistics,
+      summary: {
+        totalFindings: findings.length,
+        highSeverityFindings: findings.filter(f => f.severity === 'high').length,
+        mediumSeverityFindings: findings.filter(f => f.severity === 'medium').length,
+        lowSeverityFindings: findings.filter(f => f.severity === 'low').length
+      }
+    };
+  }
 }
 
 module.exports = EnhancedAnalyzer;
