@@ -9,6 +9,9 @@ import {
   LocationOn, Schedule, DeviceHub
 } from '@mui/icons-material';
 import axios from '../utils/axios';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer
+} from 'recharts';
 
 const UebaDashboard = () => {
   const [baselines, setBaselines] = useState([]);
@@ -17,6 +20,7 @@ const UebaDashboard = () => {
   const [error, setError] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
   const [riskDetail, setRiskDetail] = useState(null);
+  const [riskHistory, setRiskHistory] = useState([]);
 
   const fetchData = async () => {
     try {
@@ -39,13 +43,22 @@ const UebaDashboard = () => {
 
   const handleViewRisk = async (userId) => {
     try {
-      const res = await axios.get(`/ueba/risk/${userId}`);
-      setRiskDetail(res.data.riskScore);
+      const [riskRes, historyRes] = await Promise.all([
+        axios.get(`/ueba/risk/${userId}`),
+        axios.get(`/ueba/risk/${userId}/history`, { params: { limit: 30 } })
+      ]);
+      setRiskDetail(riskRes.data.riskScore);
+      setRiskHistory(historyRes.data.history || []);
       setSelectedUser(userId);
     } catch (err) {
       console.error('Failed to fetch risk score:', err);
     }
   };
+
+  const riskTrendData = riskHistory.map((h) => ({
+    time: new Date(h.recorded_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    score: h.risk_score
+  }));
 
   const getRiskColor = (score) => {
     if (score >= 70) return 'error';
@@ -218,6 +231,36 @@ const UebaDashboard = () => {
                 </Stack>
               </Grid>
             </Grid>
+
+            <Divider sx={{ my: 2 }} />
+            <Typography variant="h6" gutterBottom>Risk Score Trend</Typography>
+            {riskTrendData.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                No risk history recorded yet. Risk snapshots are captured as user activity is analyzed.
+              </Typography>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={riskTrendData}>
+                  <defs>
+                    <linearGradient id="riskGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00e5ff" stopOpacity={0.6} />
+                      <stop offset="95%" stopColor="#00e5ff" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="time" />
+                  <YAxis domain={[0, 100]} />
+                  <ChartTooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="score"
+                    name="Risk Score"
+                    stroke="#00e5ff"
+                    fill="url(#riskGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       )}

@@ -89,24 +89,52 @@ router.get('/system-logs', async (req, res) => {
       });
     }
 
-    const { 
-      container = 'all', 
-      lines = '100', 
-      since = '', 
+    const {
+      container = 'all',
+      lines = '100',
+      since = '',
       level = 'all',
-      search = '' 
+      search = ''
     } = req.query;
 
     const containers = ['maes-api', 'maes-extractor', 'maes-analyzer', 'maes-postgres', 'maes-redis'];
     const logsData = [];
+
+    // Validate container against a fixed allowlist — it is interpolated into a
+    // shell command and must never come from arbitrary request input.
+    if (container !== 'all' && !containers.includes(container)) {
+      return res.status(400).json({
+        error: 'Invalid container name',
+        message: `Container must be one of: ${containers.join(', ')}`
+      });
+    }
+
+    // Validate --tail value (either 'all' or a bounded positive integer).
+    let safeLines = lines;
+    if (safeLines !== 'all') {
+      const parsedLines = Number(safeLines);
+      if (!Number.isInteger(parsedLines) || parsedLines < 1 || parsedLines > 100000) {
+        return res.status(400).json({ error: 'Invalid lines value', message: 'lines must be a positive integer or "all"' });
+      }
+      safeLines = String(parsedLines);
+    }
+
+    // Validate --since value to a safe charset (RFC3339 timestamp or Go
+    // duration) — it is also interpolated into the shell command.
+    let safeSince = since;
+    if (safeSince) {
+      if (!/^[0-9a-zA-Z:\.\-\+TZ\s]+$/.test(safeSince) || /\s\s/.test(safeSince) || /[;&|\n`$]/.test(safeSince)) {
+        return res.status(400).json({ error: 'Invalid since value', message: 'since must be a timestamp or duration' });
+      }
+    }
 
     const targetContainers = container === 'all' ? containers : [container];
 
     for (const containerName of targetContainers) {
       try {
         let dockerCommand = `docker logs ${containerName}`;
-        if (lines !== 'all') dockerCommand += ` --tail ${lines}`;
-        if (since) dockerCommand += ` --since ${since}`;
+        if (safeLines !== 'all') dockerCommand += ` --tail ${safeLines}`;
+        if (safeSince) dockerCommand += ` --since ${safeSince}`;
         dockerCommand += ' --timestamps 2>&1';
 
         const { stdout, stderr } = await execAsync(dockerCommand);

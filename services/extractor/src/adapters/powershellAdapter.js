@@ -48,7 +48,10 @@ class PowerShellAdapter {
         extractionId
       }, {
         timeout: SIDECAR_TIMEOUT,
-        headers: { 'Content-Type': 'application/json' }
+        headers: {
+          'Content-Type': 'application/json',
+          'x-service-token': process.env.SERVICE_AUTH_TOKEN || ''
+        }
       });
 
       if (!response.data || !response.data.success) {

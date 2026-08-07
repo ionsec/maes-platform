@@ -72,8 +72,8 @@ router.get('/stats/summary',
 /**
  * List available playbooks - must be before /:id route
  */
-router.get('/meta/playbooks', 
-  requirePermission('canManageSystemSettings'),
+router.get('/meta/playbooks',
+  requirePermission('canManageIncidents'),
   async (req, res) => {
     const playbooks = Array.from(PlaybookEngine.playbooks.values()).map(p => ({
       id: p.id,

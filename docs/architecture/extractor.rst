@@ -3,7 +3,7 @@
 Extractor Service
 =================
 
-The extractor service is a BullMQ worker that dequeues extraction jobs from the ``extraction-jobs`` Redis queue. It uses a **dual-path architecture**: native Microsoft Graph API calls for 23 extraction types (Tier 1 & 2), and a PowerShell sidecar for 5 Exchange-only types (Tier 3) that have no Graph API equivalent.
+The extractor service is a BullMQ worker that dequeues extraction jobs from the ``extraction-jobs`` Redis queue. It uses a **dual-path architecture**: native Microsoft Graph API calls for 29 extraction types (Tier 1 & 2), and a PowerShell sidecar for 5 Exchange-only types (Tier 3) that have no Graph API equivalent.
 
 Source: ``services/extractor/src/index.js``
 
@@ -31,9 +31,9 @@ The extractor dispatches extraction jobs based on type:
 Extraction Type Tiers
 ---------------------
 
-The 28 supported extraction types are divided into three tiers:
+The 35 supported extraction types are divided into three tiers:
 
-Tier 1 — Full Graph API (20 types)
+Tier 1 — Full Graph API (25 types)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These types call Microsoft Graph API directly via ``@microsoft/microsoft-graph-client``:
@@ -105,8 +105,17 @@ These types call Microsoft Graph API directly via ``@microsoft/microsoft-graph-c
    * - ``ual_graph``
      - UAL via Graph
      - ``/auditLogs/directoryAudits`` with date filters
+   * - ``secure_score``
+     - Secure Score
+     - ``/security/secureScores``
+   * - ``azure_entra_graph_logs``
+     - Entra Graph Logs
+     - ``/auditLogs/directoryAudits`` (upstream ``Get-AzureEntraGraphLogs`` alias)
+   * - ``roles``
+     - Roles
+     - ``/directoryRoles`` (upstream ``Get-Roles`` alias)
 
-Tier 2 — Partial Graph (3 types)
+Tier 2 — Partial Graph (4 types)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 These types use Graph API where possible but have documented limitations:
@@ -127,6 +136,9 @@ These types use Graph API where possible but have documented limitations:
    * - ``mailbox_permissions``
      - Mailbox Permissions
      - No direct Graph API; best-effort or PowerShell fallback
+   * - ``rules``
+     - Rules
+     - Inbox rules via Graph (upstream ``Get-Rules`` alias)
 
 Tier 3 — PowerShell Sidecar (5 types)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
