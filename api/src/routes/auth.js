@@ -254,55 +254,48 @@ router.post('/refresh', authenticateToken, async (req, res) => {
   }
 });
 
-// Logout endpoint
-router.post('/logout', authenticateToken, async (req, res) => {
-  try {
-    // Log logout action
-    await AuditLog.create({
-      userId: req.user.id,
-      organizationId: req.organizationId,
-      action: 'logout',
-      category: 'authentication',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    });
+// Get current user profile
+// Shared helper that maps the DB user row into the public auth payload.
+function buildUserPayload(user) {
+  return {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    role: user.role,
+    permissions: user.permissions,
+    preferences: user.preferences,
+    lastLogin: user.lastLogin,
+    organization: user.Organization
+  };
+}
 
+router.get('/profile', authenticateToken, async (req, res) => {
+  try {
     res.json({
       success: true,
-      message: 'Logged out successfully'
+      user: buildUserPayload(req.user)
     });
-
   } catch (error) {
-    logger.error('Logout error:', error);
+    logger.error('Profile fetch error:', error);
     res.status(500).json({
       error: 'Internal server error'
     });
   }
 });
 
-// Get current user profile
-router.get('/profile', authenticateToken, async (req, res) => {
+// /me is used by the frontend to revalidate role/permissions on app start.
+// authenticateToken already re-fetches the user from the DB on every request,
+// so this always returns current role + permissions, never the stale JWT copy.
+router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const userData = {
-      id: req.user.id,
-      username: req.user.username,
-      email: req.user.email,
-      firstName: req.user.firstName,
-      lastName: req.user.lastName,
-      role: req.user.role,
-      permissions: req.user.permissions,
-      preferences: req.user.preferences,
-      lastLogin: req.user.lastLogin,
-      organization: req.user.Organization
-    };
-
     res.json({
       success: true,
-      user: userData
+      user: buildUserPayload(req.user)
     });
-
   } catch (error) {
-    logger.error('Profile fetch error:', error);
+    logger.error('Me fetch error:', error);
     res.status(500).json({
       error: 'Internal server error'
     });
