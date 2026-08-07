@@ -13,6 +13,11 @@ RUN npm ci
 COPY frontend/ ./
 COPY shared/ /shared/
 
+# Version badge rendered in the sidebar. Baked in at build time because Vite
+# inlines VITE_* at compile, not at container start.
+ARG APP_VERSION=1.4.0
+ENV VITE_APP_VERSION=$APP_VERSION
+
 # Build the application
 RUN npm run build
 

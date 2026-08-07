@@ -1,1046 +1,483 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import {
-  Box,
-  Grid,
-  Paper,
-  Typography,
-  Card,
-  CardContent,
-  Chip,
-  LinearProgress,
-  IconButton,
-  Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Alert,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Switch,
-  FormControlLabel,
-  Fab,
-  Divider
-} from '@mui/material'
-import {
-  CloudDownload,
-  Analytics,
-  Warning,
-  TrendingUp,
-  Security,
-  Assessment,
-  Info as InfoIcon,
-  Speed as SpeedIcon,
-  Memory as MemoryIcon,
-  Storage as StorageIcon,
-  Computer as ComputerIcon,
-  Timeline as TimelineIcon,
-  BugReport as BugReportIcon,
-  Refresh as RefreshIcon,
-  OpenInNew as OpenInNewIcon,
-  Dashboard as MonitoringIcon,
-  Edit as EditIcon,
-  Save as SaveIcon,
-  RestoreFromTrash as ResetIcon
-} from '@mui/icons-material'
-import { Responsive, WidthProvider } from 'react-grid-layout'
-import 'react-grid-layout/css/styles.css'
-import 'react-resizable/css/styles.css'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar } from 'recharts'
-import axios from '../utils/axios'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { Box, Button, Typography, Tooltip } from '@mui/material'
+import { Warning } from '@mui/icons-material'
+import { useNavigate } from 'react-router-dom'
 import dayjs from 'dayjs'
 import relativeTime from 'dayjs/plugin/relativeTime'
+import axios from '../utils/axios'
 import { useAlerts } from '../hooks/useAlerts'
-import TourButton from '../components/TourButton'
-import { useTour } from '../contexts/TourContext'
-import { useAuth } from '../contexts/AuthContext'
 import { useOrganization } from '../contexts/OrganizationContext'
+import { useShell } from '../contexts/ShellContext'
+import { HEALTH_SERVICES } from '../hooks/useSystemHealth'
+import {
+  KpiStrip,
+  Panel,
+  PanelHeader,
+  MiniBar,
+  SeverityPill,
+  StatusDot,
+  StatusPip,
+  EmptyState,
+} from '../components/ui'
+import { surface, line, ink, accent, severity, sev, MONO, MOTION } from '../theme/tokens'
+import { alertEntity, isUnassigned, isOpen, shortAge, bySeverityThenAge } from '../utils/alerts'
 
 dayjs.extend(relativeTime)
 
-const ResponsiveGridLayout = WidthProvider(Responsive)
+const RANGE_DAYS = { '24h': 1, '7d': 7, '30d': 30, '90d': 90 }
 
+/** Build the sparkline polyline the redesign draws over the detection trend. */
+const points = (vals, max, w, h) =>
+  vals
+    .map((v, i) => `${(i * w) / Math.max(1, vals.length - 1)},${h - (v / Math.max(1, max)) * (h - 12)}`)
+    .join(' ')
+
+/**
+ * Command Center — the redesign's home screen.
+ *
+ * Reads top-down: a posture strip that says whether anything needs a human
+ * right now, the triage queue as the primary column, collection + platform
+ * health beside it, then the detection trend.
+ */
 const Dashboard = () => {
-  const { alertStats } = useAlerts()
-  const { startTour, isTourCompleted } = useTour()
-  const { user } = useAuth()
+  const navigate = useNavigate()
+  const { alerts, loading: alertsLoading } = useAlerts()
   const { selectedOrganization, selectedOrganizationId } = useOrganization()
-  
-  const [stats, setStats] = useState({
-    extractions: { total: 0, active: 0, completed: 0, failed: 0 },
-    analyses: { total: 0, completed: 0, running: 0, failed: 0 },
-    alerts: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
-    coverage: { services: 0, users: 0, devices: 0 }
-  })
-  const [systemMetrics, setSystemMetrics] = useState({
-    cpu: 0,
-    memory: 0,
-    disk: 0,
-    network: 0
-  })
-  const [recentJobs, setRecentJobs] = useState([])
-  const [recentErrors, setRecentErrors] = useState([])
-  const [containerLogs, setContainerLogs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [infoDialog, setInfoDialog] = useState({ open: false, title: '', content: '' })
-  const [logFilter, setLogFilter] = useState('all')
-  const [refreshInterval, setRefreshInterval] = useState(30) // seconds
-  
-  // Layout and customization state
-  const [editMode, setEditMode] = useState(false)
-  const [layouts, setLayouts] = useState({})
-  
-  // Tour steps configuration
-  const dashboardTourSteps = [
+  const { range, health } = useShell()
+
+  const [extractions, setExtractions] = useState([])
+  const [analyses, setAnalyses] = useState([])
+  const [incidentStats, setIncidentStats] = useState(null)
+  const [uebaStats, setUebaStats] = useState(null)
+  const [compliance, setCompliance] = useState(null)
+  const [lastRefresh, setLastRefresh] = useState(null)
+
+  const fetchData = useCallback(async () => {
+    const orgQuery = selectedOrganizationId ? `?organizationId=${selectedOrganizationId}` : ''
+    // Each panel degrades on its own: a 403 from a permission-gated summary
+    // must not blank the whole screen.
+    const soft = (p) => p.then((r) => r.data).catch(() => null)
+
+    const [ext, ana, inc, ueba, comp] = await Promise.all([
+      soft(axios.get(`/api/extractions${orgQuery}`)),
+      soft(axios.get(`/api/analysis${orgQuery}`)),
+      soft(axios.get('/api/incidents/stats/summary')),
+      soft(axios.get('/api/ueba/stats')),
+      selectedOrganizationId
+        ? soft(axios.get(`/api/compliance/assessments/${selectedOrganizationId}?limit=1`))
+        : Promise.resolve(null),
+    ])
+
+    setExtractions(ext?.extractions || [])
+    setAnalyses(ana?.analysisJobs || [])
+    setIncidentStats(inc?.stats || null)
+    setUebaStats(ueba?.stats || null)
+    setCompliance((comp?.assessments || comp?.data || [])[0] || null)
+    setLastRefresh(new Date())
+  }, [selectedOrganizationId])
+
+  useEffect(() => {
+    fetchData()
+    const id = setInterval(fetchData, 30000)
+    return () => clearInterval(id)
+  }, [fetchData])
+
+  const openAlerts = useMemo(() => alerts.filter(isOpen), [alerts])
+  const unassignedCritical = useMemo(
+    () => openAlerts.filter((a) => a.severity === 'critical' && isUnassigned(a)),
+    [openAlerts]
+  )
+  const unassigned = useMemo(() => openAlerts.filter(isUnassigned), [openAlerts])
+
+  const oldestUnassigned = useMemo(() => {
+    const times = unassigned.map((a) => a.createdAt || a.created_at).filter(Boolean)
+    if (!times.length) return null
+    return times.sort((a, b) => new Date(a) - new Date(b))[0]
+  }, [unassigned])
+
+  // Jobs still moving — the freshness signal in the posture strip.
+  const runningJobs = useMemo(
+    () => [...extractions, ...analyses].filter((j) => ['pending', 'running'].includes(j.status)),
+    [extractions, analyses]
+  )
+
+  const complianceScore = compliance?.complianceScore ?? compliance?.compliance_score ?? null
+  const failedControls = compliance?.failedControls ?? compliance?.failed_controls ?? null
+
+  const posture = [
     {
-      target: '[data-tour="dashboard-title"]',
-      title: 'Welcome to the Dashboard!',
-      content: 'This is your main control center where you can monitor all MAES platform activities, system metrics, and recent operations.',
-      tourId: 'dashboard-tour'
+      label: 'Unassigned critical',
+      value: String(unassignedCritical.length),
+      unit: unassignedCritical.length === 1 ? 'alert' : 'alerts',
+      note: oldestUnassigned ? `oldest ${shortAge(oldestUnassigned)}` : 'queue clear',
+      level: unassignedCritical.length ? 'critical' : 'ok',
     },
     {
-      target: '[data-tour="metrics-cards"]',
-      title: 'System Metrics Overview',
-      content: 'These cards show real-time system metrics including CPU usage, memory consumption, active jobs, and system errors. Click the info icons for detailed explanations.',
-      tourId: 'dashboard-tour'
+      label: 'Open cases',
+      value: String(incidentStats?.open ?? incidentStats?.total ?? 0),
+      unit: incidentStats?.critical ? `${incidentStats.critical} critical` : '',
+      note: incidentStats?.investigating ? `${incidentStats.investigating} investigating` : 'no active investigation',
+      level: incidentStats?.critical ? 'critical' : 'high',
     },
     {
-      target: '[data-tour="monitoring-tools"]',
-      title: 'Monitoring Tools',
-      content: 'Access professional monitoring tools like Grafana for dashboards, Prometheus for metrics, Loki for logs, and cAdvisor for container monitoring.',
-      tourId: 'dashboard-tour'
+      label: 'Users at elevated risk',
+      value: String(uebaStats?.elevated_risk ?? 0),
+      unit: uebaStats?.total_baselines ? `of ${uebaStats.total_baselines}` : '',
+      note: uebaStats?.avg_risk_score ? `avg score ${Math.round(uebaStats.avg_risk_score)}` : 'no baselines yet',
+      level: Number(uebaStats?.elevated_risk) > 0 ? 'medium' : 'ok',
     },
     {
-      target: '[data-tour="recent-jobs"]',
-      title: 'Recent Jobs',
-      content: 'Monitor your recent extraction and analysis jobs with their status, progress, and duration. This helps you track what\'s currently happening in your system.',
-      tourId: 'dashboard-tour'
+      label: 'CIS compliance',
+      value: complianceScore != null ? String(Math.round(complianceScore)) : '—',
+      unit: complianceScore != null ? '%' : '',
+      note: failedControls != null ? `${failedControls} controls failing` : 'not assessed',
+      level: complianceScore == null ? 'info' : complianceScore >= 80 ? 'ok' : 'medium',
     },
     {
-      target: '[data-tour="edit-mode"]',
-      title: 'Customize Your Dashboard',
-      content: 'Toggle edit mode to drag, resize, and rearrange dashboard widgets to suit your workflow. Your layout will be automatically saved.',
-      tourId: 'dashboard-tour'
+      label: 'Evidence freshness',
+      value: runningJobs.length ? String(runningJobs.length) : '—',
+      unit: runningJobs.length ? 'running' : '',
+      note: lastRefresh ? `refreshed ${dayjs(lastRefresh).fromNow()}` : 'loading…',
+      level: 'ok',
     },
-    {
-      target: '[data-tour="activity-chart"]',
-      title: 'Activity Trends',
-      content: 'View weekly trends for extractions, analyses, alerts, and errors to understand your platform usage patterns and identify potential issues.',
-      tourId: 'dashboard-tour'
-    }
   ]
 
-  // Auto-start tour for new users (temporarily disabled for debugging)
-  useEffect(() => {
-    // Temporarily disabled to debug blank page issue
-    // if (!isTourCompleted('dashboard-tour')) {
-    //   const timer = setTimeout(() => {
-    //     startTour(dashboardTourSteps, 'dashboard-tour')
-    //   }, 1000)
-    //   return () => clearTimeout(timer)
-    // }
-  }, [startTour, isTourCompleted])
+  const triage = useMemo(() => [...openAlerts].sort(bySeverityThenAge).slice(0, 6), [openAlerts])
 
-  // Default layout configuration
-  const defaultLayout = [
-    { i: 'cpu-metric', x: 0, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
-    { i: 'memory-metric', x: 3, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
-    { i: 'jobs-metric', x: 6, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
-    { i: 'errors-metric', x: 9, y: 0, w: 3, h: 3, minW: 2, minH: 2 },
-    { i: 'monitoring-tools', x: 0, y: 3, w: 12, h: 4, minW: 6, minH: 3 },
-    { i: 'recent-jobs', x: 0, y: 7, w: 8, h: 6, minW: 4, minH: 4 },
-    { i: 'system-resources', x: 8, y: 7, w: 4, h: 6, minW: 3, minH: 4 },
-    { i: 'recent-errors', x: 0, y: 13, w: 6, h: 5, minW: 3, minH: 3 },
-    { i: 'container-logs', x: 6, y: 13, w: 6, h: 5, minW: 3, minH: 3 },
-    { i: 'activity-chart', x: 0, y: 18, w: 12, h: 6, minW: 6, minH: 4 }
-  ]
+  // Collection pipeline: the jobs actually worth watching — in flight first,
+  // then the most recent failures.
+  const pipeline = useMemo(() => {
+    const all = [
+      ...extractions.map((e) => ({ ...e, kind: 'extraction' })),
+      ...analyses.map((a) => ({ ...a, kind: 'analysis' })),
+    ]
+    const active = all.filter((j) => ['pending', 'running'].includes(j.status))
+    const failed = all.filter((j) => j.status === 'failed')
+    return [...active, ...failed]
+      .sort((a, b) => new Date(b.createdAt || b.created_at || 0) - new Date(a.createdAt || a.created_at || 0))
+      .slice(0, 5)
+  }, [extractions, analyses])
 
-  // Load saved layout from localStorage
-  useEffect(() => {
-    const savedLayouts = localStorage.getItem('maes-dashboard-layouts')
-    if (savedLayouts) {
-      try {
-        setLayouts(JSON.parse(savedLayouts))
-      } catch (error) {
-        console.error('Failed to load saved layouts:', error)
-        setLayouts({ lg: defaultLayout })
-      }
-    } else {
-      setLayouts({ lg: defaultLayout })
-    }
-  }, [])
-
-  const saveLayout = useCallback(() => {
-    localStorage.setItem('maes-dashboard-layouts', JSON.stringify(layouts))
-    setEditMode(false)
-  }, [layouts])
-
-  const resetLayout = useCallback(() => {
-    const newLayouts = { lg: defaultLayout }
-    setLayouts(newLayouts)
-    localStorage.setItem('maes-dashboard-layouts', JSON.stringify(newLayouts))
-  }, [])
-
-  const onLayoutChange = useCallback((layout, layouts) => {
-    setLayouts(layouts)
-  }, [])
-
-
-  const fetchDashboardData = async () => {
-    try {
-      // Build API URLs with organization filter
-      const extractionsUrl = selectedOrganizationId 
-        ? `/api/extractions?organizationId=${selectedOrganizationId}` 
-        : '/api/extractions'
-      const analysisUrl = selectedOrganizationId 
-        ? `/api/analysis?organizationId=${selectedOrganizationId}` 
-        : '/api/analysis'
-      
-      // Fetch basic stats (alerts are now handled by useAlerts hook)
-      const [extractionsRes, analysisRes] = await Promise.all([
-        axios.get(extractionsUrl),
-        axios.get(analysisUrl)
-      ])
-
-      const extractions = extractionsRes.data.extractions || []
-      const analysisJobs = analysisRes.data.analysisJobs || []
-
-      setStats({
-        extractions: {
-          total: extractions.length,
-          active: extractions.filter(e => ['pending', 'running'].includes(e.status)).length,
-          completed: extractions.filter(e => e.status === 'completed').length,
-          failed: extractions.filter(e => e.status === 'failed').length
-        },
-        analyses: {
-          total: analysisJobs.length,
-          completed: analysisJobs.filter(a => a.status === 'completed').length,
-          running: analysisJobs.filter(a => ['pending', 'running'].includes(a.status)).length,
-          failed: analysisJobs.filter(a => a.status === 'failed').length
-        },
-        alerts: alertStats, // Use shared alerts data
-        coverage: {
-          services: 12, // Static for now
-          users: extractions.reduce((sum, e) => sum + (e.statistics?.uniqueUsers || 0), 0),
-          devices: 1203 // Static for now
-        }
-      })
-
-      // Fetch recent jobs
-      const recentJobsData = [
-        ...extractions.slice(0, 5).map(e => ({
-          id: e.id,
-          type: 'Extraction',
-          name: e.type,
-          status: e.status,
-          startTime: e.createdAt,
-          duration: e.duration || 0,
-          progress: e.progress || 0
-        })),
-        ...analysisJobs.slice(0, 5).map(a => ({
-          id: a.id,
-          type: 'Analysis',
-          name: a.type,
-          status: a.status,
-          startTime: a.createdAt,
-          duration: a.duration || 0,
-          progress: a.progress || 0
-        }))
-      ].sort((a, b) => new Date(b.startTime) - new Date(a.startTime)).slice(0, 10)
-
-      setRecentJobs(recentJobsData)
-
-      // Mock system metrics (in real implementation, these would come from Prometheus)
-      setSystemMetrics({
-        cpu: Math.random() * 100,
-        memory: Math.random() * 100,
-        disk: Math.random() * 100,
-        network: Math.random() * 100
-      })
-
-      // Mock recent errors
-      setRecentErrors([
-        {
-          timestamp: new Date(Date.now() - 5 * 60 * 1000),
-          level: 'error',
-          service: 'extractor',
-          message: 'Failed to connect to Microsoft Graph API',
-          count: 3
-        },
-        {
-          timestamp: new Date(Date.now() - 15 * 60 * 1000),
-          level: 'warning',
-          service: 'analyzer',
-          message: 'High memory usage detected',
-          count: 1
-        },
-        {
-          timestamp: new Date(Date.now() - 30 * 60 * 1000),
-          level: 'error',
-          service: 'api',
-          message: 'Database connection timeout',
-          count: 2
-        }
-      ])
-
-      // Mock container logs
-      setContainerLogs([
-        {
-          timestamp: new Date(),
-          level: 'info',
-          container: 'maes-api',
-          message: 'HTTP request processed successfully'
-        },
-        {
-          timestamp: new Date(Date.now() - 1000),
-          level: 'info',
-          container: 'maes-extractor',
-          message: 'Starting new extraction job'
-        },
-        {
-          timestamp: new Date(Date.now() - 2000),
-          level: 'warning',
-          container: 'maes-analyzer',
-          message: 'Analysis queue backlog detected'
-        },
-        {
-          timestamp: new Date(Date.now() - 3000),
-          level: 'info',
-          container: 'maes-prometheus',
-          message: 'Metrics scrape completed'
-        }
-      ])
-
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Fetch user organizations on mount
-  useEffect(() => {
-    fetchDashboardData()
-    const interval = setInterval(fetchDashboardData, refreshInterval * 1000)
-    return () => clearInterval(interval)
-  }, [refreshInterval, alertStats, selectedOrganizationId])
-
-  // Generate activity data for charts
-  const activityData = []
-  const now = new Date()
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(now)
-    date.setDate(date.getDate() - i)
-    const dayName = date.toLocaleDateString('en', { weekday: 'short' })
-    activityData.push({
-      name: dayName,
-      extractions: Math.floor(Math.random() * 10) + 1,
-      analyses: Math.floor(Math.random() * 8) + 1,
-      alerts: i === 0 ? alertStats.total : Math.floor(Math.random() * 5), // Use real data for today
-      errors: Math.floor(Math.random() * 3)
+  // Detection trend over the selected window, bucketed per day by severity band.
+  const trend = useMemo(() => {
+    const days = RANGE_DAYS[range] || 7
+    const buckets = Array.from({ length: days }, () => ({ high: 0, medium: 0, low: 0 }))
+    const start = dayjs().startOf('day').subtract(days - 1, 'day')
+    alerts.forEach((a) => {
+      const created = dayjs(a.createdAt || a.created_at)
+      if (!created.isValid()) return
+      const idx = created.startOf('day').diff(start, 'day')
+      if (idx < 0 || idx >= days) return
+      const band = ['critical', 'high'].includes(a.severity) ? 'high' : a.severity === 'medium' ? 'medium' : 'low'
+      buckets[idx][band] += 1
     })
-  }
+    const max = Math.max(1, ...buckets.flatMap((b) => [b.high, b.medium, b.low]))
+    const labels = buckets.map((_, i) => start.add(i, 'day'))
+    // A 90-day axis can't carry 90 labels; thin them to ~7.
+    const step = Math.ceil(days / 7)
+    return {
+      max,
+      high: points(buckets.map((b) => b.high), max, 900, 170),
+      medium: points(buckets.map((b) => b.medium), max, 900, 170),
+      low: points(buckets.map((b) => b.low), max, 900, 170),
+      labels: labels.filter((_, i) => i % step === 0 || i === days - 1).map((d) => d.format('MMM D')),
+      empty: buckets.every((b) => !b.high && !b.medium && !b.low),
+    }
+  }, [alerts, range])
 
-  const systemMetricsData = [
-    { name: 'CPU', value: systemMetrics.cpu, color: '#8884d8' },
-    { name: 'Memory', value: systemMetrics.memory, color: '#82ca9d' },
-    { name: 'Disk', value: systemMetrics.disk, color: '#ffc658' },
-    { name: 'Network', value: systemMetrics.network, color: '#ff7300' }
-  ]
+  const healthyServices = HEALTH_SERVICES.filter((s) => health?.[s.key] === 'healthy').length
+  const knownServices = HEALTH_SERVICES.filter((s) => health?.[s.key] && health[s.key] !== 'unknown').length
 
-  const MetricCard = ({ title, value, icon, color, subtitle, info, unit = '' }) => (
-    <Tooltip title={info || title} placement="top" enterDelay={500}>
-      <Card sx={{ 
-        height: '100%', 
-        minHeight: { xs: '140px', sm: '160px' },
-        display: 'flex', 
-        flexDirection: 'column',
-        transition: 'all 0.2s ease-in-out',
-        '&:hover': {
-          transform: 'translateY(-2px)',
-          boxShadow: 3
-        }
-      }}>
-      <CardContent sx={{ 
-        flexGrow: 1, 
-        display: 'flex', 
-        flexDirection: 'column', 
-        justifyContent: 'space-between',
-        p: { xs: 2, sm: 3 },
-        '&:last-child': { pb: { xs: 2, sm: 3 } }
-      }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <Typography 
-              variant="h4" 
-              component="div" 
-              color={color}
-              sx={{ 
-                fontSize: { xs: '1.8rem', sm: '2.125rem' },
-                lineHeight: 1.2,
-                mb: 0.5
-              }}
-            >
-              {value}{unit}
-            </Typography>
-            <Typography 
-              variant="body2" 
-              color="text.secondary"
-              sx={{ 
-                fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                fontWeight: 500,
-                mb: 0.5
-              }}
-            >
-              {title}
-            </Typography>
-            {subtitle && (
-              <Typography 
-                variant="caption" 
-                color="text.secondary"
-                sx={{ 
-                  fontSize: { xs: '0.65rem', sm: '0.75rem' },
-                  display: 'block'
-                }}
-              >
-                {subtitle}
-              </Typography>
-            )}
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 1 }}>
-            <Box sx={{ 
-              color: color, 
-              opacity: 0.7,
-              display: 'flex',
-              alignItems: 'center'
-            }}>
-              {React.cloneElement(icon, { sx: { fontSize: { xs: 32, sm: 40 } } })}
-            </Box>
-            {info && (
-              <Tooltip title="Click for more information">
-                <IconButton
-                  size="small"
-                  onClick={() => setInfoDialog({ open: true, title: title, content: info })}
-                  sx={{ opacity: 0.7 }}
-                >
-                  <InfoIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        </Box>
-      </CardContent>
-    </Card>
-    </Tooltip>
-  )
-
-  const filteredLogs = containerLogs.filter(log => 
-    logFilter === 'all' || log.level === logFilter || log.container.includes(logFilter)
-  )
-
-  // Widget Components
-  const CPUMetricWidget = () => (
-    <Paper sx={{ p: 2, height: '100%', minHeight: 150 }}>
-      <MetricCard
-        title="CPU Usage"
-        value={systemMetrics.cpu.toFixed(1)}
-        unit="%"
-        icon={<SpeedIcon />}
-        color="primary.main"
-        subtitle={`${stats.extractions.active} active jobs`}
-        info="Current CPU utilization across all containers. High values may indicate resource contention."
-      />
-    </Paper>
-  )
-
-  const MemoryMetricWidget = () => (
-    <Paper sx={{ p: 2, height: '100%', minHeight: 150 }}>
-      <MetricCard
-        title="Memory Usage"
-        value={systemMetrics.memory.toFixed(1)}
-        unit="%"
-        icon={<MemoryIcon />}
-        color="success.main"
-        subtitle="Available memory"
-        info="Memory utilization across the platform. Monitor for memory leaks and resource optimization."
-      />
-    </Paper>
-  )
-
-  const JobsMetricWidget = () => (
-    <Paper sx={{ p: 2, height: '100%', minHeight: 150 }}>
-      <MetricCard
-        title="Active Jobs"
-        value={stats.extractions.active + stats.analyses.running}
-        icon={<Analytics />}
-        color="warning.main"
-        subtitle={`${stats.extractions.total} total extractions`}
-        info="Currently running extraction and analysis jobs across all services."
-      />
-    </Paper>
-  )
-
-  const ErrorsMetricWidget = () => (
-    <Paper sx={{ p: 2, height: '100%', minHeight: 150 }}>
-      <MetricCard
-        title="System Errors"
-        value={recentErrors.length}
-        icon={<BugReportIcon />}
-        color="error.main"
-        subtitle="Last 24 hours"
-        info="Critical errors and warnings from all services requiring attention."
-      />
-    </Paper>
-  )
-
-  const MonitoringToolsWidget = () => (
-    <Paper sx={{ p: 3, height: '100%' }}>
-      <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <MonitoringIcon color="primary" />
-        Monitoring & Observability Tools
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Access real-time monitoring, metrics, and log analysis tools for comprehensive system observability.
-      </Typography>
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              transition: 'all 0.2s',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 }
-            }}
-            onClick={() => window.open('/grafana/', '_blank')}
-          >
-            <CardContent sx={{ textAlign: 'center', p: 2 }}>
-              <TrendingUp sx={{ fontSize: 40, color: 'primary.main', mb: 1 }} />
-              <Typography variant="h6" component="div">
-                Grafana
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Interactive dashboards and visualization
-              </Typography>
-              <Chip label="admin/admin" size="small" sx={{ mt: 1 }} />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              transition: 'all 0.2s',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 }
-            }}
-            onClick={() => window.open('/prometheus/', '_blank')}
-          >
-            <CardContent sx={{ textAlign: 'center', p: 2 }}>
-              <SpeedIcon sx={{ fontSize: 40, color: 'success.main', mb: 1 }} />
-              <Typography variant="h6" component="div">
-                Prometheus
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Metrics collection and monitoring
-              </Typography>
-              <Chip label="No auth" size="small" sx={{ mt: 1 }} />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              transition: 'all 0.2s',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 }
-            }}
-            onClick={() => window.open('/loki/', '_blank')}
-          >
-            <CardContent sx={{ textAlign: 'center', p: 2 }}>
-              <TimelineIcon sx={{ fontSize: 40, color: 'warning.main', mb: 1 }} />
-              <Typography variant="h6" component="div">
-                Loki
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Log aggregation and search
-              </Typography>
-              <Chip label="API access" size="small" sx={{ mt: 1 }} />
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card 
-            sx={{ 
-              cursor: 'pointer', 
-              transition: 'all 0.2s',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: 3 }
-            }}
-            onClick={() => window.open('/cadvisor/', '_blank')}
-          >
-            <CardContent sx={{ textAlign: 'center', p: 2 }}>
-              <ComputerIcon sx={{ fontSize: 40, color: 'info.main', mb: 1 }} />
-              <Typography variant="h6" component="div">
-                cAdvisor
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Container resource monitoring
-              </Typography>
-              <Chip label="No auth" size="small" sx={{ mt: 1 }} />
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-    </Paper>
-  )
-
-  const RecentJobsWidget = () => (
-    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" gutterBottom>
-        Recent Jobs
-      </Typography>
-      <TableContainer sx={{ flexGrow: 1 }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Type</TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Progress</TableCell>
-              <TableCell>Started</TableCell>
-              <TableCell>Duration</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {recentJobs.map((job, index) => (
-              <TableRow key={index}>
-                <TableCell>
-                  <Chip 
-                    label={job.type} 
-                    size="small" 
-                    color={job.type === 'Extraction' ? 'primary' : 'secondary'}
-                  />
-                </TableCell>
-                <TableCell>{job.name}</TableCell>
-                <TableCell>
-                  <Chip 
-                    label={job.status} 
-                    size="small"
-                    color={
-                      job.status === 'completed' ? 'success' :
-                      job.status === 'failed' ? 'error' :
-                      job.status === 'running' ? 'info' : 'default'
-                    }
-                  />
-                </TableCell>
-                <TableCell>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <LinearProgress 
-                      variant="determinate" 
-                      value={job.progress} 
-                      sx={{ width: 50 }}
-                    />
-                    <Typography variant="caption">{job.progress}%</Typography>
-                  </Box>
-                </TableCell>
-                <TableCell>
-                  <Typography variant="caption">
-                    {dayjs(job.startTime).format('MMM DD HH:mm')}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  <Typography variant="caption">
-                    {job.duration ? `${Math.floor(job.duration / 60)}m` : '-'}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Paper>
-  )
-
-  const SystemResourcesWidget = () => (
-    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" gutterBottom>
-        System Resources
-      </Typography>
-      <Box sx={{ flexGrow: 1, minHeight: 200 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={systemMetricsData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" fontSize={12} />
-            <YAxis fontSize={12} domain={[0, 100]} />
-            <RechartsTooltip formatter={(value) => [`${value.toFixed(1)}%`, 'Usage']} />
-            <Bar dataKey="value" fill="#8884d8">
-              {systemMetricsData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </Box>
-    </Paper>
-  )
-
-  const RecentErrorsWidget = () => (
-    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" gutterBottom>
-        Recent Errors & Warnings
-      </Typography>
-      <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
-        {recentErrors.map((error, index) => (
-          <Alert 
-            key={index} 
-            severity={error.level === 'error' ? 'error' : 'warning'}
-            sx={{ mb: 1 }}
-          >
-            <Box>
-              <Typography variant="body2" fontWeight="bold">
-                {error.service.toUpperCase()}: {error.message}
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {dayjs(error.timestamp).format('MMM DD HH:mm:ss')} - Count: {error.count}
-              </Typography>
-            </Box>
-          </Alert>
-        ))}
-      </Box>
-    </Paper>
-  )
-
-  const ContainerLogsWidget = () => (
-    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6">
-          Live Container Logs
-        </Typography>
-        <FormControl size="small" sx={{ minWidth: 100 }}>
-          <InputLabel>Filter</InputLabel>
-          <Select
-            value={logFilter}
-            label="Filter"
-            onChange={(e) => setLogFilter(e.target.value)}
-          >
-            <MenuItem value="all">All</MenuItem>
-            <MenuItem value="error">Errors</MenuItem>
-            <MenuItem value="warning">Warnings</MenuItem>
-            <MenuItem value="maes-api">API</MenuItem>
-            <MenuItem value="maes-extractor">Extractor</MenuItem>
-            <MenuItem value="maes-analyzer">Analyzer</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
-      <Box sx={{ 
-        flexGrow: 1, 
-        overflowY: 'auto',
-        bgcolor: '#0d1117',
-        color: '#c9d1d9',
-        p: 1,
-        borderRadius: 1,
-        fontFamily: 'monospace',
-        fontSize: '0.75rem'
-      }}>
-        {filteredLogs.map((log, index) => (
-          <Box key={index} sx={{ mb: 0.5 }}>
-            <span style={{ color: '#7c3aed' }}>
-              [{dayjs(log.timestamp).format('HH:mm:ss')}]
-            </span>
-            {' '}
-            <span style={{ 
-              color: log.level === 'error' ? '#f85149' :
-                    log.level === 'warning' ? '#d29922' : '#79c0ff'
-            }}>
-              [{log.level.toUpperCase()}]
-            </span>
-            {' '}
-            <span style={{ color: '#a5a5a5' }}>
-              {log.container}:
-            </span>
-            {' '}
-            {log.message}
-          </Box>
-        ))}
-      </Box>
-    </Paper>
-  )
-
-  const ActivityChartWidget = () => (
-    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Typography variant="h6" gutterBottom>
-        Weekly Activity & Performance Trends
-      </Typography>
-      <Box sx={{ flexGrow: 1, minHeight: 300 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={activityData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" fontSize={12} />
-            <YAxis fontSize={12} />
-            <RechartsTooltip />
-            <Line type="monotone" dataKey="extractions" stroke="#8884d8" strokeWidth={2} name="Extractions" />
-            <Line type="monotone" dataKey="analyses" stroke="#82ca9d" strokeWidth={2} name="Analyses" />
-            <Line type="monotone" dataKey="alerts" stroke="#ffc658" strokeWidth={2} name="Alerts" />
-            <Line type="monotone" dataKey="errors" stroke="#ff7300" strokeWidth={2} name="Errors" />
-          </LineChart>
-        </ResponsiveContainer>
-      </Box>
-    </Paper>
-  )
+  const heroCopy = unassignedCritical.length
+    ? `${unassignedCritical.length === 1 ? 'One critical alert is' : `${unassignedCritical.length} critical alerts are`} still unassigned${
+        failedControls ? `, and ${failedControls} CIS controls are failing.` : '.'
+      }`
+    : unassigned.length
+      ? `No unassigned criticals. ${unassigned.length} lower-severity ${unassigned.length === 1 ? 'alert' : 'alerts'} still need an owner.`
+      : 'Nothing is waiting on a human. Every open alert has an owner.'
 
   return (
-    <Box sx={{ p: { xs: 2, sm: 3 } }}>
-      <Box sx={{ 
-        display: 'flex', 
-        alignItems: { xs: 'flex-start', sm: 'center' },
-        flexDirection: { xs: 'column', sm: 'row' },
-        mb: 3,
-        gap: { xs: 2, sm: 0 }
-      }}>
-        <Typography 
-          variant="h4" 
-          data-tour="dashboard-title"
-          sx={{ 
-            flexGrow: 1,
-            fontSize: { xs: '1.5rem', sm: '2.125rem' }
-          }}
-        >
-          System Monitoring Dashboard
-          {selectedOrganization && (
-            <Chip 
-              label={selectedOrganization.organization_name} 
-              size="small" 
-              color="primary" 
-              sx={{ ml: 2 }}
-            />
-          )}
+    <Box sx={{ p: '20px 24px 40px' }}>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '12px', mb: '4px', flexWrap: 'wrap' }}>
+        <Typography variant="h1" data-tour="dashboard-title">
+          Command Center
         </Typography>
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center',
-          gap: { xs: 1, sm: 2 },
-          flexWrap: { xs: 'wrap', sm: 'nowrap' }
-        }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel>Refresh</InputLabel>
-            <Select
-              value={refreshInterval}
-              label="Refresh"
-              onChange={(e) => setRefreshInterval(e.target.value)}
-            >
-              <MenuItem value={10}>10s</MenuItem>
-              <MenuItem value={30}>30s</MenuItem>
-              <MenuItem value={60}>1m</MenuItem>
-              <MenuItem value={300}>5m</MenuItem>
-            </Select>
-          </FormControl>
-          <IconButton onClick={fetchDashboardData} color="primary" title="Refresh Dashboard">
-            <RefreshIcon />
-          </IconButton>
-          <TourButton 
-            tourSteps={dashboardTourSteps}
-            tourId="dashboard-tour"
-            variant="outlined"
-            size="small"
-          >
-            Help Tour
-          </TourButton>
-          
-          {/* Edit Mode Controls */}
-          <Box 
-            data-tour="edit-mode"
-            sx={{ 
-              display: 'flex', 
-              alignItems: 'center',
-              gap: 1,
-              borderLeft: '1px solid',
-              borderColor: 'divider',
-              pl: 2,
-              ml: 1
-            }}
-          >
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={editMode}
-                  onChange={(e) => setEditMode(e.target.checked)}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                  EDIT
-                </Typography>
-              }
-            />
-            {editMode && (
-              <>
-                <IconButton onClick={saveLayout} color="primary" title="Save Layout">
-                  <SaveIcon />
-                </IconButton>
-                <IconButton onClick={resetLayout} color="secondary" title="Reset Layout">
-                  <ResetIcon />
-                </IconButton>
-              </>
-            )}
-          </Box>
-          
-          {/* Monitoring Tools Group */}
-          <Box sx={{ 
-            display: 'flex', 
-            gap: 1, 
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            borderLeft: '1px solid',
-            borderColor: 'divider',
-            pl: 2,
-            ml: 1
-          }}>
-            <Typography variant="caption" color="text.secondary" sx={{ mr: 1, fontWeight: 600 }}>
-              MONITORING:
-            </Typography>
-            <Button
-              variant="outlined"
-              startIcon={<TrendingUp />}
-              onClick={() => window.open('/grafana/', '_blank')}
-              size="small"
-              sx={{ minWidth: 'auto' }}
-            >
-              Grafana
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<SpeedIcon />}
-              onClick={() => window.open('/prometheus/', '_blank')}
-              size="small"
-              sx={{ minWidth: 'auto' }}
-            >
-              Prometheus
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<TimelineIcon />}
-              onClick={() => window.open('/loki/', '_blank')}
-              size="small"
-              sx={{ minWidth: 'auto' }}
-            >
-              Loki
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<ComputerIcon />}
-              onClick={() => window.open('/cadvisor/', '_blank')}
-              size="small"
-              sx={{ minWidth: 'auto' }}
-            >
-              cAdvisor
-            </Button>
-          </Box>
+        <Box component="span" sx={{ fontSize: '.75rem', color: ink.faint }}>
+          {[
+            selectedOrganization?.organization_name,
+            `last ${range}`,
+            lastRefresh ? `refreshed ${dayjs(lastRefresh).fromNow()}` : 'loading…',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </Box>
       </Box>
-      
-      {/* Responsive Dashboard Layout */}
-      <Box sx={{ 
-        '& .react-grid-item': {
-          border: editMode ? '2px dashed rgba(0, 229, 255, 0.3)' : 'none',
-          borderRadius: 1,
-          transition: 'border 0.2s ease-in-out'
-        },
-        '& .react-grid-item.react-grid-placeholder': {
-          background: 'rgba(0, 229, 255, 0.1)',
-          border: '2px dashed rgba(0, 229, 255, 0.5)',
-          borderRadius: 1
-        },
-        '& .react-resizable-handle': {
-          display: editMode ? 'block' : 'none'
-        }
-      }}>
-        <ResponsiveGridLayout
-          className="layout"
-          layouts={layouts}
-          onLayoutChange={onLayoutChange}
-          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-          cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
-          rowHeight={60}
-          isDraggable={editMode}
-          isResizable={editMode}
-          compactType="vertical"
-          preventCollision={false}
-          margin={[16, 16]}
-        >
-          <div key="cpu-metric" data-tour="metrics-cards">
-            <CPUMetricWidget />
-          </div>
-          <div key="memory-metric">
-            <MemoryMetricWidget />
-          </div>
-          <div key="jobs-metric">
-            <JobsMetricWidget />
-          </div>
-          <div key="errors-metric">
-            <ErrorsMetricWidget />
-          </div>
-          <div key="monitoring-tools" data-tour="monitoring-tools">
-            <MonitoringToolsWidget />
-          </div>
-          <div key="recent-jobs" data-tour="recent-jobs">
-            <RecentJobsWidget />
-          </div>
-          <div key="system-resources">
-            <SystemResourcesWidget />
-          </div>
-          <div key="recent-errors">
-            <RecentErrorsWidget />
-          </div>
-          <div key="container-logs">
-            <ContainerLogsWidget />
-          </div>
-          <div key="activity-chart" data-tour="activity-chart">
-            <ActivityChartWidget />
-          </div>
-        </ResponsiveGridLayout>
-      </Box>
-      
-      {/* Edit Mode Floating Action Button */}
-      {editMode && (
-        <Fab
-          color="primary"
-          sx={{ position: 'fixed', bottom: 16, right: 16 }}
-          onClick={saveLayout}
-        >
-          <SaveIcon />
-        </Fab>
-      )}
-      
-      {/* Info Dialog */}
-      <Dialog
-        open={infoDialog.open}
-        onClose={() => setInfoDialog({ open: false, title: '', content: '' })}
-        maxWidth="md"
-        fullWidth
+      <Typography sx={{ m: 0, mb: '20px', fontSize: '.8125rem', color: ink.secondary, maxWidth: '70ch', textWrap: 'pretty' }}>
+        {heroCopy}
+      </Typography>
+
+      <KpiStrip items={posture} sx={{ mb: '20px' }} data-tour="metrics-cards" />
+
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 2,
+          alignItems: 'start',
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0,1.6fr) minmax(0,1fr)' },
+        }}
       >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <InfoIcon color="primary" />
-          {infoDialog.title}
-        </DialogTitle>
-        <DialogContent>
-          <Typography variant="body1" sx={{ lineHeight: 1.6 }}>
-            {infoDialog.content}
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setInfoDialog({ open: false, title: '', content: '' })}>
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {/* Triage queue — the primary column */}
+        <Panel data-tour="recent-jobs">
+          <PanelHeader
+            title="Triage queue"
+            meta={`${unassigned.length} unassigned`}
+            action={
+              <Box
+                component="a"
+                href="/alerts"
+                onClick={(e) => {
+                  e.preventDefault()
+                  navigate('/alerts')
+                }}
+                sx={{ fontSize: '.75rem' }}
+              >
+                Open all alerts
+              </Box>
+            }
+          />
+          {alertsLoading && !triage.length ? (
+            <EmptyState title="Loading alerts…" />
+          ) : !triage.length ? (
+            <EmptyState title="No open alerts" hint="Detections will appear here as analysis runs complete." />
+          ) : (
+            triage.map((a) => (
+              <Box
+                key={a.id}
+                onClick={() => navigate(`/alerts?alert=${a.id}`)}
+                sx={{
+                  display: 'flex',
+                  borderBottom: `1px solid ${line.soft}`,
+                  cursor: 'pointer',
+                  transition: `background ${MOTION}`,
+                  '&:hover': { background: surface.hover },
+                  '&:last-of-type': { borderBottom: 'none' },
+                }}
+              >
+                <Box sx={{ width: 3, flex: 'none', background: sev(a.severity) }} />
+                <Box sx={{ flex: 1, minWidth: 0, p: '11px 16px', display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: '3px' }}>
+                      <SeverityPill level={a.severity} />
+                      <Box
+                        sx={{
+                          fontSize: '.8125rem',
+                          fontWeight: 500,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {a.title}
+                      </Box>
+                    </Box>
+                    <Box
+                      sx={{
+                        fontSize: '.75rem',
+                        color: ink.tertiary,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {alertEntity(a)}
+                      {a.description ? ` — ${a.description}` : ''}
+                    </Box>
+                  </Box>
+                  <Box sx={{ flex: 'none', textAlign: 'right' }}>
+                    <Box sx={{ fontSize: '.75rem', color: ink.secondary }}>
+                      {shortAge(a.createdAt || a.created_at)}
+                    </Box>
+                    <Box sx={{ fontSize: '.6875rem', color: isUnassigned(a) ? severity.high : ink.faint }}>
+                      {isUnassigned(a) ? 'Unassigned' : 'Assigned'}
+                    </Box>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/alerts?alert=${a.id}`)
+                    }}
+                    sx={{ flex: 'none' }}
+                  >
+                    {isUnassigned(a) ? 'Take' : 'Open'}
+                  </Button>
+                </Box>
+              </Box>
+            ))
+          )}
+        </Panel>
+
+        {/* Secondary column */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Panel>
+            <PanelHeader
+              title="Collection pipeline"
+              action={
+                <Box
+                  component="a"
+                  href="/extractions"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    navigate('/extractions')
+                  }}
+                  sx={{ fontSize: '.75rem' }}
+                >
+                  Manage
+                </Box>
+              }
+            />
+            <Box sx={{ p: '8px 16px 14px' }}>
+              {!pipeline.length ? (
+                <EmptyState title="Nothing in flight" hint="No running or failed jobs." />
+              ) : (
+                pipeline.map((j) => {
+                  const failed = j.status === 'failed'
+                  const level = failed ? 'critical' : j.status === 'running' ? 'low' : 'info'
+                  return (
+                    <Box
+                      key={`${j.kind}-${j.id}`}
+                      sx={{ py: 1, borderBottom: `1px solid ${line.soft}`, '&:last-of-type': { borderBottom: 'none' } }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: '6px' }}>
+                        <StatusDot level={level} size={6} />
+                        <Box
+                          sx={{
+                            fontSize: '.8125rem',
+                            flex: 1,
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {j.type || j.name || j.kind}
+                        </Box>
+                        <Box sx={{ fontSize: '.75rem', color: ink.secondary, fontFamily: MONO, flex: 'none' }}>
+                          {failed ? 'failed' : `${Math.round(j.progress || 0)}%`}
+                        </Box>
+                      </Box>
+                      <MiniBar value={j.progress || 0} level={level} />
+                    </Box>
+                  )
+                })
+              )}
+            </Box>
+          </Panel>
+
+          <Panel pad data-tour="monitoring-tools">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '12px', mb: '12px' }}>
+              <Box sx={{ fontSize: '.8125rem', fontWeight: 600 }}>Platform health</Box>
+              <Box
+                sx={{
+                  ml: 'auto',
+                  fontSize: '.6875rem',
+                  color: health?.overallStatus === 'healthy' ? severity.ok : ink.secondary,
+                }}
+              >
+                {knownServices ? `${healthyServices} / ${knownServices} healthy` : 'checking…'}
+              </Box>
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {HEALTH_SERVICES.map((s) => (
+                <Tooltip key={s.key} title={`${s.description} — ${health?.[s.key] || 'unknown'}`}>
+                  <StatusPip level={health?.[s.key] || 'unknown'} label={s.label} />
+                </Tooltip>
+              ))}
+            </Box>
+            <Box
+              sx={{
+                mt: '12px',
+                pt: '12px',
+                borderTop: `1px solid ${line.soft}`,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}
+            >
+              <Warning sx={{ fontSize: 16, color: health?.overallStatus === 'healthy' ? ink.dim : severity.high }} />
+              <Box sx={{ fontSize: '.75rem', color: ink.secondary, flex: 1 }}>
+                {health?.overallStatus === 'healthy'
+                  ? 'No service failures reported'
+                  : health?.overallStatus
+                    ? 'One or more services are unhealthy'
+                    : 'Health check pending'}
+              </Box>
+              <Box
+                component="a"
+                href="/system-logs"
+                onClick={(e) => {
+                  e.preventDefault()
+                  navigate('/system-logs')
+                }}
+                sx={{ fontSize: '.75rem' }}
+              >
+                Logs
+              </Box>
+            </Box>
+          </Panel>
+        </Box>
+      </Box>
+
+      {/* Detections over time */}
+      <Panel pad sx={{ mt: 2 }} data-tour="activity-chart">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1, flexWrap: 'wrap' }}>
+          <Box sx={{ fontSize: '.8125rem', fontWeight: 600 }}>Detections over time</Box>
+          <Box sx={{ display: 'flex', gap: '14px', ml: 'auto', fontSize: '.6875rem', color: ink.secondary }}>
+            {[
+              ['Critical / high', severity.critical],
+              ['Medium', severity.high],
+              ['Low / info', accent.main],
+            ].map(([label, color]) => (
+              <Box key={label} sx={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                <Box component="span" sx={{ width: 10, height: 2, background: color, display: 'inline-block' }} />
+                {label}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+        {trend.empty ? (
+          <EmptyState title="No detections in this window" hint={`Nothing raised in the last ${range}.`} />
+        ) : (
+          <>
+            <Box
+              component="svg"
+              viewBox="0 0 900 180"
+              preserveAspectRatio="none"
+              sx={{ width: '100%', height: 180, display: 'block' }}
+            >
+              <g stroke={line.soft}>
+                <line x1="0" y1="45" x2="900" y2="45" />
+                <line x1="0" y1="90" x2="900" y2="90" />
+                <line x1="0" y1="135" x2="900" y2="135" />
+                <line x1="0" y1="170" x2="900" y2="170" />
+              </g>
+              <polyline fill="none" stroke={accent.main} strokeWidth="1.5" points={trend.low} />
+              <polyline fill="none" stroke={severity.high} strokeWidth="1.5" points={trend.medium} />
+              <polyline fill="none" stroke={severity.critical} strokeWidth="2" points={trend.high} />
+            </Box>
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', fontSize: '.6875rem', color: ink.dim, mt: '6px' }}
+            >
+              {trend.labels.map((l) => (
+                <Box component="span" key={l}>
+                  {l}
+                </Box>
+              ))}
+            </Box>
+          </>
+        )}
+      </Panel>
     </Box>
   )
 }

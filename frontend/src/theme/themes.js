@@ -1,3 +1,4 @@
+import maesTheme from './maesTheme';
 import darkTheme from './darkTheme';
 import lightTheme from './lightTheme';
 import cyberpunkTheme from './cyberpunkTheme';
@@ -5,6 +6,14 @@ import blueTheme from './blueTheme';
 import greenTheme from './greenTheme';
 
 export const themes = {
+  maes: {
+    id: 'maes',
+    name: 'MAES Command',
+    description: 'The MAES design system — near-black surfaces, cyan accent, high-density forensic tables',
+    theme: maesTheme,
+    icon: '🛡️',
+    category: 'Professional'
+  },
   dark: {
     id: 'dark',
     name: 'DFIR Dark',
@@ -70,8 +79,10 @@ export const themeCategories = {
   }
 };
 
+export const DEFAULT_THEME_ID = 'maes';
+
 export const getThemeById = (themeId) => {
-  return themes[themeId] || themes.dark;
+  return themes[themeId] || themes[DEFAULT_THEME_ID];
 };
 
 export const getThemesByCategory = () => {

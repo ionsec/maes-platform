@@ -1,3 +1,26 @@
+## [1.4.0] - 2026-08-07
+
+### Added
+- MAES design system, implementing the "MAES Redesign" specification:
+  - `frontend/src/theme/tokens.js` — single source of truth for surfaces, hairline borders, the severity ramp, and the repeated style recipes (severity pill, status dot, quiet filter chip).
+  - `frontend/src/theme/maesTheme.js` — the spec expressed as an MUI theme, registered as the default theme (`MAES Command`). Because it overrides the shared MUI components, every existing page inherits the new surfaces, density, and control geometry.
+  - `frontend/src/components/ui/` — shared primitives: severity pills, status dots, KPI strips, filter chips, progress bars, panels, page headers, evidence rows, timeline rows, and the segmented control.
+- Shared time range in the topbar, exposed to screens through `contexts/ShellContext.jsx`.
+- `hooks/useSystemHealth.js` — one `/api/health` poller feeding both the topbar status popover and the sidebar health footer.
+- Alerts screen: escalate an alert into a case (`POST /api/incidents`), assign to self, and bulk triage over the filtered queue.
+- `APP_VERSION` build arg on the frontend image, inlined by Vite and rendered as the sidebar version badge.
+
+### Changed
+- Navigation regrouped into Operate / Investigate / Govern in a 224px sidebar with live alert badges, platform health, and identity in the footer. Role-based visibility is unchanged; monitoring and documentation links moved into a collapsible Platform group.
+- Topbar reduced to 52px: organization switcher, global search with a working ⌘K shortcut, time range, notifications, health, and help.
+- App shell switched from a fixed-margin container to a flex layout that collapses to a single column with an overlay navigation rail below 900px.
+- Command Center (dashboard) rebuilt around security posture: an unassigned-critical-first KPI strip, the triage queue as the primary column, collection pipeline and platform health alongside, and a detection trend over the selected range. Each panel now degrades independently, so a permission-gated summary returning 403 no longer blanks the page.
+- Alerts rebuilt as a two-pane triage screen: filterable queue plus a detail pane carrying evidence, a lifecycle timeline derived from the alert's own timestamps, and recommended actions. All previous alert operations are preserved.
+- Interface font switched from Roboto to Inter, with Roboto Mono for identifiers and metrics, and tabular numerals enabled.
+
+### Removed
+- Drag-and-drop dashboard widget layout (`react-grid-layout`) and the fabricated dashboard panels it hosted: randomly generated CPU/memory/disk/network metrics and hardcoded "recent errors" and "container logs" lists. Real service health is reported by `/api/health`; real logs remain at `/system-logs`.
+
 ## [1.3.1] - 2026-08-07
 
 ### Fixed
