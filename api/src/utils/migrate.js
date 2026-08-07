@@ -1,3 +1,4 @@
+const { existsSync } = require('fs');
 const fs = require('fs').promises;
 const path = require('path');
 const { query, getRow, getRows } = require('../services/database');
@@ -40,6 +41,13 @@ class MigrationManager {
   }
 
   async getMigrationFiles() {
+    // The migrations directory is optional: SQL schema migrations are applied by
+    // the postgres container's init scripts. When absent (e.g. the legacy JS
+    // migration folder is not shipped to the image), treat it as "no pending".
+    if (!existsSync(this.migrationsPath)) {
+      logger.info('Migrations directory not present, skipping');
+      return [];
+    }
     try {
       const files = await fs.readdir(this.migrationsPath);
       return files

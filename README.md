@@ -4,9 +4,17 @@ MAES is a Microsoft 365 extraction, analysis, reporting, and compliance platform
 
 ## Version
 
-- Current release: **v1.3.0**
+- Current release: **v1.3.1**
 - Upstream extractor reference: [`invictus-ir/Microsoft-Extractor-Suite`](https://github.com/invictus-ir/Microsoft-Extractor-Suite) (Tier 3 Exchange-only sidecar)
 - Upstream analyzer reference: [`LETHAL-FORENSICS/Microsoft-Analyzer-Suite`](https://github.com/LETHAL-FORENSICS/Microsoft-Analyzer-Suite)
+
+## What's New in v1.3.1
+
+Bug-fix release restoring clean boot and login on fresh deployments:
+
+- **API boots from a clean build.** Fixed a crash under Express 5 / path-to-regexp v8 in the compliance module (the optional-param route `/controls/:assessmentType?` is no longer valid syntax), and added the previously-undeclared `uuid` runtime dependency.
+- **Cleaner startup logs.** The optional API migration directory is now skipped gracefully when absent (the SQL schema is applied by the postgres init scripts).
+- **Frontend login no longer blocked by CSP.** The auth store now uses the same-origin API base (proxied by nginx via `/api/*`) instead of a hardcoded cross-origin `http://localhost:3000`.
 
 ## What's New in v1.3.0
 

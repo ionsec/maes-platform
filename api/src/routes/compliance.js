@@ -126,7 +126,7 @@ router.get('/organization/:organizationId/credentials-status',
 );
 
 // Get available compliance controls
-router.get('/controls/:assessmentType?', authenticateToken, async (req, res) => {
+const getControls = async (req, res) => {
   try {
     const { pool } = require('../services/database');
     const assessmentType = req.params.assessmentType || 'cis_v400';
@@ -183,12 +183,17 @@ router.get('/controls/:assessmentType?', authenticateToken, async (req, res) => 
 
   } catch (error) {
     logger.error('Error fetching compliance controls:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Failed to fetch compliance controls',
-      message: error.message 
+      message: error.message
     });
   }
-});
+};
+
+// Register both with and without the optional assessmentType path segment
+// (path-to-regexp v8 / Express 5 dropped the `?` optional-param syntax).
+router.get('/controls', authenticateToken, getControls);
+router.get('/controls/:assessmentType', authenticateToken, getControls);
 
 // Start compliance assessment
 router.post('/assess/:organizationId', 
