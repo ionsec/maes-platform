@@ -204,21 +204,49 @@ const getQueueStatistics = async (queue) => {
   };
 };
 
-// Cancel job
+// Cancel job by BullMQ job id
 const cancelJob = async (jobId, queueType = 'extraction') => {
   try {
     const queue = queueType === 'extraction' ? extractionQueue : analysisQueue;
     const job = await queue.getJob(jobId);
-    
+
     if (job) {
       await job.remove();
       logger.info(`Job ${jobId} cancelled successfully`);
       return true;
     }
-    
+
     return false;
   } catch (error) {
     logger.error('Failed to cancel job:', error);
+    throw error;
+  }
+};
+
+// Cancel a job by its entity id (extraction.id / analysisJob.id) stored in the
+// job data. Jobs are enqueued without a custom jobId, so we scan the queue's
+// pending states for a match and remove it. Returns the number removed.
+const cancelJobByEntityId = async (entityId, queueType = 'extraction') => {
+  try {
+    const queue = queueType === 'extraction' ? extractionQueue : analysisQueue;
+    const states = ['waiting', 'delayed', 'active', 'prioritized', 'waiting-children'];
+    const idKey = queueType === 'extraction' ? 'extractionId' : 'analysisId';
+
+    const candidates = await queue.getJobs(states);
+    const matches = candidates.filter((job) => job.data && job.data[idKey] === entityId);
+
+    for (const job of matches) {
+      try {
+        await job.remove();
+        logger.info(`Cancelled ${queueType} job ${job.id} for entity ${entityId}`);
+      } catch (removeError) {
+        logger.warn(`Failed to remove job ${job.id}:`, removeError.message);
+      }
+    }
+
+    return matches.length;
+  } catch (error) {
+    logger.error(`Failed to cancel ${queueType} job by entity id:`, error);
     throw error;
   }
 };
@@ -281,6 +309,7 @@ module.exports = {
   createOffboardingJob,
   getQueueStats,
   cancelJob,
+  cancelJobByEntityId,
   cleanupJobs,
   extractionQueue,
   analysisQueue

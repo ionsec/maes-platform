@@ -205,14 +205,28 @@ app.use('/api/docs', swaggerUi.serve);
 app.get('/api/docs', swaggerUi.setup(swaggerSpecs, swaggerOptions));
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: process.env.npm_package_version || '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    const healthService = require('./services/healthService');
+    const health = await healthService.checkSystemHealth();
+    const statuses = Object.values(health).filter((v) => v === 'healthy' || v === 'unhealthy');
+    health.overallStatus = statuses.includes('unhealthy')
+      ? 'unhealthy'
+      : statuses.length > 0
+        ? 'healthy'
+        : 'degraded';
+    health.version = process.env.npm_package_version || '1.0.0';
+    health.environment = process.env.NODE_ENV || 'development';
+    res.json(health);
+  } catch (error) {
+    logger.error('Health check error:', error);
+    res.json({
+      status: 'unhealthy',
+      overallStatus: 'unhealthy',
+      api: 'unhealthy',
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Routes

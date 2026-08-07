@@ -1,6 +1,8 @@
 const express = require('express');
+const fs = require('fs');
 const { body, query, validationResult } = require('express-validator');
-const { Report, User } = require('../services/models');
+const { Report } = require('../services/models');
+const { generateReport } = require('../services/reportGenerator');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
@@ -12,12 +14,12 @@ router.use(authenticateToken);
 router.use(apiRateLimiter);
 
 // Get reports with pagination and filtering
-router.get('/', 
+router.get('/',
   [
     query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
     query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
     query('type').optional().isIn(['executive_summary', 'incident_report', 'compliance_report', 'threat_analysis', 'user_activity', 'system_health', 'custom']).withMessage('Invalid report type'),
-    query('status').optional().isIn(['pending', 'generating', 'completed', 'failed']).withMessage('Invalid status')
+    query('status').optional().isIn(['pending', 'completed', 'failed']).withMessage('Invalid status')
   ],
   async (req, res) => {
     try {
@@ -33,30 +35,20 @@ router.get('/',
       const limit = parseInt(req.query.limit) || 20;
       const offset = (page - 1) * limit;
 
-      const where = { organizationId: req.organizationId };
-      
-      if (req.query.type) where.type = req.query.type;
-      if (req.query.status) where.status = req.query.status;
-
-      const { count, rows } = await Report.findAndCountAll({
-        where,
-        include: [{
-          model: User,
-          as: 'creator',
-          attributes: ['id', 'username', 'firstName', 'lastName']
-        }],
+      const { rows, total } = await Report.listByOrganization(req.organizationId, {
+        type: req.query.type,
+        status: req.query.status,
         limit,
-        offset,
-        order: [['created_at', 'DESC']]
+        offset
       });
 
       res.json({
         success: true,
         reports: rows,
         pagination: {
-          total: count,
+          total,
           page,
-          pages: Math.ceil(count / limit),
+          pages: Math.ceil(total / limit),
           limit
         }
       });
@@ -73,16 +65,7 @@ router.get('/',
 // Get single report
 router.get('/:id', async (req, res) => {
   try {
-    const report = await Report.findOne({
-      where: {
-        id: req.params.id,
-        organizationId: req.organizationId
-      },
-      include: [{
-        model: User,
-        attributes: ['id', 'username', 'firstName', 'lastName']
-      }]
-    });
+    const report = await Report.findById(req.params.id, req.organizationId);
 
     if (!report) {
       return res.status(404).json({
@@ -104,7 +87,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create new report
-router.post('/', 
+router.post('/',
   requirePermission('canViewReports'),
   [
     body('name').isLength({ min: 3, max: 255 }).withMessage('Name must be between 3 and 255 characters'),
@@ -123,9 +106,9 @@ router.post('/',
         });
       }
 
-      const { name, type, format = 'pdf', parameters = {}, schedule = {} } = req.body;
+      const { name, type, format = 'html', parameters = {}, schedule = {} } = req.body;
 
-      // Create report record
+      // Create the report record as pending.
       const report = await Report.create({
         organizationId: req.organizationId,
         createdBy: req.user.id,
@@ -137,11 +120,23 @@ router.post('/',
         status: 'pending'
       });
 
-      // TODO: Queue report generation job
+      // Generate the artifact. PDF/DOCX/XLSX are rendered as HTML for now; the
+      // download endpoint streams whatever file was produced.
+      try {
+        await generateReport(report);
+      } catch (genError) {
+        logger.error('Report generation failed:', genError);
+        await Report.update(report.id, {
+          status: 'failed',
+          error: genError.message
+        });
+      }
+
+      const updated = await Report.findById(report.id, req.organizationId);
 
       res.status(201).json({
         success: true,
-        report
+        report: updated
       });
 
     } catch (error) {
@@ -156,12 +151,7 @@ router.post('/',
 // Download report
 router.get('/:id/download', async (req, res) => {
   try {
-    const report = await Report.findOne({
-      where: {
-        id: req.params.id,
-        organizationId: req.organizationId
-      }
-    });
+    const report = await Report.findById(req.params.id, req.organizationId);
 
     if (!report) {
       return res.status(404).json({
@@ -175,12 +165,16 @@ router.get('/:id/download', async (req, res) => {
       });
     }
 
-    // TODO: Implement file download
-    res.json({
-      success: true,
-      message: 'File download would be implemented here',
-      filePath: report.filePath
-    });
+    if (!fs.existsSync(report.filePath)) {
+      return res.status(404).json({
+        error: 'Report file is missing'
+      });
+    }
+
+    const fileName = report.fileName || 'report';
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Type', fileName.endsWith('.json') ? 'application/json' : 'text/html');
+    res.sendFile(report.filePath);
 
   } catch (error) {
     logger.error('Download report error:', error);
@@ -191,16 +185,11 @@ router.get('/:id/download', async (req, res) => {
 });
 
 // Delete report
-router.delete('/:id', 
+router.delete('/:id',
   requirePermission('canViewReports'),
   async (req, res) => {
     try {
-      const report = await Report.findOne({
-        where: {
-          id: req.params.id,
-          organizationId: req.organizationId
-        }
-      });
+      const report = await Report.findById(req.params.id, req.organizationId);
 
       if (!report) {
         return res.status(404).json({
@@ -208,16 +197,23 @@ router.delete('/:id',
         });
       }
 
-      // Only allow deletion of own reports or if user is admin
-      if (report.createdBy !== req.user.id && req.user.role !== 'admin') {
+      // Only allow deletion of own reports or if user is admin/super_admin
+      if (report.created_by !== req.user.id && !['admin', 'super_admin'].includes(req.user.role)) {
         return res.status(403).json({
           error: 'Not authorized to delete this report'
         });
       }
 
-      await report.destroy();
+      // Clean up the generated file if it exists.
+      if (report.filePath && fs.existsSync(report.filePath)) {
+        try {
+          fs.unlinkSync(report.filePath);
+        } catch (unlinkError) {
+          logger.warn('Failed to remove report file:', unlinkError.message);
+        }
+      }
 
-      // TODO: Clean up generated file
+      await Report.remove(report.id, req.organizationId);
 
       res.json({
         success: true,

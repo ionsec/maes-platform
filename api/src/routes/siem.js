@@ -4,43 +4,14 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 const { pool } = require('../services/database');
+const { SiemConfig } = require('../services/models');
+const siemService = require('../services/siemService');
 
 const router = express.Router();
 
 // Apply authentication and rate limiting
 router.use(authenticateToken);
 router.use(apiRateLimiter);
-
-// In-memory storage for SIEM configurations (in production, use database)
-let siemConfigurations = [
-  {
-    id: 1,
-    organizationId: 1,
-    name: 'Primary Splunk Instance',
-    type: 'splunk',
-    endpoint: 'https://splunk.example.com:8088/services/collector',
-    apiKey: 'your-hec-token-here',
-    format: 'json',
-    enabled: true,
-    exportFrequency: 'hourly',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 2,
-    organizationId: 1,
-    name: 'QRadar SIEM',
-    type: 'qradar',
-    endpoint: 'https://qradar.example.com/api/siem/events',
-    apiKey: 'qradar-api-key',
-    format: 'json',
-    enabled: false,
-    exportFrequency: 'daily',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  }
-];
-let configIdCounter = 3;
 
 /**
  * @swagger
@@ -56,9 +27,10 @@ let configIdCounter = 3;
  */
 router.get('/configurations', requirePermission('canViewSettings'), async (req, res) => {
   try {
+    const configurations = await SiemConfig.listByOrganization(req.organizationId);
     res.json({
       success: true,
-      configurations: siemConfigurations.filter(config => config.organizationId === req.organizationId)
+      configurations
     });
   } catch (error) {
     logger.error('Failed to fetch SIEM configurations:', error);
@@ -95,15 +67,10 @@ router.post('/configurations',
         });
       }
 
-      const newConfig = {
-        id: configIdCounter++,
+      const newConfig = await SiemConfig.create({
         organizationId: req.organizationId,
-        ...req.body,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      siemConfigurations.push(newConfig);
+        ...req.body
+      });
 
       res.status(201).json({
         success: true,
@@ -135,24 +102,16 @@ router.put('/configurations/:id',
   ],
   async (req, res) => {
     try {
-      const configId = parseInt(req.params.id);
-      const configIndex = siemConfigurations.findIndex(config => 
-        config.id === configId && config.organizationId === req.organizationId
-      );
-
-      if (configIndex === -1) {
+      const existing = await SiemConfig.findById(req.params.id, req.organizationId);
+      if (!existing) {
         return res.status(404).json({ error: 'Configuration not found' });
       }
 
-      siemConfigurations[configIndex] = {
-        ...siemConfigurations[configIndex],
-        ...req.body,
-        updatedAt: new Date().toISOString()
-      };
+      const updated = await SiemConfig.update(req.params.id, req.body);
 
       res.json({
         success: true,
-        configuration: siemConfigurations[configIndex]
+        configuration: updated
       });
     } catch (error) {
       logger.error('Failed to update SIEM configuration:', error);
@@ -170,16 +129,12 @@ router.put('/configurations/:id',
  */
 router.delete('/configurations/:id', requirePermission('canEditSettings'), async (req, res) => {
   try {
-    const configId = parseInt(req.params.id);
-    const configIndex = siemConfigurations.findIndex(config => 
-      config.id === configId && config.organizationId === req.organizationId
-    );
-
-    if (configIndex === -1) {
+    const existing = await SiemConfig.findById(req.params.id, req.organizationId);
+    if (!existing) {
       return res.status(404).json({ error: 'Configuration not found' });
     }
 
-    siemConfigurations.splice(configIndex, 1);
+    await SiemConfig.remove(req.params.id, req.organizationId);
 
     res.json({
       success: true,
@@ -200,30 +155,32 @@ router.delete('/configurations/:id', requirePermission('canEditSettings'), async
  */
 router.post('/configurations/:id/test', requirePermission('canExportData'), async (req, res) => {
   try {
-    const configId = parseInt(req.params.id);
-    const config = siemConfigurations.find(config => 
-      config.id === configId && config.organizationId === req.organizationId
-    );
+    const config = await SiemConfig.findById(req.params.id, req.organizationId);
 
     if (!config) {
       return res.status(404).json({ error: 'Configuration not found' });
     }
 
-    // Mock connection test - in production, this would actually test the endpoint
-    const isSuccessful = Math.random() > 0.3; // 70% success rate for demo
+    // Perform a real connectivity check against the configured endpoint.
+    const result = await siemService.testConnection(config);
 
-    if (isSuccessful) {
+    await SiemConfig.update(config.id, {
+      lastTestAt: new Date().toISOString(),
+      lastTestStatus: result.success ? 'success' : 'failed'
+    });
+
+    if (result.success) {
       res.json({
         success: true,
-        message: `Successfully connected to ${config.name}`,
-        responseTime: Math.floor(Math.random() * 500) + 100,
+        message: result.message,
+        responseTime: result.responseTime,
         timestamp: new Date().toISOString()
       });
     } else {
       res.status(400).json({
         success: false,
-        error: `Connection failed: Unable to reach ${config.endpoint}`,
-        details: 'Network timeout or authentication failure'
+        error: result.message,
+        details: `Response time: ${result.responseTime}ms`
       });
     }
   } catch (error) {
@@ -241,10 +198,7 @@ router.post('/configurations/:id/test', requirePermission('canExportData'), asyn
  */
 router.post('/configurations/:id/export', requirePermission('canExportData'), async (req, res) => {
   try {
-    const configId = parseInt(req.params.id);
-    const config = siemConfigurations.find(config => 
-      config.id === configId && config.organizationId === req.organizationId
-    );
+    const config = await SiemConfig.findById(req.params.id, req.organizationId);
 
     if (!config) {
       return res.status(404).json({ error: 'Configuration not found' });
@@ -254,19 +208,29 @@ router.post('/configurations/:id/export', requirePermission('canExportData'), as
       return res.status(400).json({ error: 'Configuration is disabled' });
     }
 
-    // Mock export - in production, this would fetch and send real events
-    const mockEventCount = Math.floor(Math.random() * 100) + 10;
-    
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 500));
+    // Fetch real events from the database and POST them to the SIEM endpoint.
+    const result = await siemService.exportEvents(config, req.organizationId);
 
-    res.json({
-      success: true,
-      eventCount: mockEventCount,
-      format: config.format,
-      destination: config.name,
-      exportedAt: new Date().toISOString()
+    await SiemConfig.update(config.id, {
+      lastExportAt: new Date().toISOString()
     });
+
+    if (result.success) {
+      res.json({
+        success: true,
+        eventCount: result.eventCount,
+        format: config.format,
+        destination: config.name,
+        exportedAt: new Date().toISOString()
+      });
+    } else {
+      res.status(502).json({
+        success: false,
+        eventCount: result.eventCount,
+        error: result.message,
+        destination: config.name
+      });
+    }
   } catch (error) {
     logger.error('Failed to export to SIEM:', error);
     res.status(500).json({ error: 'Internal server error' });
