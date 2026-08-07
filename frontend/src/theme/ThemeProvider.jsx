@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ThemeProvider as MuiThemeProvider, CssBaseline } from '@mui/material';
-import { themes, getThemeById } from './themes';
+import { themes, getThemeById, DEFAULT_THEME_ID } from './themes';
 
 const ThemeContext = createContext();
 
@@ -13,7 +13,7 @@ export const useTheme = () => {
 };
 
 export const ThemeProvider = ({ children }) => {
-  const [currentThemeId, setCurrentThemeId] = useState('dark'); // Default to dark theme for DFIR
+  const [currentThemeId, setCurrentThemeId] = useState(DEFAULT_THEME_ID); // MAES Command is the design-system default
 
   useEffect(() => {
     // Load theme preference from localStorage
