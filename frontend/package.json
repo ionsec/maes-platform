@@ -46,7 +46,6 @@
     "lint": "eslint src/"
   },
   "overrides": {
-    "socket.io-parser": "4.2.6",
     "yaml": "1.10.3"
   },
   "browserslist": {
