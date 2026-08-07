@@ -29,10 +29,7 @@ export const useAuthStore = create(
             isLoading: false,
             error: null
           })
-          
-          // Set axios default header for future requests
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-          
+
           console.log('Auth state set, returning success')
           
           // Verify the state was set correctly
@@ -64,7 +61,9 @@ export const useAuthStore = create(
         const { token } = get();
         if (token) {
           try {
-            await axios.post(`${API_URL}/api/auth/logout`)
+            await axios.post(`${API_URL}/api/auth/logout`, {}, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
           } catch (error) {
             // Ignore logout errors - we're clearing the session anyway
             console.log('Logout error (ignored):', error.response?.status)
@@ -76,8 +75,6 @@ export const useAuthStore = create(
           isAuthenticated: false,
           error: null
         })
-        // Clear axios default header
-        delete axios.defaults.headers.common['Authorization']
       },
 
       refreshToken: async () => {
@@ -96,10 +93,7 @@ export const useAuthStore = create(
             token: newToken,
             isAuthenticated: true
           })
-          
-          // Update axios default header
-          axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`
-          
+
           return true
         } catch (error) {
           console.log('Token refresh failed:', error.response?.status)
@@ -110,29 +104,53 @@ export const useAuthStore = create(
             isAuthenticated: false,
             error: null
           })
-          delete axios.defaults.headers.common['Authorization']
           return false
         }
       },
 
       clearError: () => set({ error: null }),
-      
+
+      // Revalidate the stored user against the server on app start / hydration.
+      // authenticateToken re-fetches the user from the DB, so this refreshes
+      // role + permissions and clears the persisted copy if the token is invalid.
+      revalidateUser: async () => {
+        const { token } = get()
+        if (!token) {
+          set({ isHydrated: true })
+          return false
+        }
+        try {
+          const response = await axios.get(`${API_URL}/api/auth/me`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+          const freshUser = response.data?.user
+          if (freshUser) {
+            set({ user: freshUser, isAuthenticated: true, isHydrated: true })
+            return true
+          }
+          set({ isHydrated: true })
+          return false
+        } catch (error) {
+          // Invalid/expired token — clear persisted session.
+          localStorage.removeItem('auth-storage')
+          set({
+            user: null,
+            token: null,
+            isAuthenticated: false,
+            isHydrated: true,
+            error: null
+          })
+          return false
+        }
+      },
+
       updateUser: (updates) => {
         const { user } = get()
         if (user) {
           set({ user: { ...user, ...updates } })
         }
       },
-      
-      // Initialize axios headers from stored token
-      initializeAuth: () => {
-        const { token } = get()
-        if (token) {
-          axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-          console.log('Auth initialized with stored token')
-        }
-      },
-      
+
       // Debug function to clear all auth data
       clearAllData: () => {
         localStorage.removeItem('auth-storage')
@@ -144,7 +162,6 @@ export const useAuthStore = create(
           error: null,
           isHydrated: true
         })
-        delete axios.defaults.headers.common['Authorization']
         console.log('All auth data cleared')
       }
     }),
@@ -161,16 +178,17 @@ export const useAuthStore = create(
           hasToken: !!state?.token,
           hasUser: !!state?.user
         })
-        // Set axios headers after rehydration
+        // Auth headers are injected per-request by the interceptor in
+        // utils/axios.js, so nothing to set here.
         if (state?.token) {
-          axios.defaults.headers.common['Authorization'] = `Bearer ${state.token}`
-          console.log('Axios headers set after rehydration')
-        }
-        // Mark as hydrated when rehydration completes
-        if (state) {
+          // Revalidate the persisted user against the server so role/permissions
+          // are current (and so an invalid/expired token clears the session).
           setTimeout(() => {
-            useAuthStore.setState({ isHydrated: true })
-          }, 50)
+            useAuthStore.getState().revalidateUser()
+          }, 0)
+        } else {
+          // No token — still mark hydration complete so the app can render.
+          useAuthStore.setState({ isHydrated: true })
         }
       }
     }

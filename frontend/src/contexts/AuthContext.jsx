@@ -15,17 +15,21 @@ export const AuthProvider = ({ children }) => {
   const user = useAuthStore((state) => state.user)
   const token = useAuthStore((state) => state.token)
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const isHydrated = useAuthStore((state) => state.isHydrated)
   const login = useAuthStore((state) => state.login)
   const logout = useAuthStore((state) => state.logout)
   const updateUser = useAuthStore((state) => state.updateUser)
+  const revalidateUser = useAuthStore((state) => state.revalidateUser)
 
   const value = {
     user,
     token,
     isAuthenticated,
+    isHydrated,
     login,
     logout,
-    updateUser
+    updateUser,
+    revalidateUser
   }
 
   return (

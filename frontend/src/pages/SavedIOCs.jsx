@@ -8,20 +8,32 @@ import {
 import {
   Delete, Save, Refresh, Search, Warning, Security, Link as LinkIcon
 } from '@mui/icons-material';
+import { Pagination } from '@mui/material';
 import axios from '../utils/axios';
+import { detectIocType } from '../utils/iocType';
+
+const PAGE_SIZE = 20;
 
 const SavedIOCs = () => {
   const [savedIOCs, setSavedIOCs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [newIOC, setNewIOC] = useState({ value: '', type: 'ip', notes: '' });
+  const [newIOC, setNewIOC] = useState({ value: '', type: '', notes: '' });
   const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
 
-  const fetchSavedIOCs = async () => {
+  const fetchSavedIOCs = async (targetPage = page) => {
     try {
       setLoading(true);
-      const res = await axios.get('/threat-intel/saved');
+      const res = await axios.get('/threat-intel/saved', {
+        params: { page: targetPage, limit: PAGE_SIZE }
+      });
       setSavedIOCs(res.data.iocs || []);
+      setTotalPages(res.data.pagination?.total_pages || 1);
+      setTotal(res.data.pagination?.total || 0);
+      setPage(res.data.pagination?.page || targetPage);
     } catch (err) {
       setError('Failed to load saved IOCs');
       setSavedIOCs([]);
@@ -30,12 +42,19 @@ const SavedIOCs = () => {
     }
   };
 
+  // Auto-detect the IOC type from the entered value, or default to the manual selection.
+  const handleAutoDetect = () => {
+    const detected = detectIocType(newIOC.value);
+    setNewIOC((prev) => ({ ...prev, type: detected }));
+  };
+
   const handleAddIOC = async () => {
+    const type = newIOC.type || detectIocType(newIOC.value);
     try {
-      await axios.post('/threat-intel/saved', newIOC);
+      await axios.post('/threat-intel/saved', { ...newIOC, type });
       setAddDialogOpen(false);
-      setNewIOC({ value: '', type: 'ip', notes: '' });
-      fetchSavedIOCs();
+      setNewIOC({ value: '', type: '', notes: '' });
+      fetchSavedIOCs(1);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to save IOC');
     }
@@ -44,7 +63,9 @@ const SavedIOCs = () => {
   const handleDeleteIOC = async (iocId) => {
     try {
       await axios.delete(`/threat-intel/saved/${iocId}`);
-      fetchSavedIOCs();
+      // If this was the last row on the page, step back one page.
+      const targetPage = savedIOCs.length === 1 && page > 1 ? page - 1 : page;
+      fetchSavedIOCs(targetPage);
     } catch (err) {
       setError('Failed to delete IOC');
     }
@@ -152,6 +173,21 @@ const SavedIOCs = () => {
         </Table>
       </TableContainer>
 
+      {total > 0 && (
+        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 2 }}>
+          <Typography variant="caption" color="text.secondary">
+            {total} saved IOC{total !== 1 ? 's' : ''}
+          </Typography>
+          <Pagination
+            count={totalPages}
+            page={page}
+            onChange={(e, value) => fetchSavedIOCs(value)}
+            color="primary"
+            size="small"
+          />
+        </Stack>
+      )}
+
       <Dialog open={addDialogOpen} onClose={() => setAddDialogOpen(false)}>
         <DialogTitle>Save IOC</DialogTitle>
         <DialogContent sx={{ minWidth: 400, pt: 2 }}>
@@ -161,20 +197,26 @@ const SavedIOCs = () => {
             placeholder="1.2.3.4, evil.com, or file hash"
             value={newIOC.value}
             onChange={(e) => setNewIOC({ ...newIOC, value: e.target.value })}
+            onBlur={() => setNewIOC((prev) => ({ ...prev, type: detectIocType(prev.value) }))}
             sx={{ mb: 2 }}
           />
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Type</InputLabel>
-            <Select
-              value={newIOC.type}
-              label="Type"
-              onChange={(e) => setNewIOC({ ...newIOC, type: e.target.value })}
-            >
-              <MenuItem value="ip">IP Address</MenuItem>
-              <MenuItem value="domain">Domain</MenuItem>
-              <MenuItem value="hash">File Hash</MenuItem>
-            </Select>
-          </FormControl>
+          <Stack direction="row" spacing={1} sx={{ mb: 2 }} alignItems="center">
+            <FormControl sx={{ minWidth: 180 }}>
+              <InputLabel>Type</InputLabel>
+              <Select
+                value={newIOC.type}
+                label="Type"
+                onChange={(e) => setNewIOC({ ...newIOC, type: e.target.value })}
+              >
+                <MenuItem value="ip">IP Address</MenuItem>
+                <MenuItem value="domain">Domain</MenuItem>
+                <MenuItem value="hash">File Hash</MenuItem>
+              </Select>
+            </FormControl>
+            <Button variant="outlined" size="small" onClick={handleAutoDetect} disabled={!newIOC.value}>
+              Auto Detect
+            </Button>
+          </Stack>
           <TextField
             fullWidth
             label="Notes"

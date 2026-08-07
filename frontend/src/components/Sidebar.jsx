@@ -35,87 +35,163 @@ import {
 } from '@mui/icons-material'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { getApiUrl } from '../config/api'
+import { useAuth } from '../contexts/AuthContext'
 
 const drawerWidth = 240
 
+// Compact role -> permission fallback mirroring api/src/middleware/auth.js
+// ROLE_PERMISSIONS. Only the keys the sidebar gates on are included. A user's
+// stored permissions (from /auth/me) take precedence over this fallback.
+const ROLE_PERMISSIONS = {
+  super_admin: {
+    canManageExtractions: true,
+    canRunAnalysis: true,
+    canViewReports: true,
+    canManageAlerts: true,
+    canManageUsers: true,
+    canUseAdvancedAnalytics: true,
+    canAccessThreatIntel: true,
+    canManageIntegrations: true,
+    canExportData: true,
+    canManageSystemSettings: true,
+    canManageCompliance: true,
+    canManageIncidents: true
+  },
+  admin: {
+    canManageExtractions: true,
+    canRunAnalysis: true,
+    canViewReports: true,
+    canManageAlerts: true,
+    canManageUsers: true,
+    canUseAdvancedAnalytics: true,
+    canAccessThreatIntel: true,
+    canManageIntegrations: true,
+    canExportData: true,
+    canManageSystemSettings: true,
+    canManageCompliance: true,
+    canManageIncidents: true
+  },
+  analyst: {
+    canManageExtractions: true,
+    canRunAnalysis: true,
+    canViewReports: true,
+    canManageAlerts: true,
+    canUseAdvancedAnalytics: true,
+    canAccessThreatIntel: true,
+    canExportData: true,
+    canManageCompliance: true,
+    canManageIncidents: true
+  },
+  viewer: {
+    canViewReports: true
+  }
+}
+
+// Evaluate whether the current user holds a given permission, applying the same
+// precedence as the backend middleware: stored permissions first, then role map.
+function hasPermission(user, permission) {
+  if (!permission) return true // unguarded items are visible to all
+  if (!user) return false
+  const stored = user.permissions
+  if (stored && typeof stored === 'object' && permission in stored) {
+    return !!stored[permission]
+  }
+  return !!(ROLE_PERMISSIONS[user.role] && ROLE_PERMISSIONS[user.role][permission])
+}
+
 const menuItems = [
-  { 
-    text: 'Command Center', 
-    icon: <Shield />, 
+  {
+    text: 'Command Center',
+    icon: <Shield />,
     path: '/dashboard',
     description: 'Security Operations Dashboard'
   },
-  { 
-    text: 'Data Extraction', 
-    icon: <Storage />, 
+  {
+    text: 'Data Extraction',
+    icon: <Storage />,
     path: '/extractions',
-    description: 'M365 Evidence Collection'
+    description: 'M365 Evidence Collection',
+    permission: 'canManageExtractions'
   },
-  { 
-    text: 'Forensic Analysis', 
-    icon: <Search />, 
+  {
+    text: 'Forensic Analysis',
+    icon: <Search />,
     path: '/analysis',
-    description: 'Threat Detection & Investigation'
+    description: 'Threat Detection & Investigation',
+    permission: 'canRunAnalysis'
   },
-  { 
-    text: 'Security Alerts', 
-    icon: <Warning />, 
+  {
+    text: 'Security Alerts',
+    icon: <Warning />,
     path: '/alerts',
-    description: 'Threat Intelligence & IOCs'
+    description: 'Threat Intelligence & IOCs',
+    permission: 'canManageAlerts'
   },
-  { 
-    text: 'Incident Response', 
-    icon: <Timeline />, 
+  {
+    text: 'Incident Response',
+    icon: <Timeline />,
     path: '/incidents',
-    description: 'Case Management & Playbooks'
+    description: 'Case Management & Playbooks',
+    permission: 'canManageIncidents'
   },
-  { 
-    text: 'Threat Intelligence', 
-    icon: <BugReport />, 
+  {
+    text: 'Threat Intelligence',
+    icon: <BugReport />,
     path: '/threat-intel',
-    description: 'IOC Enrichment & Lookup'
+    description: 'IOC Enrichment & Lookup',
+    permission: 'canAccessThreatIntel'
   },
-  { 
-    text: 'Behavior Analytics', 
-    icon: <Fingerprint />, 
+  {
+    text: 'Behavior Analytics',
+    icon: <Fingerprint />,
     path: '/ueba',
-    description: 'User Entity Behavior Analytics'
+    description: 'User Entity Behavior Analytics',
+    permission: 'canUseAdvancedAnalytics'
   },
-  { 
-    text: 'Investigation Reports', 
-    icon: <Assessment />, 
+  {
+    text: 'Investigation Reports',
+    icon: <Assessment />,
     path: '/reports',
-    description: 'DFIR Documentation'
+    description: 'DFIR Documentation',
+    permission: 'canViewReports'
   },
-  { 
-    text: 'SIEM Integration', 
-    icon: <ConnectedTv />, 
+  {
+    text: 'SIEM Integration',
+    icon: <ConnectedTv />,
     path: '/siem',
-    description: 'External Security Systems'
+    description: 'External Security Systems',
+    permission: 'canManageIntegrations'
   },
-  { 
-    text: 'Compliance Assessment', 
-    icon: <Security />, 
+  {
+    text: 'Compliance Assessment',
+    icon: <Security />,
     path: '/compliance',
-    description: 'CIS Benchmark & Security Controls'
+    description: 'CIS Benchmark & Security Controls',
+    permission: 'canManageCompliance'
   },
-  { 
-    text: 'System Configuration', 
-    icon: <Settings />, 
+  {
+    text: 'System Configuration',
+    icon: <Settings />,
     path: '/settings',
-    description: 'Platform Settings'
+    description: 'Platform Settings',
+    permission: 'canManageSystemSettings'
   },
-  { 
-    text: 'User Management', 
-    icon: <People />, 
+  {
+    text: 'User Management',
+    icon: <People />,
     path: '/users',
-    description: 'Manage Users & Permissions'
+    description: 'Manage Users & Permissions',
+    permission: 'canManageUsers'
   }
 ]
 
 const Sidebar = ({ open, onClose }) => {
   const navigate = useNavigate()
   const location = useLocation()
+  const { user } = useAuth()
+
+  // Only render menu items the current user is permitted to see.
+  const visibleItems = menuItems.filter((item) => hasPermission(user, item.permission))
 
   const handleNavigation = (path) => {
     // Check if it's an external link or monitoring service
@@ -139,7 +215,7 @@ const Sidebar = ({ open, onClose }) => {
     <Box>
       <Toolbar />
       <List>
-        {menuItems.map((item) => (
+        {visibleItems.map((item) => (
           <ListItem key={item.text} disablePadding>
             <ListItemButton
               selected={location.pathname === item.path}
