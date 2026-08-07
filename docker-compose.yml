@@ -63,6 +63,7 @@ services:
       SIEM_RATE_LIMIT: ${SIEM_RATE_LIMIT:-50}
       PORT: 3000
       ENABLE_DOCKER_LOGS: ${ENABLE_DOCKER_LOGS:-false}
+      FIRST_USER_ADMIN: ${FIRST_USER_ADMIN:-true}
       # Domain configuration for CORS
       DOMAIN: ${DOMAIN:-localhost}
       PUBLIC_IP: ${PUBLIC_IP:-}

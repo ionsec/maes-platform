@@ -269,7 +269,8 @@ app.use((err, req, res, next) => {
 });
 
 // 404 handler
-app.use('*', (req, res) => {
+// Express 5 removed the '*' wildcard; a path-less middleware acts as the catch-all.
+app.use((req, res) => {
   res.status(404).json({
     error: 'Not found',
     message: 'The requested resource was not found'

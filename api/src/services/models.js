@@ -55,9 +55,14 @@ const UserModel = {
   // Update user
   update: async (id, updates) => {
     // Whitelist of allowed fields to prevent SQL injection
+    // Whitelist of allowed fields to prevent SQL injection. NOTE: privileged
+    // fields (role, permissions, organizationId, isActive) remain here because
+    // the admin user-management routes legitimately set them through this method.
+    // They must never be reachable from a self-service profile update — that is
+    // enforced at the route layer via an explicit allowlist (routes/user.js).
     const allowedFields = [
       'username', 'email', 'firstName', 'lastName', 'phone', 'organization',
-      'department', 'jobTitle', 'location', 'bio', 'profilePicture', 
+      'department', 'jobTitle', 'location', 'bio', 'profilePicture',
       'preferences', 'isActive', 'organizationId', 'role', 'permissions'
     ];
     

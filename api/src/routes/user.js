@@ -256,8 +256,22 @@ router.put('/profile',
         return res.status(404).json({ error: 'User not found' });
       }
 
+      // Only allow a fixed set of self-editable profile fields. Never pass the
+      // whole request body through — a client could smuggle privileged keys.
+      const profileFields = [
+        'username', 'firstName', 'lastName', 'email', 'phone', 'organization',
+        'department', 'jobTitle', 'location', 'bio', 'profilePicture',
+        'preferences'
+      ];
+      const profileUpdates = {};
+      profileFields.forEach((field) => {
+        if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+          profileUpdates[field] = req.body[field];
+        }
+      });
+
       // Update user profile in database
-      const updatedUser = await User.update(userId, req.body);
+      const updatedUser = await User.update(userId, profileUpdates);
       
       if (!updatedUser) {
         return res.status(500).json({ error: 'Failed to update profile' });

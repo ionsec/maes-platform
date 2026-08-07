@@ -8,16 +8,23 @@ After installing the platform, complete these steps before running extractions o
 1. Register the First User
 --------------------------
 
-Navigate to ``https://localhost/register`` and create your account. The first registered user gets the ``viewer`` role.
+Navigate to ``https://localhost/register`` and create your account. **The very
+first registered user is automatically bootstrapped as ``super_admin``** with
+full permissions, so the platform is usable immediately after first-run — there
+is no separate admin to configure.
 
-To promote to admin:
+Subsequent registrations are created as ``viewer`` users.
+
+To disable automatic first-user promotion, set ``FIRST_USER_ADMIN=false`` in
+``.env`` before the first registration. If you need to change a role later,
+update it from the User Management page (admin) or directly:
 
 .. code-block:: sql
 
    -- Connect to the database
    docker compose exec postgres psql -U maes_user -d maes_db
 
-   -- Promote user to admin
+   -- Promote a user to admin
    UPDATE maes.users SET role = 'admin', permissions = '{"canManageExtractions":true,"canRunAnalysis":true,"canViewReports":true,"canManageAlerts":true,"canManageUsers":true,"canManageOrganization":true,"canManageCompliance":true}'::jsonb
    WHERE email = 'your-email@example.com';
 

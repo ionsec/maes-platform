@@ -103,6 +103,9 @@ Runtime Configuration
    * - ``ENABLE_DOCKER_LOGS``
      - ``false``
      - Enable Docker log collection (requires Docker socket mount)
+   * - ``FIRST_USER_ADMIN``
+     - ``true``
+     - Bootstrap the first registered user as ``super_admin`` (set ``false`` to require manual promotion)
    * - ``SIEM_EXPORT_LIMIT``
      - ``1000``
      - Max events per SIEM export
