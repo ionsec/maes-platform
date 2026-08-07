@@ -195,11 +195,14 @@ class UserBehaviorProfile {
 
   /**
    * Update baseline with new activity data
+   * @param {string} baselineId - baseline row id
+   * @param {object} activity - observed activity
+   * @param {object} [anomalyResult] - result from detectAnomalies, used to persist risk
    */
-  static async updateBaseline(baselineId, activity) {
+  static async updateBaseline(baselineId, activity, anomalyResult) {
     try {
       const currentResult = await pool.query(
-        `SELECT baseline_data FROM maes.ueba_baselines WHERE id = $1`,
+        `SELECT user_id, organization_id, baseline_data FROM maes.ueba_baselines WHERE id = $1`,
         [baselineId]
       );
 
@@ -207,7 +210,8 @@ class UserBehaviorProfile {
         return null;
       }
 
-      const baselineData = currentResult.rows[0].baseline_data;
+      const row = currentResult.rows[0];
+      const baselineData = row.baseline_data;
       const updated = { ...baselineData };
 
       // Update IP tracking
@@ -222,9 +226,12 @@ class UserBehaviorProfile {
         updated.unique_devices = currentAgents + 1;
       }
 
-      // Adjust risk score based on activity anomalies
-      if (updated.risk_score > 0) {
-        // Gradually decrease risk score over time as baseline adjusts
+      // Apply the anomaly risk detected for this activity. When anomalies are
+      // present the score reflects them (capped at 100); otherwise risk decays
+      // back toward zero as behavior returns to baseline.
+      if (anomalyResult && anomalyResult.total_risk_score > 0) {
+        updated.risk_score = Math.min(100, anomalyResult.total_risk_score);
+      } else if (updated.risk_score > 0) {
         updated.risk_score = Math.max(0, updated.risk_score - 1);
       }
 
@@ -233,9 +240,57 @@ class UserBehaviorProfile {
         [JSON.stringify(updated), baselineId]
       );
 
+      // Snapshot the resulting risk into history so the UI can chart trends.
+      if (anomalyResult) {
+        await this.recordRiskHistory(
+          row.user_id,
+          row.organization_id,
+          updated.risk_score || 0,
+          updated.confidence_level || 0,
+          anomalyResult.anomalies || []
+        );
+      }
+
       return updated;
     } catch (error) {
       logger.error('Error updating baseline:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Record a risk score snapshot for trend charting
+   */
+  static async recordRiskHistory(userId, organizationId, riskScore, confidenceLevel, anomalies) {
+    try {
+      await pool.query(
+        `INSERT INTO maes.ueba_risk_history
+           (user_id, organization_id, risk_score, confidence_level, anomaly_count, recorded_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
+        [userId, organizationId, riskScore, confidenceLevel, anomalies.length]
+      );
+    } catch (error) {
+      logger.error('Error recording UEBA risk history:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get risk score history for a user (for trend charts)
+   */
+  static async getRiskHistory(userId, organizationId, limit = 30) {
+    try {
+      const result = await pool.query(
+        `SELECT risk_score, confidence_level, anomaly_count, recorded_at
+         FROM maes.ueba_risk_history
+         WHERE user_id = $1 AND organization_id = $2
+         ORDER BY recorded_at ASC
+         LIMIT $3`,
+        [userId, organizationId, limit]
+      );
+      return result.rows;
+    } catch (error) {
+      logger.error('Error getting UEBA risk history:', error);
       throw error;
     }
   }

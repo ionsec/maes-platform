@@ -5,6 +5,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const speakeasy = require('speakeasy');
+const QRCode = require('qrcode');
 const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
@@ -256,8 +258,22 @@ router.put('/profile',
         return res.status(404).json({ error: 'User not found' });
       }
 
+      // Only allow a fixed set of self-editable profile fields. Never pass the
+      // whole request body through — a client could smuggle privileged keys.
+      const profileFields = [
+        'username', 'firstName', 'lastName', 'email', 'phone', 'organization',
+        'department', 'jobTitle', 'location', 'bio', 'profilePicture',
+        'preferences'
+      ];
+      const profileUpdates = {};
+      profileFields.forEach((field) => {
+        if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+          profileUpdates[field] = req.body[field];
+        }
+      });
+
       // Update user profile in database
-      const updatedUser = await User.update(userId, req.body);
+      const updatedUser = await User.update(userId, profileUpdates);
       
       if (!updatedUser) {
         return res.status(500).json({ error: 'Failed to update profile' });
@@ -620,41 +636,177 @@ router.get('/activity', async (req, res) => {
  * @swagger
  * /api/user/2fa/enable:
  *   post:
- *     summary: Enable two-factor authentication
+ *     summary: Start enrolling two-factor authentication (generates TOTP secret + QR)
  *     tags: [User]
  */
 router.post('/2fa/enable', async (req, res) => {
   try {
-    // This is a placeholder for 2FA implementation
-    // In a real app, you would generate QR code, verify TOTP, etc.
-    
-    const userIndex = users.findIndex(u => u.id === req.userId);
-    if (userIndex === -1) {
+    const userId = req.user?.id || req.userId;
+    const user = await User.findById(userId);
+
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    users[userIndex].twoFactorEnabled = true;
-    users[userIndex].updatedAt = new Date().toISOString();
+    // If already verified, keep the existing secret so the device stays enrolled.
+    if (user.mfa_enabled) {
+      return res.json({
+        success: true,
+        message: 'Two-factor authentication is already enabled'
+      });
+    }
 
-    // Log security activity
+    // Generate a fresh TOTP secret. issuer/label are used by authenticator apps.
+    const secret = speakeasy.generateSecret({
+      name: `MAES:${user.username || user.email}`
+    });
+
+    const otpauthUrl = speakeasy.otpauthURL({
+      secret: secret.base32,
+      label: user.email || user.username,
+      issuer: 'MAES'
+    });
+
+    const qrCode = await QRCode.toDataURL(otpauthUrl);
+
+    // Persist the secret now, but keep mfa_enabled false until the user
+    // confirms possession by submitting a valid code via /2fa/verify.
+    await User.update(userId, {
+      mfaEnabled: false,
+      mfaSecret: secret.base32
+    });
+
     userActivity.unshift({
-      userId: req.userId,
-      action: 'Two-factor authentication enabled',
+      userId,
+      action: 'Two-factor authentication enrollment started',
       type: 'security',
       timestamp: new Date().toISOString(),
-      details: '2FA enabled for account'
+      details: 'TOTP secret generated (awaiting verification)'
     });
 
     res.json({
       success: true,
-      message: 'Two-factor authentication enabled successfully',
-      qrCode: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUGAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' // Placeholder
+      message: 'Scan the QR code with your authenticator app, then confirm the code via /2fa/verify',
+      qrCode,
+      secret: secret.base32
     });
   } catch (error) {
     logger.error('Failed to enable 2FA:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+/**
+ * @swagger
+ * /api/user/2fa/verify:
+ *   post:
+ *     summary: Verify a TOTP code to complete 2FA enrollment or login step
+ *     tags: [User]
+ */
+router.post('/2fa/verify',
+  [body('token').isString().notEmpty().withMessage('Verification code is required')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Validation failed', details: errors.array() });
+      }
+
+      const userId = req.user?.id || req.userId;
+      const user = await User.findById(userId);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      if (!user.mfa_secret) {
+        return res.status(400).json({ error: '2FA enrollment not started. Call /2fa/enable first.' });
+      }
+
+      const token = String(req.body.token).replace(/\s+/g, '');
+      const verified = speakeasy.totp.verify({
+        secret: user.mfa_secret,
+        encoding: 'base32',
+        token,
+        window: 1
+      });
+
+      if (!verified) {
+        return res.status(401).json({ error: 'Invalid or expired verification code' });
+      }
+
+      await User.update(userId, { mfaEnabled: true });
+
+      userActivity.unshift({
+        userId,
+        action: 'Two-factor authentication verified',
+        type: 'security',
+        timestamp: new Date().toISOString(),
+        details: '2FA enabled for account'
+      });
+
+      res.json({ success: true, message: 'Two-factor authentication enabled successfully' });
+    } catch (error) {
+      logger.error('Failed to verify 2FA:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/user/2fa/disable:
+ *   post:
+ *     summary: Disable two-factor authentication (requires a valid TOTP code)
+ *     tags: [User]
+ */
+router.post('/2fa/disable',
+  [body('token').isString().notEmpty().withMessage('Verification code is required')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Validation failed', details: errors.array() });
+      }
+
+      const userId = req.user?.id || req.userId;
+      const user = await User.findById(userId);
+
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      if (!user.mfa_secret) {
+        return res.status(400).json({ error: '2FA is not enabled' });
+      }
+
+      const token = String(req.body.token).replace(/\s+/g, '');
+      const verified = speakeasy.totp.verify({
+        secret: user.mfa_secret,
+        encoding: 'base32',
+        token,
+        window: 1
+      });
+
+      if (!verified) {
+        return res.status(401).json({ error: 'Invalid or expired verification code' });
+      }
+
+      await User.update(userId, { mfaEnabled: false, mfaSecret: null });
+
+      userActivity.unshift({
+        userId,
+        action: 'Two-factor authentication disabled',
+        type: 'security',
+        timestamp: new Date().toISOString(),
+        details: '2FA disabled for account'
+      });
+
+      res.json({ success: true, message: 'Two-factor authentication disabled' });
+    } catch (error) {
+      logger.error('Failed to disable 2FA:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+);
 
 /**
  * @swagger

@@ -336,51 +336,6 @@ router.put('/:userId', authenticateToken, requirePermission('canManageUsers'), a
   }
 });
 
-// Update user permissions
-router.patch('/:userId/permissions', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { permissions } = req.body;
-
-    if (!permissions || typeof permissions !== 'object') {
-      return res.status(400).json({ error: 'Valid permissions object is required' });
-    }
-
-    // Find the user first
-    const user = await User.findById(userId);
-
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    // Check organization access
-    if (user.organization_id !== req.organizationId && req.user.role !== 'super_admin') {
-      return res.status(403).json({ error: 'Access denied to this user' });
-    }
-
-    // Update user permissions
-    const updatedUser = await User.update(userId, { permissions });
-
-    if (!updatedUser) {
-      return res.status(500).json({ error: 'Failed to update user permissions' });
-    }
-
-    logger.info(`Updated permissions for user: ${userId}`);
-
-    res.json({
-      success: true,
-      message: 'User permissions updated successfully',
-      permissions: typeof updatedUser.permissions === 'string' 
-        ? JSON.parse(updatedUser.permissions) 
-        : updatedUser.permissions
-    });
-
-  } catch (error) {
-    logger.error('Update user permissions error:', error);
-    res.status(500).json({ error: 'Failed to update user permissions' });
-  }
-});
-
 // Change user password
 router.patch('/:userId/password', authenticateToken, requirePermission('canManageUsers'), async (req, res) => {
   try {
@@ -475,8 +430,13 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
 
     const user = await User.findById(userId);
 
-    if (!user || user.organization_id !== req.organizationId) {
+    if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check organization access — super_admin may manage cross-org users
+    if (user.organization_id !== req.organizationId && req.user.role !== 'super_admin') {
+      return res.status(403).json({ error: 'Access denied to this user' });
     }
 
     // Don't allow users to modify their own permissions unless they are super admin

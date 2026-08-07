@@ -259,6 +259,25 @@ const ROLE_PERMISSIONS = {
   }
 };
 
+// Org-scoped roles map onto the closest base role. admin/analyst/viewer act
+// within a single organization; only super_admin spans organizations, so these
+// inherit the org-bounded base permissions rather than cross-org access.
+ROLE_PERMISSIONS.client_admin = ROLE_PERMISSIONS.admin;
+ROLE_PERMISSIONS.mssp_admin = ROLE_PERMISSIONS.admin;
+ROLE_PERMISSIONS.standalone_admin = ROLE_PERMISSIONS.admin;
+ROLE_PERMISSIONS.client_analyst = ROLE_PERMISSIONS.analyst;
+ROLE_PERMISSIONS.mssp_analyst = ROLE_PERMISSIONS.analyst;
+ROLE_PERMISSIONS.standalone_analyst = ROLE_PERMISSIONS.analyst;
+ROLE_PERMISSIONS.client_viewer = ROLE_PERMISSIONS.viewer;
+ROLE_PERMISSIONS.standalone_viewer = ROLE_PERMISSIONS.viewer;
+// Responder is an analyst who can additionally manage and escalate incidents.
+ROLE_PERMISSIONS.mssp_responder = {
+  ...ROLE_PERMISSIONS.analyst,
+  canManageIncidents: true,
+  canEscalateIncidents: true,
+  canCloseIncidents: true
+};
+
 // Authenticate JWT token (with secure service token validation)
 const authenticateToken = async (req, res, next) => {
   try {
@@ -420,6 +439,13 @@ const authenticateService = (req, res, next) => {
 // Permission middleware
 const requirePermission = (permission) => {
   return (req, res, next) => {
+    // Service-to-service requests are authenticated via the service token
+    // (validated in authenticateToken) and should not be subject to
+    // user-permission checks.
+    if (req.isServiceRequest) {
+      return next();
+    }
+
     if (!req.user) {
       return res.status(401).json({ error: 'Authentication required' });
     }

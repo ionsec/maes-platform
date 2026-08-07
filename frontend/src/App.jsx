@@ -37,6 +37,7 @@ import UserManagement from './pages/UserManagement'
 import Compliance from './pages/Compliance'
 import Incidents from './pages/Incidents'
 import ThreatIntel from './pages/ThreatIntel'
+import SavedIOCs from './pages/SavedIOCs'
 import UebaDashboard from './pages/UebaDashboard'
 
 function App() {
@@ -44,7 +45,6 @@ function App() {
   const token = useAuthStore((state) => state.token)
   const user = useAuthStore((state) => state.user)
   const isHydrated = useAuthStore((state) => state.isHydrated)
-  const initializeAuth = useAuthStore((state) => state.initializeAuth)
   const [sidebarOpen, setSidebarOpen] = React.useState(false)
   const navigate = useNavigate()
 
@@ -52,15 +52,9 @@ function App() {
   useEffect(() => {
     setNavigate(navigate)
   }, [navigate])
-  
+
   // Debug logging
   console.log('App render - isAuthenticated:', isAuthenticated, 'token:', !!token, 'user:', !!user, 'isHydrated:', isHydrated)
-
-  useEffect(() => {
-    console.log('App mounted - auth state:', { isAuthenticated, token: !!token, user: !!user, isHydrated })
-    // Initialize auth headers from stored token
-    initializeAuth()
-  }, [isAuthenticated, token, user, isHydrated, initializeAuth])
 
   // Handle hydration completion - run only once
   useEffect(() => {
@@ -140,6 +134,7 @@ function App() {
                 <Route path="/compliance" element={<Compliance />} />
                 <Route path="/incidents" element={<Incidents />} />
                 <Route path="/threat-intel" element={<ThreatIntel />} />
+                <Route path="/saved-iocs" element={<SavedIOCs />} />
                 <Route path="/ueba" element={<UebaDashboard />} />
                 {/* Redirect monitoring service routes to external tabs */}
                 <Route path="/grafana/*" element={<ExternalRedirect url="/grafana/" />} />

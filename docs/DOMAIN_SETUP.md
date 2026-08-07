@@ -15,7 +15,7 @@ MAES supports two deployment modes:
 No configuration needed! Just run:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 Access at: **https://localhost** (accept the self-signed certificate warning)
@@ -62,7 +62,7 @@ echo "DOMAIN=localhost" > .env
 echo "USE_LETS_ENCRYPT=false" >> .env
 
 # 2. Start services
-docker-compose up -d
+docker compose up -d
 
 # 3. Access application
 open https://localhost
@@ -98,7 +98,7 @@ EMAIL=admin@yourdomain.com
 EOF
 
 # 2. Start services
-docker-compose up -d
+docker compose up -d
 ```
 
 ## DNS Configuration

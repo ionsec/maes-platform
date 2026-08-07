@@ -422,7 +422,22 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     if (value === undefined || value === null || value === '') return '';
     return ` -${name} '${String(value).replace(/'/g, "''")}'`;
   };
-  
+
+  // Escape a value for a single-quoted PowerShell string literal (escape ' by
+  // doubling). Prevents command injection through request-supplied values.
+  const psQuote = (value) => {
+    if (value === undefined || value === null) return '';
+    return String(value).replace(/'/g, "''");
+  };
+
+  // Pre-escape all user-influenced values interpolated into the command.
+  const escAppId = psQuote(credentials.applicationId);
+  const escOrg = psQuote(parameters.fqdn || parameters.organization);
+  const escTenantId = psQuote(parameters.tenantId);
+  const escStartDate = psQuote(parameters.startDate);
+  const escEndDate = psQuote(parameters.endDate);
+  const escOutputDir = psQuote(orgOutputPath);
+
   // Load additional Graph modules based on extraction type
   const graphModuleMap = {
     'azure_signin_logs': ['Microsoft.Graph.Identity.SignIns'],
@@ -505,8 +520,8 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         ${userCertInfo ? `Write-Host 'User certificate specified: ${userCertInfo.filename}';` : `Write-Host 'No user certificate found, using default';`}
         
         # Path to PFX file with fallback logic
-        if (Test-Path '${certPath}') { 
-          $pfxPath = '${certPath}';
+        if (Test-Path '${psQuote(certPath)}') {
+          $pfxPath = '${psQuote(certPath)}';
           Write-Host "Using certificate: $pfxPath";
           ${userCertInfo ? `Write-Host 'Certificate source: User-uploaded';` : `Write-Host 'Certificate source: Default system certificate';`}
         } else { 
@@ -533,7 +548,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         Write-Host "  - Modified: $($certFileInfo.LastWriteTime)";
         
         # PFX password
-        $securePwd = ConvertTo-SecureString '${certPassword}' -AsPlainText -Force;
+        $securePwd = ConvertTo-SecureString '${psQuote(certPassword)}' -AsPlainText -Force;
         Write-Host 'Loading certificate with password...';
         
         # Load the certificate (cross-platform-safe overload)
@@ -582,12 +597,12 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
         
         # Connect to Exchange Online (Connect-M365) using that cert
         Write-Host "Executing Connect-M365 with AppId: ${credentials.applicationId}, Organization: ${parameters.fqdn || parameters.organization}";
-        Connect-M365 -AppId '${credentials.applicationId}' -Organization '${parameters.fqdn || parameters.organization}' -Certificate $cert -ErrorAction Stop;
+        Connect-M365 -AppId '${escAppId}' -Organization '${escOrg}' -Certificate $cert -ErrorAction Stop;
         Write-Host 'Connect-M365 completed successfully';
         
         # Connect to Microsoft Graph using certificate
         Write-Host "Connecting to Microsoft Graph with AppId: ${credentials.applicationId}, TenantId: ${parameters.tenantId}";
-        Connect-MgGraph -ApplicationId '${credentials.applicationId}' -Certificate $cert -TenantId '${parameters.tenantId}' -ErrorAction Stop;
+        Connect-MgGraph -ApplicationId '${escAppId}' -Certificate $cert -TenantId '${escTenantId}' -ErrorAction Stop;
         Write-Host 'Connect-MgGraph completed successfully';
         
         # Verify Exchange Online connection
@@ -651,9 +666,9 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
   const extractionCommands = {
     'unified_audit_log': `
       Write-Host "Starting Unified Audit Log extraction...";
-      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      Write-Host "Parameters: StartDate='${escStartDate}', EndDate='${escEndDate}'";
       try {
-        Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'${buildArrayParameter('UserIds', parameters.filterUsers)}${buildArrayParameter('Operations', parameters.filterOperations)}${buildArrayParameter('IPAddresses', parameters.ipAddresses)}${buildSwitchParameter('AuditDataOnly', parameters.auditDataOnly)};
+        Get-UAL -StartDate '${escStartDate}' -EndDate '${escEndDate}' -Output JSON -MergeOutput -OutputDir '${escOutputDir}'${buildArrayParameter('UserIds', parameters.filterUsers)}${buildArrayParameter('Operations', parameters.filterOperations)}${buildArrayParameter('IPAddresses', parameters.ipAddresses)}${buildSwitchParameter('AuditDataOnly', parameters.auditDataOnly)};
         Write-Host "UAL extraction completed successfully.";
       } catch {
         Write-Error "UAL extraction failed: $_";
@@ -662,7 +677,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     `,
     'azure_signin_logs': `
       Write-Host "Starting Azure Sign-In Logs extraction via Graph...";
-      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      Write-Host "Parameters: StartDate='${escStartDate}', EndDate='${escEndDate}'";
       $retryCount = 0;
       $maxRetries = 5;
       $baseDelaySeconds = 30;
@@ -678,7 +693,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-GraphEntraSignInLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'${buildScalarParameter('EventType', parameters.eventType)};
+          Get-GraphEntraSignInLogs -StartDate '${escStartDate}' -EndDate '${escEndDate}' -OutputDir '${escOutputDir}'${buildScalarParameter('EventType', parameters.eventType)};
           Write-Host "Graph Sign-In Logs extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -702,7 +717,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     `,
     'azure_audit_logs': `
       Write-Host "Starting Azure Audit Logs extraction via Graph...";
-      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      Write-Host "Parameters: StartDate='${escStartDate}', EndDate='${escEndDate}'";
       $retryCount = 0;
       $maxRetries = 5;
       $baseDelaySeconds = 30;
@@ -718,7 +733,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-GraphEntraAuditLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}';
+          Get-GraphEntraAuditLogs -StartDate '${escStartDate}' -EndDate '${escEndDate}' -OutputDir '${escOutputDir}';
           Write-Host "Graph Audit Logs extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -743,7 +758,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'admin_audit_log': `
       Write-Host "Starting Admin Audit Log extraction...";
       try {
-        Get-AdminAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}';
+        Get-AdminAuditLog -StartDate '${escStartDate}' -EndDate '${escEndDate}' -Output JSON -MergeOutput -OutputDir '${escOutputDir}';
         Write-Host "Admin Audit Log extraction completed successfully.";
       } catch {
         Write-Error "Admin Audit Log extraction failed: $_";
@@ -753,7 +768,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'mfa_status': `
       Write-Host "Starting MFA Status extraction via Graph...";
       try {
-        Get-MFA -OutputDir '${orgOutputPath}';
+        Get-MFA -OutputDir '${escOutputDir}';
         Write-Host "MFA Status extraction completed successfully.";
       } catch {
         Write-Error "MFA Status extraction failed: $_";
@@ -763,7 +778,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'oauth_permissions': `
       Write-Host "Starting OAuth permissions extraction via Graph...";
       try {
-        Get-OAuthPermissionsGraph -OutputDir '${orgOutputPath}';
+        Get-OAuthPermissionsGraph -OutputDir '${escOutputDir}';
         Write-Host "OAuth permissions extraction completed successfully.";
       } catch {
         Write-Error "OAuth permissions extraction failed: $_";
@@ -773,55 +788,55 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'risky_users': `
       Write-Host "Starting Risky Users extraction via Graph...";
       try {
-        Get-RiskyUsers -OutputDir '${orgOutputPath}';
+        Get-RiskyUsers -OutputDir '${escOutputDir}';
         Write-Host "Risky users extraction completed successfully.";
       } catch {
         Write-Error "Risky users extraction failed: $_";
         throw;
       }
     `,
-    'risky_detections': `Get-RiskyDetections -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
-    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
+    'risky_detections': `Get-RiskyDetections -StartDate '${escStartDate}' -EndDate '${escEndDate}' -OutputDir '${escOutputDir}'`,
+    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${escStartDate}' -EndDate '${escEndDate}' -Output JSON -MergeOutput -OutputDir '${escOutputDir}'`,
+    'message_trace': `Get-MessageTraceLog -StartDate '${escStartDate}' -EndDate '${escEndDate}' -OutputDir '${escOutputDir}'`,
     'devices': `
       Write-Host "Starting Devices extraction via Graph...";
       try {
-        Get-Devices -Output JSON -OutputDir '${orgOutputPath}';
+        Get-Devices -Output JSON -OutputDir '${escOutputDir}';
         Write-Host "Devices extraction completed successfully.";
       } catch {
         Write-Error "Devices extraction failed: $_";
         throw;
       }
     `,
-    'mailbox_rules': `Get-MailboxRules -OutputDir '${orgOutputPath}'`,
-    'transport_rules': `Get-TransportRules -OutputDir '${orgOutputPath}'`,
-    'activity_logs': `Get-ActivityLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
-    'directory_activity_logs': `Get-DirectoryActivityLogs -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`,
-    'admin_users': `Get-AdminUsers -OutputDir '${orgOutputPath}'`,
-    'conditional_access_policies': `Get-ConditionalAccessPolicies -OutputDir '${orgOutputPath}'`,
-    'mailbox_audit_status': `Get-MailboxAuditStatus -OutputDir '${orgOutputPath}'`,
-    'mailbox_permissions': `Get-MailboxPermissions -OutputDir '${orgOutputPath}'`,
-    'licenses_by_user': `Get-LicensesByUser -OutputDir '${orgOutputPath}'`,
-    'license_compatibility': `Get-LicenseCompatibility -OutputDir '${orgOutputPath}'`,
-    'entra_security_defaults': `Get-EntraSecurityDefaults -OutputDir '${orgOutputPath}'`,
-    'groups': `Get-Groups -OutputDir '${orgOutputPath}'`,
-    'group_members': `Get-GroupMembers -OutputDir '${orgOutputPath}'`,
-    'dynamic_groups': `Get-DynamicGroups -OutputDir '${orgOutputPath}'`,
-    'pim_assignments': `Get-PIMAssignments -OutputDir '${orgOutputPath}'`,
-    'role_activity': `Get-AllRoleActivity -OutputDir '${orgOutputPath}'`,
-    'security_alerts': `Get-SecurityAlerts -OutputDir '${orgOutputPath}'`,
+    'mailbox_rules': `Get-MailboxRules -OutputDir '${escOutputDir}'`,
+    'transport_rules': `Get-TransportRules -OutputDir '${escOutputDir}'`,
+    'activity_logs': `Get-ActivityLogs -StartDate '${escStartDate}' -EndDate '${escEndDate}' -OutputDir '${escOutputDir}'`,
+    'directory_activity_logs': `Get-DirectoryActivityLogs -StartDate '${escStartDate}' -EndDate '${escEndDate}' -OutputDir '${escOutputDir}'`,
+    'admin_users': `Get-AdminUsers -OutputDir '${escOutputDir}'`,
+    'conditional_access_policies': `Get-ConditionalAccessPolicies -OutputDir '${escOutputDir}'`,
+    'mailbox_audit_status': `Get-MailboxAuditStatus -OutputDir '${escOutputDir}'`,
+    'mailbox_permissions': `Get-MailboxPermissions -OutputDir '${escOutputDir}'`,
+    'licenses_by_user': `Get-LicensesByUser -OutputDir '${escOutputDir}'`,
+    'license_compatibility': `Get-LicenseCompatibility -OutputDir '${escOutputDir}'`,
+    'entra_security_defaults': `Get-EntraSecurityDefaults -OutputDir '${escOutputDir}'`,
+    'groups': `Get-Groups -OutputDir '${escOutputDir}'`,
+    'group_members': `Get-GroupMembers -OutputDir '${escOutputDir}'`,
+    'dynamic_groups': `Get-DynamicGroups -OutputDir '${escOutputDir}'`,
+    'pim_assignments': `Get-PIMAssignments -OutputDir '${escOutputDir}'`,
+    'role_activity': `Get-AllRoleActivity -OutputDir '${escOutputDir}'`,
+    'security_alerts': `Get-SecurityAlerts -OutputDir '${escOutputDir}'`,
     'full_extraction': `
       if (Get-Command Get-AllEvidence -ErrorAction SilentlyContinue) {
-        Get-AllEvidence -OutputDir '${orgOutputPath}';
+        Get-AllEvidence -OutputDir '${escOutputDir}';
       } elseif (Get-Command Start-EvidenceCollection -ErrorAction SilentlyContinue) {
-        Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${orgOutputPath}';
+        Start-EvidenceCollection -ProjectName 'MAES-Extraction' -OutputDir '${escOutputDir}';
       } else {
         throw 'Neither Get-AllEvidence nor Start-EvidenceCollection is available in Microsoft-Extractor-Suite';
       }
     `,
     'ual_graph': `
       Write-Host "Starting UAL extraction via Graph...";
-      Write-Host "Parameters: StartDate='${parameters.startDate}', EndDate='${parameters.endDate}'";
+      Write-Host "Parameters: StartDate='${escStartDate}', EndDate='${escEndDate}'";
       $retryCount = 0;
       $maxRetries = 5;
       $baseDelaySeconds = 30;
@@ -837,7 +852,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
             Start-Sleep -Seconds $totalDelay;
           }
           
-          Get-UALGraph -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -Output '${parameters.outputFormat || 'JSON'}' -MergeOutput -OutputDir '${orgOutputPath}'${buildSwitchParameter('SplitFiles', parameters.splitFiles)}${parameters.maxEventsPerFile ? ` -MaxEventsPerFile ${parameters.maxEventsPerFile}` : ''};
+          Get-UALGraph -StartDate '${escStartDate}' -EndDate '${escEndDate}' -SearchName 'MAES-UAL-Graph-${extractionId}' -Output '${psQuote(parameters.outputFormat || 'JSON')}' -MergeOutput -OutputDir '${escOutputDir}'${buildSwitchParameter('SplitFiles', parameters.splitFiles)}${parameters.maxEventsPerFile ? ` -MaxEventsPerFile ${parameters.maxEventsPerFile}` : ''};
           Write-Host "UAL Graph extraction completed successfully.";
           $completed = $true;
         } catch {
@@ -862,7 +877,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'licenses': `
       Write-Host "Starting Licenses extraction via Graph...";
       try {
-        Get-Licenses -OutputDir '${orgOutputPath}';
+        Get-Licenses -OutputDir '${escOutputDir}';
         Write-Host "Licenses extraction completed successfully.";
       } catch {
         Write-Error "Licenses extraction failed: $_";
@@ -872,7 +887,7 @@ async function buildPowerShellCommand(type, parameters, credentials, extractionI
     'licenses_by_user': `
       Write-Host "Starting per-user license extraction via Graph...";
       try {
-        Get-LicensesByUser -OutputDir '${orgOutputPath}';
+        Get-LicensesByUser -OutputDir '${escOutputDir}';
         Write-Host "Per-user license extraction completed successfully.";
       } catch {
         Write-Error "Per-user license extraction failed: $_";

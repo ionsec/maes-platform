@@ -55,10 +55,16 @@ const UserModel = {
   // Update user
   update: async (id, updates) => {
     // Whitelist of allowed fields to prevent SQL injection
+    // Whitelist of allowed fields to prevent SQL injection. NOTE: privileged
+    // fields (role, permissions, organizationId, isActive) remain here because
+    // the admin user-management routes legitimately set them through this method.
+    // They must never be reachable from a self-service profile update — that is
+    // enforced at the route layer via an explicit allowlist (routes/user.js).
     const allowedFields = [
       'username', 'email', 'firstName', 'lastName', 'phone', 'organization',
-      'department', 'jobTitle', 'location', 'bio', 'profilePicture', 
-      'preferences', 'isActive', 'organizationId', 'role', 'permissions'
+      'department', 'jobTitle', 'location', 'bio', 'profilePicture',
+      'preferences', 'isActive', 'organizationId', 'role', 'permissions',
+      'mfaEnabled', 'mfaSecret'
     ];
     
     const fields = [];
@@ -675,11 +681,189 @@ const AuditLogModel = {
   }
 };
 
+// Report model operations
+const ReportModel = {
+  create: async (data) => {
+    const query = `
+      INSERT INTO maes.reports (
+        organization_id, created_by, name, type, format, parameters, schedule,
+        status, file_path, file_name, error, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+      RETURNING *
+    `;
+    return await insert(query, [
+      data.organizationId,
+      data.createdBy,
+      data.name,
+      data.type,
+      data.format,
+      JSON.stringify(data.parameters || {}),
+      JSON.stringify(data.schedule || {}),
+      data.status || 'pending',
+      data.filePath,
+      data.fileName,
+      data.error
+    ]);
+  },
+
+  findById: async (id, organizationId) => {
+    const query = `
+      SELECT r.*, u.username as creator_username, u.first_name, u.last_name
+      FROM maes.reports r
+      LEFT JOIN maes.users u ON r.created_by = u.id
+      WHERE r.id = $1 AND r.organization_id = $2
+    `;
+    return await getRow(query, [id, organizationId]);
+  },
+
+  listByOrganization: async (organizationId, { type, status, limit, offset }) => {
+    const conditions = ['r.organization_id = $1'];
+    const values = [organizationId];
+    let paramIndex = 2;
+
+    if (type) {
+      conditions.push(`r.type = $${paramIndex}`);
+      values.push(type);
+      paramIndex++;
+    }
+    if (status) {
+      conditions.push(`r.status = $${paramIndex}`);
+      values.push(status);
+      paramIndex++;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    const rows = await getRows(
+      `SELECT r.*, u.username as creator_username, u.first_name, u.last_name
+       FROM maes.reports r
+       LEFT JOIN maes.users u ON r.created_by = u.id
+       WHERE ${whereClause}
+       ORDER BY r.created_at DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...values, limit, offset]
+    );
+
+    const total = await count(
+      `SELECT COUNT(*) FROM maes.reports r WHERE ${whereClause}`,
+      values
+    );
+
+    return { rows, total };
+  },
+
+  update: async (id, data) => {
+    const query = `
+      UPDATE maes.reports SET
+        status = COALESCE($2, status),
+        file_path = COALESCE($3, file_path),
+        file_name = COALESCE($4, file_name),
+        error = COALESCE($5, error),
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+    return await update(query, [id, data.status, data.filePath, data.fileName, data.error]);
+  },
+
+  remove: async (id, organizationId) => {
+    const query = `
+      DELETE FROM maes.reports
+      WHERE id = $1 AND organization_id = $2
+      RETURNING *
+    `;
+    return await remove(query, [id, organizationId]);
+  }
+};
+
+// SIEM configuration model operations
+const SiemConfigModel = {
+  create: async (data) => {
+    const query = `
+      INSERT INTO maes.siem_configurations (
+        organization_id, name, type, endpoint, api_key, format, enabled,
+        export_frequency, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+      RETURNING *
+    `;
+    return await insert(query, [
+      data.organizationId,
+      data.name,
+      data.type,
+      data.endpoint,
+      data.apiKey,
+      data.format || 'json',
+      data.enabled !== false,
+      data.exportFrequency || 'manual'
+    ]);
+  },
+
+  listByOrganization: async (organizationId) => {
+    const query = `
+      SELECT * FROM maes.siem_configurations
+      WHERE organization_id = $1
+      ORDER BY created_at ASC
+    `;
+    return await getRows(query, [organizationId]);
+  },
+
+  findById: async (id, organizationId) => {
+    const query = `
+      SELECT * FROM maes.siem_configurations
+      WHERE id = $1 AND organization_id = $2
+    `;
+    return await getRow(query, [id, organizationId]);
+  },
+
+  update: async (id, data) => {
+    const query = `
+      UPDATE maes.siem_configurations SET
+        name = COALESCE($2, name),
+        type = COALESCE($3, type),
+        endpoint = COALESCE($4, endpoint),
+        api_key = COALESCE($5, api_key),
+        format = COALESCE($6, format),
+        enabled = COALESCE($7, enabled),
+        export_frequency = COALESCE($8, export_frequency),
+        last_test_at = COALESCE($9, last_test_at),
+        last_test_status = COALESCE($10, last_test_status),
+        last_export_at = COALESCE($11, last_export_at),
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    `;
+    return await update(query, [
+      id,
+      data.name,
+      data.type,
+      data.endpoint,
+      data.apiKey,
+      data.format,
+      data.enabled,
+      data.exportFrequency,
+      data.lastTestAt,
+      data.lastTestStatus,
+      data.lastExportAt
+    ]);
+  },
+
+  remove: async (id, organizationId) => {
+    const query = `
+      DELETE FROM maes.siem_configurations
+      WHERE id = $1 AND organization_id = $2
+      RETURNING *
+    `;
+    return await remove(query, [id, organizationId]);
+  }
+};
+
 module.exports = {
   User: UserModel,
   Organization: OrganizationModel,
   Extraction: ExtractionModel,
   AnalysisJob: AnalysisJobModel,
   Alert: AlertModel,
-  AuditLog: AuditLogModel
-}; 
+  AuditLog: AuditLogModel,
+  Report: ReportModel,
+  SiemConfig: SiemConfigModel
+};

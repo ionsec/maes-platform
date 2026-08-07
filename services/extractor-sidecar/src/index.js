@@ -31,7 +31,20 @@ async function getDefaultCertificatePassword() {
 }
 
 /**
+ * Escape a value for safe interpolation inside a single-quoted PowerShell
+ * string literal. Inside single quotes the only special character is the
+ * quote itself, which is escaped by doubling it (''). This prevents command
+ * injection through request-supplied values.
+ */
+function psQuote(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).replace(/'/g, "''");
+}
+
+/**
  * Build PowerShell command for Tier 3 Exchange-only extractions.
+ * Every value interpolated into the command is passed through psQuote() so a
+ * single quote in any request-supplied field cannot break out of the literal.
  */
 function buildPowerShellCommand(type, parameters, credentials, orgOutputPath) {
   const baseCommand = `
@@ -44,24 +57,32 @@ function buildPowerShellCommand(type, parameters, credentials, orgOutputPath) {
     let certPath = credentials.certPath || '/output/app.pfx';
     const certPassword = credentials.certPassword;
 
+    const appId = psQuote(credentials.applicationId);
+    const org = psQuote(parameters.fqdn || parameters.organization);
+    const tenantId = psQuote(parameters.tenantId);
+
     authCommand = `
-      $securePwd = ConvertTo-SecureString '${certPassword}' -AsPlainText -Force;
+      $securePwd = ConvertTo-SecureString '${psQuote(certPassword)}' -AsPlainText -Force;
       $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
-        '${certPath}',
+        '${psQuote(certPath)}',
         $securePwd,
         [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
       );
-      Connect-M365 -AppId '${credentials.applicationId}' -Organization '${parameters.fqdn || parameters.organization}' -Certificate $cert -ErrorAction Stop;
-      Connect-MgGraph -ApplicationId '${credentials.applicationId}' -Certificate $cert -TenantId '${parameters.tenantId}' -ErrorAction Stop;
+      Connect-M365 -AppId '${appId}' -Organization '${org}' -Certificate $cert -ErrorAction Stop;
+      Connect-MgGraph -ApplicationId '${appId}' -Certificate $cert -TenantId '${tenantId}' -ErrorAction Stop;
     `;
   }
 
+  const outputDir = psQuote(orgOutputPath);
+  const startDate = psQuote(parameters.startDate);
+  const endDate = psQuote(parameters.endDate);
+
   const extractionCommands = {
-    'unified_audit_log': `Get-UAL -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'admin_audit_log': `Get-AdminAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -Output JSON -MergeOutput -OutputDir '${orgOutputPath}'`,
-    'transport_rules': `Get-TransportRules -OutputDir '${orgOutputPath}'`,
-    'message_trace': `Get-MessageTraceLog -StartDate '${parameters.startDate}' -EndDate '${parameters.endDate}' -OutputDir '${orgOutputPath}'`
+    'unified_audit_log': `Get-UAL -StartDate '${startDate}' -EndDate '${endDate}' -Output JSON -MergeOutput -OutputDir '${outputDir}'`,
+    'admin_audit_log': `Get-AdminAuditLog -StartDate '${startDate}' -EndDate '${endDate}' -Output JSON -MergeOutput -OutputDir '${outputDir}'`,
+    'mailbox_audit': `Get-MailboxAuditLog -StartDate '${startDate}' -EndDate '${endDate}' -Output JSON -MergeOutput -OutputDir '${outputDir}'`,
+    'transport_rules': `Get-TransportRules -OutputDir '${outputDir}'`,
+    'message_trace': `Get-MessageTraceLog -StartDate '${startDate}' -EndDate '${endDate}' -OutputDir '${outputDir}'`
   };
 
   const extractionCmd = extractionCommands[type];
@@ -70,6 +91,24 @@ function buildPowerShellCommand(type, parameters, credentials, orgOutputPath) {
   }
 
   return baseCommand + authCommand + extractionCmd;
+}
+
+/**
+ * Shared-secret auth for the sidecar endpoint. The sidecar is only reachable
+ * over the internal network, but the /api/extract endpoint executes arbitrary
+ * PowerShell — require the service token when one is configured.
+ */
+function verifyServiceToken(req, res, next) {
+  const expected = process.env.SERVICE_AUTH_TOKEN;
+  if (!expected) {
+    logger.warn('SERVICE_AUTH_TOKEN not set on sidecar — /api/extract is unauthenticated');
+    return next();
+  }
+  const supplied = req.headers['x-service-token'];
+  if (!supplied || supplied !== expected) {
+    return res.status(401).json({ error: 'Unauthorized: missing or invalid service token' });
+  }
+  next();
 }
 
 /**
@@ -121,8 +160,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'extractor-sidecar', timestamp: new Date().toISOString() });
 });
 
-// Extraction endpoint
-app.post('/api/extract', async (req, res) => {
+// Extraction endpoint (token-gated — executes PowerShell)
+app.post('/api/extract', verifyServiceToken, async (req, res) => {
   const { type, parameters, credentials, organizationId, extractionId } = req.body;
 
   if (!SUPPORTED_TYPES.includes(type)) {

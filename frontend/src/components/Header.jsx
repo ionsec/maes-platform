@@ -37,7 +37,9 @@ import {
   Info as InfoIcon,
   PriorityHigh,
   Close as CloseIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  HelpOutline,
+  Storage as StorageIcon
 } from '@mui/icons-material'
 import { useAuthStore } from '../stores/authStore'
 import { useAlerts } from '../hooks/useAlerts'
@@ -46,6 +48,22 @@ import { useOrganization } from '../contexts/OrganizationContext'
 import ThemeSelector from './ThemeSelector'
 import dayjs from 'dayjs'
 import axios from '../utils/axios'
+
+// Map a service status ('healthy' | 'degraded' | 'unhealthy' | 'unknown') to
+// a UI color. 'unknown' means the service isn't deployed, shown as neutral.
+const statusColor = (status) => {
+  if (status === 'healthy') return 'success'
+  if (status === 'degraded') return 'warning'
+  if (status === 'unknown') return 'default'
+  return 'error'
+}
+
+const statusIcon = (status) => {
+  if (status === 'healthy') return <CheckCircle sx={{ color: 'success.main' }} />
+  if (status === 'degraded') return <Warning sx={{ color: 'warning.main' }} />
+  if (status === 'unknown') return <HelpOutline sx={{ color: 'text.disabled' }} />
+  return <ErrorIcon sx={{ color: 'error.main' }} />
+}
 
 const Header = ({ onMenuClick }) => {
   const { user, logout } = useAuthStore()
@@ -58,6 +76,7 @@ const Header = ({ onMenuClick }) => {
   const [systemStatus, setSystemStatus] = React.useState({
     api: 'healthy',
     database: 'healthy',
+    redis: 'healthy',
     extractor: 'healthy',
     analyzer: 'healthy',
     storage: 'healthy',
@@ -92,30 +111,26 @@ const Header = ({ onMenuClick }) => {
 
   const checkSystemStatus = async () => {
     try {
-      // Check API health
+      // Check API health (backend reports real database, redis, extractor,
+      // analyzer, and storage status; 'unknown' means the service is not deployed).
       const apiHealth = await axios.get('/api/health').catch(() => ({ data: { status: 'unhealthy' } }))
-      
-      // Mock additional service checks (in production, these would be real endpoints)
-      const mockChecks = {
-        database: Math.random() > 0.1 ? 'healthy' : 'degraded',
-        extractor: Math.random() > 0.05 ? 'healthy' : 'unhealthy',
-        analyzer: Math.random() > 0.05 ? 'healthy' : 'degraded',
-        storage: Math.random() > 0.02 ? 'healthy' : 'unhealthy'
-      }
 
       const newStatus = {
         api: apiHealth.data?.status === 'healthy' ? 'healthy' : 'unhealthy',
-        ...mockChecks,
+        database: apiHealth.data?.database || 'unknown',
+        redis: apiHealth.data?.redis || 'unknown',
+        extractor: apiHealth.data?.extractor || 'unknown',
+        analyzer: apiHealth.data?.analyzer || 'unknown',
+        storage: apiHealth.data?.storage || 'unknown',
         lastCheck: new Date()
       }
 
-      // Determine overall status
-      const statuses = Object.values(newStatus).filter(s => typeof s === 'string')
+      // Determine overall status ('unknown' is treated as neutral, not degraded)
+      const statuses = Object.values(newStatus).filter(s => s === 'healthy' || s === 'unhealthy')
       const hasUnhealthy = statuses.includes('unhealthy')
-      const hasDegraded = statuses.includes('degraded')
-      
-      newStatus.overallStatus = hasUnhealthy ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy'
-      
+
+      newStatus.overallStatus = hasUnhealthy ? 'unhealthy' : 'healthy'
+
       setSystemStatus(newStatus)
     } catch (error) {
       setSystemStatus(prev => ({
@@ -572,13 +587,7 @@ const Header = ({ onMenuClick }) => {
                 {/* Database */}
                 <ListItem sx={{ px: 0, py: 1 }}>
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    {systemStatus.database === 'healthy' ? (
-                      <CheckCircle sx={{ color: 'success.main' }} />
-                    ) : systemStatus.database === 'degraded' ? (
-                      <Warning sx={{ color: 'warning.main' }} />
-                    ) : (
-                      <ErrorIcon sx={{ color: 'error.main' }} />
-                    )}
+                    {statusIcon(systemStatus.database)}
                   </ListItemIcon>
                   <ListItemText
                     primary="Database"
@@ -586,8 +595,24 @@ const Header = ({ onMenuClick }) => {
                   />
                   <Chip
                     label={systemStatus.database.toUpperCase()}
-                    color={systemStatus.database === 'healthy' ? 'success' : 
-                           systemStatus.database === 'degraded' ? 'warning' : 'error'}
+                    color={statusColor(systemStatus.database)}
+                    size="small"
+                  />
+                </ListItem>
+                <Divider />
+
+                {/* Redis */}
+                <ListItem sx={{ px: 0, py: 1 }}>
+                  <ListItemIcon sx={{ minWidth: 36 }}>
+                    {statusIcon(systemStatus.redis)}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Redis"
+                    secondary="Job queues and cache"
+                  />
+                  <Chip
+                    label={systemStatus.redis.toUpperCase()}
+                    color={statusColor(systemStatus.redis)}
                     size="small"
                   />
                 </ListItem>
@@ -596,13 +621,7 @@ const Header = ({ onMenuClick }) => {
                 {/* Extractor Service */}
                 <ListItem sx={{ px: 0, py: 1 }}>
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    {systemStatus.extractor === 'healthy' ? (
-                      <CheckCircle sx={{ color: 'success.main' }} />
-                    ) : systemStatus.extractor === 'degraded' ? (
-                      <Warning sx={{ color: 'warning.main' }} />
-                    ) : (
-                      <ErrorIcon sx={{ color: 'error.main' }} />
-                    )}
+                    {statusIcon(systemStatus.extractor)}
                   </ListItemIcon>
                   <ListItemText
                     primary="Extractor Service"
@@ -610,8 +629,7 @@ const Header = ({ onMenuClick }) => {
                   />
                   <Chip
                     label={systemStatus.extractor.toUpperCase()}
-                    color={systemStatus.extractor === 'healthy' ? 'success' : 
-                           systemStatus.extractor === 'degraded' ? 'warning' : 'error'}
+                    color={statusColor(systemStatus.extractor)}
                     size="small"
                   />
                 </ListItem>
@@ -620,13 +638,7 @@ const Header = ({ onMenuClick }) => {
                 {/* Analyzer Service */}
                 <ListItem sx={{ px: 0, py: 1 }}>
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    {systemStatus.analyzer === 'healthy' ? (
-                      <CheckCircle sx={{ color: 'success.main' }} />
-                    ) : systemStatus.analyzer === 'degraded' ? (
-                      <Warning sx={{ color: 'warning.main' }} />
-                    ) : (
-                      <ErrorIcon sx={{ color: 'error.main' }} />
-                    )}
+                    {statusIcon(systemStatus.analyzer)}
                   </ListItemIcon>
                   <ListItemText
                     primary="Analyzer Service"
@@ -634,8 +646,7 @@ const Header = ({ onMenuClick }) => {
                   />
                   <Chip
                     label={systemStatus.analyzer.toUpperCase()}
-                    color={systemStatus.analyzer === 'healthy' ? 'success' : 
-                           systemStatus.analyzer === 'degraded' ? 'warning' : 'error'}
+                    color={statusColor(systemStatus.analyzer)}
                     size="small"
                   />
                 </ListItem>
@@ -644,13 +655,7 @@ const Header = ({ onMenuClick }) => {
                 {/* Storage Service */}
                 <ListItem sx={{ px: 0, py: 1 }}>
                   <ListItemIcon sx={{ minWidth: 36 }}>
-                    {systemStatus.storage === 'healthy' ? (
-                      <CheckCircle sx={{ color: 'success.main' }} />
-                    ) : systemStatus.storage === 'degraded' ? (
-                      <Warning sx={{ color: 'warning.main' }} />
-                    ) : (
-                      <ErrorIcon sx={{ color: 'error.main' }} />
-                    )}
+                    {statusIcon(systemStatus.storage)}
                   </ListItemIcon>
                   <ListItemText
                     primary="Storage Service"
@@ -658,8 +663,7 @@ const Header = ({ onMenuClick }) => {
                   />
                   <Chip
                     label={systemStatus.storage.toUpperCase()}
-                    color={systemStatus.storage === 'healthy' ? 'success' : 
-                           systemStatus.storage === 'degraded' ? 'warning' : 'error'}
+                    color={statusColor(systemStatus.storage)}
                     size="small"
                   />
                 </ListItem>

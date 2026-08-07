@@ -13,7 +13,7 @@
     "axios": "^1.15.0",
     "bullmq": "^5.0.0",
     "dotenv": "^17.2.0",
-    "express": "^4.22.1",
+    "express": "^5.2.1",
     "node-schedule": "^2.1.1",
     "pg": "^8.16.3",
     "puppeteer": "^24.40.0",
@@ -25,11 +25,8 @@
     "nodemon": "^3.1.10"
   },
   "overrides": {
-    "body-parser": "1.20.4",
-    "path-to-regexp": "0.1.13",
     "jsonwebtoken": "9.0.3",
     "jws": "3.2.3",
-    "js-yaml": "4.1.1",
     "sequelize": {
       "dottie": "2.0.7",
       "validator": "13.15.23",

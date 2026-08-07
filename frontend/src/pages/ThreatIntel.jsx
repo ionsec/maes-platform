@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, CardContent, Grid, TextField, Button, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, Chip,
@@ -6,10 +6,11 @@ import {
 } from '@mui/material';
 import {
   Search, Refresh, Security, Warning, Info, Link as LinkIcon,
-  Dns, Hash, Delete, Save
+  Dns, Delete, Save
 } from '@mui/icons-material';
 import axios from '../utils/axios';
 import SavedIOCs from './SavedIOCs';
+import { detectIocType } from '../utils/iocType';
 
 const ThreatIntel = () => {
   const [activeTab, setActiveTab] = useState(0);
@@ -39,8 +40,12 @@ const ThreatIntel = () => {
     setError(null);
     setResults(null);
 
+    // Resolve the requested type. The backend exposes /enrich/{ip|domain|hash}
+    // only, so 'auto' maps to a client-side detection of the entered value.
+    const resolvedType = type === 'auto' ? detectIocType(query) : type;
+
     try {
-      const response = await axios.get(`/threat-intel/enrich/${type}/${encodeURIComponent(query)}`);
+      const response = await axios.get(`/threat-intel/enrich/${resolvedType}/${encodeURIComponent(query)}`);
       setResults(response.data.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to enrich IOC');
@@ -124,6 +129,9 @@ const ThreatIntel = () => {
                   />
                 </Stack>
                 <Stack direction="row" spacing={1}>
+                  <Button variant="contained" onClick={() => handleSingleEnrich('auto')} disabled={!query}>
+                    Auto Detect
+                  </Button>
                   <Button variant="contained" onClick={() => handleSingleEnrich('ip')} disabled={!query}>
                     Check IP
                   </Button>
