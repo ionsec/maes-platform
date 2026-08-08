@@ -32,6 +32,7 @@ MAES Platform Documentation
    architecture/migration-graph-api
    architecture/analyzer
    architecture/compliance
+   architecture/external-exposure
    architecture/frontend
    architecture/database
 
@@ -44,6 +45,7 @@ MAES Platform Documentation
    api/extractions
    api/analysis
    api/compliance
+   api/recon
    api/alerts
    api/reports
    api/organizations
@@ -73,6 +75,7 @@ MAES Platform Documentation
 
    security/overview
    security/rbac
+   security/authorized-scanning
    security/encryption
    security/hardening
 

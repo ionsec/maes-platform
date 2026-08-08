@@ -7,6 +7,9 @@ author = "IONSEC.IO Dev Team"
 extensions = [
     "sphinx_rtd_theme",
     "sphinxcontrib.mermaid",
+    # Provides the http:get / http:post directives that every file under
+    # docs/api/ uses. Without it the whole API reference fails to render.
+    "sphinxcontrib.httpdomain",
     "sphinx_copybutton",
     "sphinx_tabs.tabs",
     "recommonmark",

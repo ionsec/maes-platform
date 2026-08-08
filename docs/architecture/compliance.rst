@@ -3,9 +3,27 @@
 Compliance Service
 ==================
 
-The compliance service evaluates Microsoft 365 tenant configurations against CIS benchmarks using the Microsoft Graph API with certificate-based authentication.
+The compliance service evaluates Microsoft 365 tenant configurations against benchmark and posture control sets, using the Microsoft Graph API with certificate-based authentication.
 
 Source: ``services/compliance/src/index.js``
+
+The service also hosts :ref:`architecture-external-exposure`, which assesses the same tenant from the outside without credentials. The two share the service's queue infrastructure, models, and PDF rendering, but are otherwise independent.
+
+Control Sets
+------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 78
+
+   * - ``assessment_type``
+     - Coverage
+   * - ``cis_v400``
+     - CIS Microsoft 365 Benchmark v4.0.0
+   * - ``maes_entra_v100``
+     - MAES Entra ID posture: identity exposure that the CIS set does not reach
+
+Control definitions live as rows in ``maes.compliance_controls``; the check logic is registered in code, keyed on ``control_id``. A control with no registered checker resolves to ``manual_review`` rather than being skipped, which is the extension seam for new checks.
 
 Assessment Flow
 ---------------
@@ -80,6 +98,69 @@ The engine evaluates controls defined in ``compliance_controls`` table. Currentl
      - Ensure Teams external access is restricted
      - Manual
      - Manual Review
+
+MAES Entra ID Posture (``maes_entra_v100``)
+-------------------------------------------
+
+Identity-exposure controls covering ground the CIS set does not reach. Check logic lives in ``services/compliance/src/services/checkers/``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 18 52 30
+
+   * - Control
+     - Title
+     - Source
+   * - MAES-FED-01
+     - Federated domains are inventoried and understood
+     - Graph ``/domains``
+   * - MAES-FED-02
+     - AD FS WS-Trust endpoints are not publicly reachable
+     - HTTP probe
+   * - MAES-FED-03
+     - AD FS metadata exchange endpoint is not exposed
+     - HTTP probe
+   * - MAES-AUTH-01
+     - Resource owner password credentials (ROPC) sign-in is blocked
+     - Conditional Access
+   * - MAES-AUTH-02
+     - Legacy authentication is blocked tenant-wide
+     - Conditional Access
+   * - MAES-MFA-01
+     - All enabled users have registered a strong authentication method
+     - Registration report
+   * - MAES-MFA-02
+     - Privileged role holders have a phishing-resistant method
+     - Registration report + roles
+   * - MAES-MFA-03
+     - No enabled user is excluded from every MFA-enforcing policy
+     - Conditional Access
+   * - MAES-CA-01
+     - Policies are not parked in report-only or disabled state
+     - Conditional Access
+   * - MAES-CA-02
+     - Break-glass and excluded principals are inventoried and constrained
+     - Conditional Access
+   * - MAES-SP-01
+     - Service principals do not hold high-privilege application permissions
+     - Graph ``/servicePrincipals``
+   * - MAES-SP-02
+     - Application credentials are current and not excessively long-lived
+     - Graph ``/servicePrincipals``
+   * - MAES-MAIL-01
+     - SPF is published and not permissive
+     - DNS
+   * - MAES-MAIL-02
+     - DMARC is published with an enforcing policy
+     - DNS
+   * - MAES-MAIL-03
+     - DKIM signing is enabled per domain
+     - DNS
+   * - MAES-DNS-01
+     - Supporting mail and DNS security records are published
+     - DNS
+
+Three of these probe the tenant's own AD FS host over HTTP, discovered through the unauthenticated user-realm endpoint. No credentials are submitted — reachability alone is the signal.
 
 Assessment Results
 ------------------
