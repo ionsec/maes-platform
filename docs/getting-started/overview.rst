@@ -27,18 +27,18 @@ Key Capabilities
 Technology Stack
 ----------------
 
-=============  ====================================  ==============
-Component      Technology                            Version
-=============  ====================================  ==============
-API Server     Node.js / Express                    20+
-Frontend       React 19 / Material UI / Vite         19
-Database       PostgreSQL 14 / TimescaleDB           14
-Cache/Queue    Redis 7 / BullMQ                      7
-Extractor      PowerShell / Microsoft-Extractor-Suite  Latest
-Analyzer       Node.js / Blacklist-based detection    20+
-Compliance     Node.js / Microsoft Graph / MSAL      20+
-Monitoring     Prometheus / Grafana / Loki            Latest
-=============  ====================================  ==============
+===========  ======================================  =======
+Component    Technology                              Version
+===========  ======================================  =======
+API Server   Node.js / Express                       20+
+Frontend     React 19 / Material UI / Vite           19
+Database     PostgreSQL 14 / TimescaleDB             14
+Cache/Queue  Redis 7 / BullMQ                        7
+Extractor    PowerShell / Microsoft-Extractor-Suite  Latest
+Analyzer     Node.js / Blacklist-based detection     20+
+Compliance   Node.js / Microsoft Graph / MSAL        20+
+Monitoring   Prometheus / Grafana / Loki             Latest
+===========  ======================================  =======
 
 Upstream Projects
 ^^^^^^^^^^^^^^^^^
