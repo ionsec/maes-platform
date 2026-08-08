@@ -5,7 +5,17 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "test": "jest"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "<rootDir>/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "src/services/checkers/**/*.js"
+    ]
   },
   "dependencies": {
     "@azure/msal-node": "^5.5.0",
@@ -22,6 +32,7 @@
     "winston": "^3.17.0"
   },
   "devDependencies": {
+    "jest": "^30.2.0",
     "nodemon": "^3.1.10"
   },
   "overrides": {

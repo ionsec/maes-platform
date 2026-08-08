@@ -1,5 +1,6 @@
 const { ComplianceAssessment, ComplianceControl, ComplianceResult } = require('../models');
 const graphClientService = require('./graphClient');
+const { collectCheckers } = require('./checkers');
 const { logger } = require('../logger');
 
 class AssessmentEngine {
@@ -22,8 +23,14 @@ class AssessmentEngine {
     this.controlCheckers.set('6.5.4', this.checkSMTPAuthDisabled.bind(this));
     this.controlCheckers.set('7.2.11', this.checkSharePointSharingLinks.bind(this));
     this.controlCheckers.set('8.2.2', this.checkTeamsExternalAccess.bind(this));
-    
-    // Add more control checkers as needed
+
+    // MAES Entra posture control checkers (maes_entra_v100), defined in
+    // ./checkers/. Control ids are namespaced (MAES-*) so they cannot collide
+    // with the numeric CIS ids above.
+    for (const [controlId, checker] of collectCheckers()) {
+      this.controlCheckers.set(controlId, checker);
+    }
+
     logger.info(`Initialized ${this.controlCheckers.size} compliance control checkers`);
   }
 

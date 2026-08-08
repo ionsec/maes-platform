@@ -3,11 +3,13 @@ const schedule = require('node-schedule');
 const { ComplianceSchedule, Organization } = require('../models');
 const { logger } = require('../logger');
 const assessmentEngine = require('./assessmentEngine');
+const { authorizeScan, AuthorizationError } = require('../recon/authorization');
 
 class ComplianceScheduler {
   constructor() {
     this.scheduledJobs = new Map();
     this.complianceQueue = null;
+    this.reconQueue = null;
     this.redisConnection = {
       host: process.env.REDIS_HOST || 'redis',
       port: parseInt(process.env.REDIS_PORT) || 6379,
@@ -22,6 +24,10 @@ class ComplianceScheduler {
     try {
       // Initialize BullMQ queue
       this.complianceQueue = new Queue('compliance-assessments', {
+        connection: this.redisConnection
+      });
+
+      this.reconQueue = new Queue('maes-recon', {
         connection: this.redisConnection
       });
 
@@ -75,10 +81,24 @@ class ComplianceScheduler {
         name,
         description,
         assessmentType = 'cis_v400',
+        scheduleKind = 'compliance',
+        seedDomain,
+        reconProfile,
         frequency,
         createdBy,
         parameters = {}
       } = scheduleData;
+
+      if (scheduleKind === 'external_exposure') {
+        if (!seedDomain || !reconProfile) {
+          throw new Error('An external exposure schedule requires seedDomain and reconProfile');
+        }
+
+        // Validate the scan is permitted now rather than discovering at 2am
+        // that the schedule can never run. Authorization is re-checked at every
+        // execution too, since it can expire or be revoked in the meantime.
+        await authorizeScan({ organizationId, seedDomain, profile: reconProfile });
+      }
 
       // Calculate next run time based on frequency
       const nextRunAt = this.calculateNextRun(frequency);
@@ -89,6 +109,9 @@ class ComplianceScheduler {
         name,
         description,
         assessment_type: assessmentType,
+        schedule_kind: scheduleKind,
+        seed_domain: scheduleKind === 'external_exposure' ? seedDomain : null,
+        recon_profile: scheduleKind === 'external_exposure' ? reconProfile : null,
         frequency,
         is_active: true,
         next_run_at: nextRunAt,
@@ -220,13 +243,17 @@ class ComplianceScheduler {
    */
   async executeScheduledAssessment(schedule) {
     try {
-      logger.info(`Executing scheduled assessment for schedule ${schedule.id}`);
+      logger.info(`Executing scheduled ${schedule.schedule_kind || 'compliance'} job for schedule ${schedule.id}`);
 
       // Get organization credentials
       const organization = await Organization.findByPk(schedule.organization_id);
       if (!organization || !organization.is_active) {
         logger.warn(`Organization ${schedule.organization_id} not found or inactive, skipping assessment`);
         return;
+      }
+
+      if (schedule.schedule_kind === 'external_exposure') {
+        return await this.executeScheduledReconScan(schedule);
       }
 
       const credentials = organization.credentials;
@@ -286,6 +313,69 @@ class ComplianceScheduler {
         logger.error('Error updating schedule after failed execution:', updateError);
       }
     }
+  }
+
+  /**
+   * Execute a scheduled external exposure scan.
+   *
+   * Authorization is re-checked here, not just when the schedule was created:
+   * an authorization expires or is revoked on its own timetable, and a schedule
+   * must never keep sending traffic on the strength of permission that has
+   * since lapsed. A refused scan deactivates the schedule rather than retrying
+   * it nightly against a scope we no longer have.
+   */
+  async executeScheduledReconScan(schedule) {
+    const { organization_id: organizationId, seed_domain: seedDomain, recon_profile: profile } = schedule;
+
+    try {
+      await authorizeScan({ organizationId, seedDomain, profile });
+    } catch (error) {
+      if (error instanceof AuthorizationError) {
+        logger.warn(
+          `Schedule ${schedule.id} refused: ${seedDomain} is no longer authorized at the '${profile}' `
+          + `profile. Deactivating the schedule. ${error.message}`
+        );
+        await schedule.update({
+          is_active: false,
+          last_run_at: new Date(),
+          parameters: {
+            ...(schedule.parameters || {}),
+            deactivatedReason: error.message,
+            deactivatedAt: new Date().toISOString()
+          }
+        });
+        await this.deactivateSchedule(schedule.id);
+        return;
+      }
+      throw error;
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    const job = await this.reconQueue.add('run-recon-scan', {
+      organizationId,
+      seedDomain,
+      profile,
+      options: {
+        name: `${schedule.name} - ${timestamp}`,
+        description: `Scheduled external exposure scan from: ${schedule.name}`,
+        isScheduled: true,
+        parentScheduleId: schedule.id,
+        seedUser: schedule.parameters?.seedUser || undefined
+      }
+    }, {
+      priority: 5,
+      // Matches the manual path: a scan sends real traffic to third parties, so
+      // a failure surfaces rather than silently doubling that traffic.
+      attempts: 1
+    });
+
+    await schedule.update({
+      last_run_at: new Date(),
+      next_run_at: this.calculateNextRun(schedule.frequency)
+    });
+
+    logger.info(`Queued scheduled recon scan ${job.id} for ${seedDomain} (${profile})`);
   }
 
   /**
@@ -401,10 +491,18 @@ class ComplianceScheduler {
         }
       });
 
+      const reconSchedules = await ComplianceSchedule.count({
+        where: { schedule_kind: 'external_exposure', is_active: true }
+      });
+
       return {
         total: totalSchedules,
         active: activeSchedules,
         upcoming: schedulesWithUpcomingRuns,
+        activeByKind: {
+          compliance: activeSchedules - reconSchedules,
+          externalExposure: reconSchedules
+        },
         jobsInMemory: this.scheduledJobs.size
       };
     } catch (error) {
@@ -429,9 +527,12 @@ class ComplianceScheduler {
       }
       this.scheduledJobs.clear();
 
-      // Gracefully close the queue
+      // Gracefully close the queues
       if (this.complianceQueue) {
         await this.complianceQueue.close();
+      }
+      if (this.reconQueue) {
+        await this.reconQueue.close();
       }
 
       logger.info('Compliance scheduler shutdown complete');

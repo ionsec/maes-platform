@@ -7,7 +7,11 @@ const { sequelize } = require('./models');
 const assessmentEngine = require('./services/assessmentEngine');
 const scheduler = require('./services/scheduler');
 const reportGenerator = require('./services/reportGenerator');
-const requiredEnvVars = ['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
+const { reconEngine } = require('./recon/reconEngine');
+const { reconReportGenerator } = require('./recon/reconReportGenerator');
+const { AuthorizationError } = require('./recon/authorization');
+const db = require('./services/database');
+const requiredEnvVars =['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
 
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
@@ -27,8 +31,16 @@ const complianceQueue = new Queue('compliance-assessments', {
   connection: redisConnection
 });
 
+// External exposure scans get their own queue and worker. They are long-running
+// and network-bound rather than Graph-bound, so they must not consume the
+// compliance worker's two concurrency slots.
+const reconQueue = new Queue('maes-recon', {
+  connection: redisConnection
+});
+
 // Workers
 let complianceWorker;
+let reconWorker;
 
 // Express app for API endpoints
 const app = express();
@@ -386,6 +398,323 @@ app.get('/api/assessment/:assessmentId/report/:fileName/download', validateServi
   }
 });
 
+// --- External exposure (recon) endpoints ---------------------------------
+
+// Start an external exposure scan.
+app.post('/api/recon/start', validateServiceToken, async (req, res) => {
+  try {
+    const { organizationId, seedDomain, profile = 'passive', options = {} } = req.body;
+
+    if (!organizationId || !seedDomain) {
+      return res.status(400).json({
+        error: 'Missing required parameters: organizationId and seedDomain'
+      });
+    }
+
+    const job = await reconQueue.add('run-recon-scan', {
+      organizationId,
+      seedDomain,
+      profile,
+      options
+    }, {
+      priority: options.priority || 10,
+      // A recon scan sends real traffic to third parties. Retrying it
+      // automatically would silently double that traffic, so failures surface
+      // to the operator instead.
+      attempts: 1
+    });
+
+    logger.info(`Queued recon scan job ${job.id} for ${seedDomain} (${profile})`);
+
+    res.json({
+      success: true,
+      jobId: job.id,
+      message: 'External exposure scan queued successfully'
+    });
+
+  } catch (error) {
+    logger.error('Failed to queue recon scan:', error);
+    res.status(500).json({ error: 'Failed to start scan', message: error.message });
+  }
+});
+
+// Scan detail, with findings and attack paths.
+app.get('/api/recon/scan/:scanId', validateServiceToken, async (req, res) => {
+  try {
+    const { scanId } = req.params;
+    const { includeFindings = 'true', includeProbeLog = 'false' } = req.query;
+
+    const scan = await db.getRow(`SELECT * FROM maes.recon_scans WHERE id = $1`, [scanId]);
+    if (!scan) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
+
+    const payload = { success: true, scan };
+
+    if (includeFindings === 'true') {
+      payload.findings = await db.getRows(
+        `SELECT * FROM maes.recon_findings
+          WHERE scan_id = $1
+          ORDER BY CASE severity
+                     WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3
+                     WHEN 'low' THEN 4 ELSE 5 END,
+                   phase, title`,
+        [scanId]
+      );
+      payload.attackPaths = await db.getRows(
+        `SELECT * FROM maes.recon_attack_paths WHERE scan_id = $1
+          ORDER BY CASE severity
+                     WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3
+                     WHEN 'low' THEN 4 ELSE 5 END`,
+        [scanId]
+      );
+    }
+
+    if (includeProbeLog === 'true') {
+      payload.probeLog = await db.getRows(
+        `SELECT * FROM maes.recon_probe_log WHERE scan_id = $1 ORDER BY probed_at LIMIT 5000`,
+        [scanId]
+      );
+    }
+
+    res.json(payload);
+
+  } catch (error) {
+    logger.error('Failed to fetch recon scan:', error);
+    res.status(500).json({ error: 'Failed to fetch scan', message: error.message });
+  }
+});
+
+// Scan history for an organization.
+app.get('/api/recon/scans/:organizationId', validateServiceToken, async (req, res) => {
+  try {
+    const { organizationId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+    const offset = parseInt(req.query.offset, 10) || 0;
+
+    const scans = await db.getRows(
+      `SELECT * FROM maes.recon_scans
+        WHERE organization_id = $1
+        ORDER BY created_at DESC
+        LIMIT $2 OFFSET $3`,
+      [organizationId, limit, offset]
+    );
+
+    const total = await db.count(
+      `SELECT COUNT(*) AS count FROM maes.recon_scans WHERE organization_id = $1`,
+      [organizationId]
+    );
+
+    res.json({ success: true, scans, pagination: { total, limit, offset } });
+
+  } catch (error) {
+    logger.error('Failed to list recon scans:', error);
+    res.status(500).json({ error: 'Failed to list scans', message: error.message });
+  }
+});
+
+// Scope authorizations.
+app.get('/api/recon/authorizations/:organizationId', validateServiceToken, async (req, res) => {
+  try {
+    const authorizations = await db.getRows(
+      `SELECT * FROM maes.recon_authorizations
+        WHERE organization_id = $1
+        ORDER BY authorized_at DESC`,
+      [req.params.organizationId]
+    );
+    res.json({ success: true, authorizations });
+  } catch (error) {
+    logger.error('Failed to list recon authorizations:', error);
+    res.status(500).json({ error: 'Failed to list authorizations', message: error.message });
+  }
+});
+
+app.post('/api/recon/authorizations', validateServiceToken, async (req, res) => {
+  try {
+    const {
+      organizationId,
+      domains,
+      profileCeiling = 'standard',
+      authorizedBy,
+      authorizedByName,
+      authorizationReference,
+      notes,
+      expiresAt
+    } = req.body;
+
+    if (!organizationId || !Array.isArray(domains) || domains.length === 0 || !expiresAt) {
+      return res.status(400).json({
+        error: 'organizationId, a non-empty domains array, and expiresAt are required'
+      });
+    }
+
+    const authorization = await db.insert(
+      `INSERT INTO maes.recon_authorizations
+         (organization_id, domains, profile_ceiling, authorized_by, authorized_by_name,
+          authorization_reference, notes, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        organizationId,
+        domains.map(d => String(d).trim().toLowerCase()),
+        profileCeiling,
+        authorizedBy || null,
+        authorizedByName || null,
+        authorizationReference || null,
+        notes || null,
+        expiresAt
+      ]
+    );
+
+    logger.info(
+      `Recorded recon authorization ${authorization.id} for organization ${organizationId} `
+      + `(${domains.length} domain(s), ceiling: ${profileCeiling}, expires: ${expiresAt})`
+    );
+
+    res.json({ success: true, authorization });
+
+  } catch (error) {
+    logger.error('Failed to record recon authorization:', error);
+    res.status(500).json({ error: 'Failed to record authorization', message: error.message });
+  }
+});
+
+app.delete('/api/recon/authorizations/:authorizationId', validateServiceToken, async (req, res) => {
+  try {
+    const revoked = await db.update(
+      `UPDATE maes.recon_authorizations
+          SET revoked_at = NOW()
+        WHERE id = $1 AND revoked_at IS NULL
+        RETURNING *`,
+      [req.params.authorizationId]
+    );
+
+    if (!revoked) {
+      return res.status(404).json({ error: 'Authorization not found or already revoked' });
+    }
+
+    logger.info(`Revoked recon authorization ${revoked.id}`);
+    res.json({ success: true, authorization: revoked });
+
+  } catch (error) {
+    logger.error('Failed to revoke recon authorization:', error);
+    res.status(500).json({ error: 'Failed to revoke authorization', message: error.message });
+  }
+});
+
+// Generate a report for a completed scan.
+app.post('/api/recon/scan/:scanId/report', validateServiceToken, async (req, res) => {
+  try {
+    const { scanId } = req.params;
+    const { format = 'html', options = {} } = req.body;
+
+    const scan = await db.getRow(
+      `SELECT id, organization_id, status FROM maes.recon_scans WHERE id = $1`,
+      [scanId]
+    );
+
+    if (!scan) {
+      return res.status(404).json({ error: 'Scan not found' });
+    }
+    if (scan.status !== 'completed') {
+      return res.status(400).json({
+        error: `Scan is '${scan.status}'; only completed scans can be reported on`
+      });
+    }
+
+    const result = await reconReportGenerator.generateReport(scanId, format, options);
+
+    await db.query(
+      `INSERT INTO maes.recon_reports
+         (scan_id, organization_id, format, type, file_path, file_name, file_size,
+          includes_probe_log, generated_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        scanId,
+        scan.organization_id,
+        result.format || format,
+        options.type || 'full',
+        result.filePath,
+        result.fileName,
+        result.size,
+        Boolean(options.includeProbeLog),
+        options.generatedBy || null
+      ]
+    );
+
+    res.json({
+      success: true,
+      report: {
+        scanId,
+        format: result.format || format,
+        fileName: result.fileName,
+        size: result.size,
+        note: result.note,
+        generatedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (error) {
+    logger.error(`Failed to generate report for scan ${req.params.scanId}:`, error);
+    res.status(500).json({ error: 'Failed to generate report', message: error.message });
+  }
+});
+
+app.get('/api/recon/scan/:scanId/reports', validateServiceToken, async (req, res) => {
+  try {
+    const reports = await db.getRows(
+      `SELECT * FROM maes.recon_reports WHERE scan_id = $1 ORDER BY created_at DESC`,
+      [req.params.scanId]
+    );
+    res.json({ success: true, reports });
+  } catch (error) {
+    logger.error('Failed to list recon reports:', error);
+    res.status(500).json({ error: 'Failed to list reports', message: error.message });
+  }
+});
+
+app.get('/api/recon/scan/:scanId/report/:fileName/download', validateServiceToken, async (req, res) => {
+  try {
+    const { scanId, fileName } = req.params;
+
+    // Look the file up by scan and name rather than trusting the path, so a
+    // crafted fileName cannot reach outside the reports directory.
+    const report = await db.getRow(
+      `SELECT * FROM maes.recon_reports WHERE scan_id = $1 AND file_name = $2`,
+      [scanId, fileName]
+    );
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
+
+    const filePath = path.join(REPORTS_DIR, path.basename(report.file_name));
+    try {
+      await fs.access(filePath);
+    } catch (err) {
+      logger.error(`Recon report file not found: ${filePath}`);
+      return res.status(404).json({ error: 'Report file not found' });
+    }
+
+    const contentTypes = {
+      html: 'text/html',
+      json: 'application/json',
+      csv: 'text/csv',
+      pdf: 'application/pdf'
+    };
+
+    const fileContent = await fs.readFile(filePath);
+    res.setHeader('Content-Type', contentTypes[report.format] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(report.file_name)}"`);
+    res.setHeader('Content-Length', fileContent.length);
+    res.send(fileContent);
+
+  } catch (error) {
+    logger.error('Failed to download recon report:', error);
+    res.status(500).json({ error: 'Failed to download report', message: error.message });
+  }
+});
+
 // Initialize the compliance service
 async function initialize() {
   try {
@@ -402,6 +731,8 @@ async function initialize() {
     // Initialize report generator
     await reportGenerator.initialize();
     logger.info('Report generator initialized');
+
+    await reconReportGenerator.initialize();
 
     // Set up queue processors
     setupQueueProcessors();
@@ -479,6 +810,44 @@ function setupQueueProcessors() {
     logger.debug(`Compliance assessment job ${job.id} progress: ${progress}%`);
   });
 
+  // External exposure worker. Concurrency is 1: scans are network-bound and
+  // already parallel internally through the probe client, and running several
+  // at once would multiply outbound traffic beyond what the per-scan rate
+  // limits were sized for.
+  reconWorker = new Worker('maes-recon', async (job) => {
+    const { organizationId, seedDomain, profile, options } = job.data;
+    logger.info(`Processing recon scan job ${job.id}: ${seedDomain} (${profile})`);
+
+    const result = await reconEngine.runScan(organizationId, seedDomain, profile, {
+      ...options,
+      jobId: job.id
+    });
+
+    return {
+      success: true,
+      scanId: result.scanId,
+      findingCount: result.findings.length,
+      attackPathCount: result.attackPaths.length,
+      probeCount: result.probeCount,
+      counts: result.counts
+    };
+  }, {
+    connection: redisConnection,
+    concurrency: 1
+  });
+
+  reconWorker.on('completed', (job, result) => {
+    logger.info(`Recon scan job ${job.id} completed:`, result);
+  });
+
+  reconWorker.on('failed', (job, err) => {
+    if (err instanceof AuthorizationError) {
+      logger.warn(`Recon scan job ${job?.id} refused: ${err.message}`);
+    } else {
+      logger.error(`Recon scan job ${job?.id} failed:`, err);
+    }
+  });
+
   logger.info('Queue processors set up successfully');
 }
 
@@ -526,7 +895,9 @@ process.on('SIGTERM', async () => {
   
   try {
     await complianceWorker.close();
+    if (reconWorker) await reconWorker.close();
     await complianceQueue.close();
+    await reconQueue.close();
     await scheduler.shutdown();
     await sequelize.close();
     
@@ -543,7 +914,9 @@ process.on('SIGINT', async () => {
   
   try {
     await complianceWorker.close();
+    if (reconWorker) await reconWorker.close();
     await complianceQueue.close();
+    await reconQueue.close();
     await scheduler.shutdown();
     await sequelize.close();
     

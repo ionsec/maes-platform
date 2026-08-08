@@ -4,10 +4,25 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { logger } = require('../logger');
+const GraphClientWrapper = require('../clients/graphClientWrapper');
 
 class GraphClientService {
   constructor() {
     this.clients = new Map(); // Cache clients by organization
+  }
+
+  /**
+   * Attach paging/throttling helpers to a Graph client so control checkers can
+   * call graphClient.getAllPages(...) instead of hand-rolling .top() calls.
+   * The raw .api() surface is left untouched for existing checkers.
+   * @param {Client} graphClient
+   * @returns {Client} the same client, with helpers attached
+   */
+  attachHelpers(graphClient) {
+    const wrapper = new GraphClientWrapper(graphClient);
+    graphClient.getAllPages = wrapper.getAllPages.bind(wrapper);
+    graphClient.getPage = wrapper.getPage.bind(wrapper);
+    return graphClient;
   }
 
   /**
@@ -75,23 +90,33 @@ class GraphClientService {
 
       // Create MSAL instance
       const cca = new ConfidentialClientApplication(msalConfig);
-      
-      // Get access token
-      const response = await cca.acquireTokenByClientCredential(clientCredentialRequest);
-      
-      if (!response || !response.accessToken) {
+
+      // Acquire once up-front so credential problems surface here rather than
+      // on the first Graph call.
+      const initial = await cca.acquireTokenByClientCredential(clientCredentialRequest);
+      if (!initial || !initial.accessToken) {
         throw new Error('Failed to acquire access token');
       }
 
-      // Create Graph client
+      // Resolve a token per request. MSAL caches internally and only hits the
+      // token endpoint again once the cached token is close to expiring, so the
+      // client can be long-lived without going stale.
       const graphClient = Client.init({
-        authProvider: (done) => {
-          done(null, response.accessToken);
+        authProvider: async (done) => {
+          try {
+            const result = await cca.acquireTokenByClientCredential(clientCredentialRequest);
+            if (!result || !result.accessToken) {
+              throw new Error('Failed to acquire access token');
+            }
+            done(null, result.accessToken);
+          } catch (error) {
+            done(error, null);
+          }
         }
       });
 
       logger.info(`Graph client created successfully for tenant: ${tenantId} using certificate authentication`);
-      return graphClient;
+      return this.attachHelpers(graphClient);
 
     } catch (error) {
       logger.error(`Failed to create Graph client for tenant ${tenantId}:`, error);
@@ -106,13 +131,19 @@ class GraphClientService {
    * @returns {Client} Microsoft Graph client
    */
   async getGraphClient(organizationId, credentials) {
-    const cacheKey = `${organizationId}_${credentials.tenantId}`;
-    
-    // For now, we'll create a new client each time to avoid token expiration issues
-    // In production, implement proper token refresh logic
+    const cacheKey = `${organizationId}_${credentials.tenantId}_${credentials.clientId}`;
+
+    // The client's authProvider refreshes tokens through MSAL on every request,
+    // so a cached client never serves an expired token.
+    const cached = this.clients.get(cacheKey);
+    if (cached) {
+      logger.debug(`Reusing cached Graph client for ${cacheKey}`);
+      return cached;
+    }
+
     const client = await this.createGraphClient(credentials);
     this.clients.set(cacheKey, client);
-    
+
     return client;
   }
 
