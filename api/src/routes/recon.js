@@ -153,6 +153,24 @@ router.get('/scan/:scanId/probe-log',
   }
 );
 
+// Drift between two scans: what appeared, what was resolved, what persists.
+router.get('/compare/:baselineId/:currentId',
+  authenticateToken,
+  requirePermission('canManageCompliance'),
+  async (req, res) => {
+    try {
+      const response = await axios.get(
+        `${RECON_SERVICE_URL}/api/recon/compare/${req.params.baselineId}/${req.params.currentId}`,
+        { headers: SERVICE_HEADERS(), timeout: 30000 }
+      );
+      res.json(response.data);
+    } catch (error) {
+      logger.error('Error comparing external exposure scans:', error.message);
+      return relayError(res, error, 'Failed to compare scans');
+    }
+  }
+);
+
 // --- Reports --------------------------------------------------------------
 
 router.post('/scan/:scanId/report',
