@@ -368,7 +368,9 @@ router.get('/events',
           description,
           severity,
           category,
-          mitre_techniques,
+          -- The alerts table stores ATT&CK data as a JSONB object; consumers
+          -- expect a flat array of technique ids under mitre_techniques.
+          COALESCE(mitre_attack->'techniques', '[]'::jsonb) AS mitre_techniques,
           affected_entities,
           created_at,
           updated_at
@@ -513,7 +515,9 @@ router.get('/download',
           description,
           severity,
           category,
-          mitre_techniques,
+          -- The alerts table stores ATT&CK data as a JSONB object; consumers
+          -- expect a flat array of technique ids under mitre_techniques.
+          COALESCE(mitre_attack->'techniques', '[]'::jsonb) AS mitre_techniques,
           affected_entities,
           created_at,
           updated_at
