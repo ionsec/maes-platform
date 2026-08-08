@@ -66,12 +66,14 @@ async function authenticateSocket(socket, next) {
 /**
  * May this user receive events for this organization?
  *
- * Mirrors the REST rule: administrators may cross organizations, everyone else
- * needs their home organization or an explicit membership row.
+ * Mirrors the REST rule: only super_admin crosses organizations; everyone
+ * else needs their home organization or an explicit membership row.
  */
 async function canAccessOrganization(user, organizationId) {
   if (!user || !organizationId) return false;
-  if (user.role === 'admin' || user.role === 'super_admin') return true;
+  // Only super_admin crosses organizations; an admin needs a membership row,
+  // matching middleware/auth.js. See isSuperAdminRole there.
+  if (user.role === 'super_admin') return true;
   if (user.organizationId === organizationId) return true;
 
   const result = await pool.query(

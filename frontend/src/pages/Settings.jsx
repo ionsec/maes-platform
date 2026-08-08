@@ -441,8 +441,8 @@ const Settings = () => {
           </Alert>
         )}
         
-        {/* Organization Management Buttons - Show for admins and super_admins */}
-        {(user?.role === 'admin' || user?.role === 'super_admin') && (
+        {/* Organization management is a cross-organization operation, so it is super_admin only. */}
+        {(user?.role === 'super_admin') && (
           <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
             <Button
               variant="outlined"
@@ -494,7 +494,7 @@ const Settings = () => {
                 <CardHeader 
                   title={organization?.id === 'individual' ? 'User Information' : 'Organization Information'}
                   action={
-                    (user?.role === 'admin' || user?.role === 'super_admin') && selectedOrganizationId !== '00000000-0000-0000-0000-000000000001' && (
+                    (user?.role === 'super_admin') && selectedOrganizationId !== '00000000-0000-0000-0000-000000000001' && (
                       <IconButton
                         color="error"
                         onClick={() => setDeleteDialogOpen(true)}

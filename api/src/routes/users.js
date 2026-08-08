@@ -1,7 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { User, Organization, AuditLog } = require('../services/models');
-const { authenticateToken, requirePermission, requireSuperAdmin } = require('../middleware/auth');
+const { authenticateToken, requirePermission, requireSuperAdmin, isSuperAdminRole } = require('../middleware/auth');
 const { logger } = require('../utils/logger');
 const { pool } = require('../services/database');
 
@@ -46,7 +46,7 @@ router.get('/', authenticateToken, requirePermission('canManageUsers'), async (r
     let paramCount = 0;
 
     // Super admins can see users from all organizations if requested
-    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    const isSuperAdmin = isSuperAdminRole(req.user);
     
     if (!allOrganizations || !isSuperAdmin) {
       // Regular filter by organization
@@ -187,7 +187,7 @@ router.post('/', authenticateToken, requirePermission('canManageUsers'), async (
     }
 
     // Determine target organization
-    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    const isSuperAdmin = isSuperAdminRole(req.user);
     const finalOrgId = (isSuperAdmin && targetOrgId) ? targetOrgId : req.organizationId;
 
     // Check if user already exists
@@ -440,7 +440,7 @@ router.patch('/:userId/permissions', authenticateToken, requirePermission('canMa
     }
 
     // Don't allow users to modify their own permissions unless they are super admin
-    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
+    const isSuperAdmin = isSuperAdminRole(req.user);
     if (userId === req.user.id && !isSuperAdmin) {
       return res.status(403).json({ error: 'Cannot modify your own permissions' });
     }
