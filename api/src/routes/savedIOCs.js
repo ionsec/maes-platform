@@ -4,6 +4,7 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 const { pool } = require('../services/database');
+const iocEnrichment = require('../services/threatIntel/iocEnrichment');
 
 const router = express.Router();
 
@@ -114,6 +115,84 @@ router.post('/saved',
     } catch (error) {
       logger.error('Error saving IOC:', error);
       res.status(500).json({ error: 'Failed to save IOC' });
+    }
+  }
+);
+
+/**
+ * Enrich a saved IOC and persist the verdict.
+ *
+ * The Saved IOCs table has risk_level, risk_score, enrichment_data and
+ * last_enriched_at columns, but nothing ever wrote to them: the page called
+ * the stateless /enrich endpoint and then re-read the table, so the Risk Level
+ * column stayed "Not enriched" forever and those four columns were dead.
+ */
+router.post('/saved/:id/enrich',
+  requirePermission('canAccessThreatIntel'),
+  async (req, res) => {
+    try {
+      const existing = await pool.query(
+        'SELECT id, value, type FROM maes.saved_iocs WHERE id = $1 AND organization_id = $2',
+        [req.params.id, req.organizationId]
+      );
+
+      if (existing.rows.length === 0) {
+        return res.status(404).json({ error: 'IOC not found' });
+      }
+
+      const ioc = existing.rows[0];
+      let enrichment;
+
+      switch (ioc.type) {
+        case 'ip':
+          enrichment = await iocEnrichment.enrichIP(ioc.value);
+          break;
+        case 'domain':
+          enrichment = await iocEnrichment.enrichDomain(ioc.value);
+          break;
+        case 'hash':
+          enrichment = await iocEnrichment.enrichHash(ioc.value);
+          break;
+        default:
+          return res.status(400).json({ error: `Cannot enrich IOC of type '${ioc.type}'` });
+      }
+
+      // With no provider configured, enrichment returns a zero-score "clean"
+      // result. Recording that as a verdict would assert something the
+      // platform did not actually check, so the columns are left untouched and
+      // the caller is told why.
+      if (!enrichment.providers_checked || enrichment.providers_checked.length === 0) {
+        return res.json({
+          success: true,
+          enriched: false,
+          reason: 'No threat intelligence providers are configured, so no verdict was recorded.',
+          ioc
+        });
+      }
+
+      const updated = await pool.query(
+        `UPDATE maes.saved_iocs
+            SET risk_level = $1,
+                risk_score = $2,
+                enrichment_data = $3,
+                last_enriched_at = NOW(),
+                updated_at = NOW()
+          WHERE id = $4 AND organization_id = $5
+          RETURNING *`,
+        [
+          enrichment.risk_level,
+          enrichment.risk_score,
+          JSON.stringify(enrichment),
+          ioc.id,
+          req.organizationId
+        ]
+      );
+
+      res.json({ success: true, enriched: true, ioc: updated.rows[0] });
+
+    } catch (error) {
+      logger.error('Error enriching saved IOC:', error);
+      res.status(500).json({ error: 'Failed to enrich IOC' });
     }
   }
 );

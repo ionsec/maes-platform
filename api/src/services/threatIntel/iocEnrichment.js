@@ -108,6 +108,42 @@ class IOCEnrichmentService {
       }
     }
 
+    // Check IPQualityScore. This provider was reported as configured by
+    // /stats and initialised in the constructor, but nothing ever called it,
+    // so it would show "Active" while contributing nothing to any verdict.
+    if (this.providers.ipqualityscore.enabled) {
+      try {
+        const iqsResult = await this.checkIPQualityScore(ip);
+        results.providers_checked.push('ipqualityscore');
+
+        if (iqsResult) {
+          const fraudScore = iqsResult.fraud_score ?? 0;
+          results.findings.push({
+            provider: 'ipqualityscore',
+            type: 'reputation',
+            severity: fraudScore > 85 ? 'high' : fraudScore > 60 ? 'medium' : 'low',
+            data: {
+              fraud_score: fraudScore,
+              proxy: iqsResult.proxy,
+              vpn: iqsResult.vpn,
+              tor: iqsResult.tor,
+              recent_abuse: iqsResult.recent_abuse,
+              bot_status: iqsResult.bot_status,
+              country_code: iqsResult.country_code,
+              ISP: iqsResult.ISP
+            }
+          });
+
+          results.risk_score += fraudScore;
+          results.metadata.proxy = iqsResult.proxy;
+          results.metadata.vpn = iqsResult.vpn;
+          results.metadata.tor = iqsResult.tor;
+        }
+      } catch (error) {
+        logger.warn('IPQualityScore check failed:', error.message);
+      }
+    }
+
     // Normalize risk score
     results.risk_score = Math.min(results.risk_score, 100);
     results.risk_level = this.getRiskLevel(results.risk_score);
@@ -239,12 +275,17 @@ class IOCEnrichmentService {
       ips: [],
       domains: [],
       hashes: [],
+      // Values that match none of the three detectors used to be dropped with
+      // no trace, while summary.total still counted them — so the buckets
+      // silently failed to add up.
+      unrecognized: [],
       summary: {
         total: iocs.length,
         high_risk: 0,
         medium_risk: 0,
         low_risk: 0,
-        clean: 0
+        clean: 0,
+        unrecognized: 0
       }
     };
 
@@ -267,6 +308,9 @@ class IOCEnrichmentService {
         else if (result.risk_score >= 40) results.summary.medium_risk++;
         else if (result.risk_score >= 20) results.summary.low_risk++;
         else results.summary.clean++;
+      } else {
+        results.unrecognized.push(ioc.value);
+        results.summary.unrecognized++;
       }
     }
 
@@ -287,6 +331,15 @@ class IOCEnrichmentService {
       params: { key: this.providers.shodan.apiKey }
     });
     return response.data;
+  }
+
+  async checkIPQualityScore(ip) {
+    const response = await axios.get(
+      `https://ipqualityscore.com/api/json/ip/${this.providers.ipqualityscore.apiKey}/${ip}`,
+      { params: { strictness: 1, allow_public_access_points: true } }
+    );
+    // The API reports failures in the body with HTTP 200.
+    return response.data?.success === false ? null : response.data;
   }
 
   async checkVirusTotalDomain(domain) {

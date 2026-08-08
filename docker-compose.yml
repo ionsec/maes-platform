@@ -61,6 +61,16 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
       SIEM_EXPORT_LIMIT: ${SIEM_EXPORT_LIMIT:-1000}
       SIEM_RATE_LIMIT: ${SIEM_RATE_LIMIT:-50}
+      # Threat intelligence providers. These are read from process.env by
+      # services/threatIntel/iocEnrichment.js, which enables a provider only
+      # when its key is present. They were documented in .env.example but never
+      # passed into the container, so every provider was permanently disabled
+      # and enrichment returned nothing however the operator configured it.
+      # Optional: leave unset to run without that provider.
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+      SHODAN_API_KEY: ${SHODAN_API_KEY:-}
+      IPQUALITYSCORE_API_KEY: ${IPQUALITYSCORE_API_KEY:-}
       PORT: 3000
       ENABLE_DOCKER_LOGS: ${ENABLE_DOCKER_LOGS:-false}
       FIRST_USER_ADMIN: ${FIRST_USER_ADMIN:-true}

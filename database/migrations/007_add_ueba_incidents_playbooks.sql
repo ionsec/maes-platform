@@ -102,6 +102,6 @@ COMMENT ON TABLE maes.incident_evidence IS 'Evidence collected during incident r
 COMMENT ON TABLE maes.playbook_executions IS 'Automated playbook execution tracking';
 
 -- Insert migration record
-INSERT INTO maes.migrations (id, name, applied_at) 
-VALUES (7, '007_add_ueba_incidents_playbooks.sql', NOW())
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO maes.migrations (filename)
+VALUES ('007_add_ueba_incidents_playbooks.sql')
+ON CONFLICT (filename) DO NOTHING;

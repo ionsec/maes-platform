@@ -24,7 +24,10 @@ CREATE INDEX IF NOT EXISTS idx_user_organizations_primary ON maes.user_organizat
 CREATE INDEX IF NOT EXISTS idx_users_current_organization ON maes.users(current_organization_id);
 
 -- Create trigger for updated_at
-CREATE TRIGGER update_user_organizations_updated_at 
+-- Everything else in this migration is IF NOT EXISTS; without the same
+-- guard here a re-run aborts partway through.
+DROP TRIGGER IF EXISTS update_user_organizations_updated_at ON maes.user_organizations;
+CREATE TRIGGER update_user_organizations_updated_at
     BEFORE UPDATE ON maes.user_organizations
     FOR EACH ROW EXECUTE FUNCTION maes.update_updated_at_column();
 

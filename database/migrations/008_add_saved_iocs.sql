@@ -26,6 +26,6 @@ COMMENT ON TABLE maes.saved_iocs IS 'User-saved indicators of compromise for thr
 -- Add canAccessThreatIntel permission to UEBA-related tables if needed
 -- Ensure the permission exists in role system (handled by app logic)
 
-INSERT INTO maes.migrations (id, name, applied_at) 
-VALUES (8, '008_add_saved_iocs.sql', NOW())
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO maes.migrations (filename)
+VALUES ('008_add_saved_iocs.sql')
+ON CONFLICT (filename) DO NOTHING;

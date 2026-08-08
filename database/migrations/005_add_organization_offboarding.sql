@@ -41,6 +41,6 @@ ON maes.organizations(offboard_scheduled_at)
 WHERE offboard_scheduled_at IS NOT NULL;
 
 -- Insert migration record
-INSERT INTO maes.migrations (id, name, applied_at) 
-VALUES (5, '005_add_organization_offboarding.sql', NOW())
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO maes.migrations (filename)
+VALUES ('005_add_organization_offboarding.sql')
+ON CONFLICT (filename) DO NOTHING;
