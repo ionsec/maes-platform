@@ -108,8 +108,12 @@ router.post('/enrich/bulk',
 /**
  * Get enrichment statistics
  */
-router.get('/stats', 
-  requirePermission('canManageSystemSettings'),
+router.get('/stats',
+  // This reports which providers are configured, which is exactly what the
+  // Threat Intel page needs to render. It previously required
+  // canManageSystemSettings, so every analyst — the role the page is gated on
+  // — received a 403 and the provider card rendered as a blank box.
+  requirePermission('canAccessThreatIntel'),
   async (req, res) => {
     // Return provider status
     const providers = {

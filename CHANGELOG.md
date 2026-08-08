@@ -28,6 +28,24 @@
 - The entire API reference section of the documentation failed to render: `sphinxcontrib-httpdomain` was absent while 13 files used its directives. A clean Sphinx build now reports zero errors.
 - The Technology Stack table in the documentation overview had a cell wider than its column rule and was dropped from the rendered output.
 
+### Fixed — Threat Intelligence
+
+- **The Threat Intelligence and Saved IOCs pages never reached the API.** Both called `/threat-intel/*` while the axios base URL is the site origin and every other page uses `/api/*`. nginx answered all seven requests with the SPA's own `index.html` at HTTP 200, so the pages parsed HTML as JSON, rendered nothing, and reported no error — the module appeared empty rather than broken.
+- Provider API keys could never reach the API container. `VIRUSTOTAL_API_KEY`, `ABUSEIPDB_API_KEY`, `SHODAN_API_KEY` and `IPQUALITYSCORE_API_KEY` are documented in `.env.example` and read from `process.env`, but the `api` service in `docker-compose.yml` never passed them and declared no `env_file`. Every provider was permanently disabled regardless of configuration.
+- `GET /api/threat-intel/stats` required `canManageSystemSettings`, a permission analysts do not hold, while the page itself is gated on `canAccessThreatIntel`. Analysts received 403 and the provider card rendered as a blank box with the error swallowed into the console.
+- Enrichment results were never persisted. The `risk_level`, `risk_score`, `enrichment_data` and `last_enriched_at` columns on `maes.saved_iocs` had no writer, so the Risk Level column permanently read "Not enriched". Adds `POST /api/threat-intel/saved/:id/enrich`, which stores the verdict — and deliberately declines to store one when no provider is configured, rather than recording a "clean" result the platform never actually checked.
+- IPQualityScore was initialised and advertised as active by `/stats` but never called by any enrichment path. It now contributes to IP enrichment.
+- The bulk enrichment summary labelled each bucket one severity too high, showing `high_risk` as "Critical", `medium_risk` as "High" and `low_risk` as "Medium".
+- Bulk enrichment silently dropped values it could not classify as an IP, domain or hash while still counting them in the total, so the buckets did not add up. Unrecognised entries are now reported.
+- With no provider configured, a lookup returned a confident "clean, 0/100" verdict. The page now says plainly that no providers are configured.
+
+### Fixed — Migrations
+
+- Five migrations recorded themselves with `INSERT INTO maes.migrations (id, name, applied_at)`, but the table has no `name` column and `id` is generated. Each aborted at that statement. Because the migration runner does not set `ON_ERROR_STOP`, every failure was invisible.
+- `010_add_compliance_permission.sql` referenced `super_admin` and legacy MSSP role names that do not exist when it runs — the role simplification that introduces `super_admin` is migration 012. It failed on its first statement and granted nothing at all. It now applies only to roles present in the enum at run time.
+- `003_add_graph_extraction_types.sql` added enum values without `IF NOT EXISTS`, and `004_add_user_organization_support.sql` created a trigger without a guard while every other statement in it used `IF NOT EXISTS`. Both aborted on any installation where `init.sql` had already created those objects.
+- A clean run of `init.sql` plus all migrations under `ON_ERROR_STOP` now completes without error, down from seven silent failures.
+
 ### Security
 - Removed a remote CDN script from the generated compliance HTML report. No interactive component used it, and remote script in a security report is an external dependency worth not having.
 

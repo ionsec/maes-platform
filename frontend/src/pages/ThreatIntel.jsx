@@ -21,13 +21,22 @@ const ThreatIntel = () => {
   const [bulkInput, setBulkInput] = useState('');
   const [bulkResults, setBulkResults] = useState(null);
   const [providerStats, setProviderStats] = useState(null);
+  const [providerStatsError, setProviderStatsError] = useState(null);
 
   const fetchProviderStats = async () => {
     try {
-      const response = await axios.get('/threat-intel/stats');
+      const response = await axios.get('/api/threat-intel/stats');
       setProviderStats(response.data);
-    } catch (error) {
-      console.error('Failed to fetch provider stats:', error);
+    } catch (err) {
+      // Swallowing this left the provider card as a blank box with no
+      // indication that anything had gone wrong.
+      console.error('Failed to fetch provider stats:', err);
+      setProviderStatsError(
+        err.response?.status === 403
+          ? 'You do not have permission to view provider status.'
+          : 'Could not load threat intelligence provider status.'
+      );
+      setProviderStats(null);
     }
   };
 
@@ -45,7 +54,7 @@ const ThreatIntel = () => {
     const resolvedType = type === 'auto' ? detectIocType(query) : type;
 
     try {
-      const response = await axios.get(`/threat-intel/enrich/${resolvedType}/${encodeURIComponent(query)}`);
+      const response = await axios.get(`/api/threat-intel/enrich/${resolvedType}/${encodeURIComponent(query)}`);
       setResults(response.data.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to enrich IOC');
@@ -65,7 +74,7 @@ const ThreatIntel = () => {
         return { value, type: type || 'ip' };
       });
 
-      const response = await axios.post('/threat-intel/enrich/bulk', { iocs });
+      const response = await axios.post('/api/threat-intel/enrich/bulk', { iocs });
       setBulkResults(response.data.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to bulk enrich');
@@ -89,17 +98,39 @@ const ThreatIntel = () => {
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="subtitle2" gutterBottom>Threat Intelligence Providers</Typography>
-          <Stack direction="row" spacing={2} flexWrap="wrap">
-            {providerStats?.providers && Object.entries(providerStats.providers).map(([name, enabled]) => (
-              <Chip
-                key={name}
-                label={`${name}: ${enabled ? 'Active' : 'Inactive'}`}
-                color={enabled ? 'success' : 'default'}
-                variant={enabled ? 'filled' : 'outlined'}
-                icon={enabled ? <Security /> : <Info />}
-              />
-            ))}
-          </Stack>
+
+          {providerStatsError ? (
+            <Alert severity="warning">{providerStatsError}</Alert>
+          ) : !providerStats?.providers ? (
+            <Typography variant="body2" color="text.secondary">
+              Loading provider status…
+            </Typography>
+          ) : (
+            <>
+              <Stack direction="row" spacing={2} flexWrap="wrap">
+                {Object.entries(providerStats.providers).map(([name, enabled]) => (
+                  <Chip
+                    key={name}
+                    label={`${name}: ${enabled ? 'Active' : 'Inactive'}`}
+                    color={enabled ? 'success' : 'default'}
+                    variant={enabled ? 'filled' : 'outlined'}
+                    icon={enabled ? <Security /> : <Info />}
+                  />
+                ))}
+              </Stack>
+
+              {/* Without this, an all-provider-disabled lookup returns a
+                  confident "clean, 0/100" that looks like a real result. */}
+              {Object.values(providerStats.providers).every((enabled) => !enabled) && (
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  No threat intelligence providers are configured, so lookups will return an empty
+                  result rather than a verdict. Set the provider API keys in your environment
+                  (<code>VIRUSTOTAL_API_KEY</code>, <code>ABUSEIPDB_API_KEY</code>,{' '}
+                  <code>SHODAN_API_KEY</code>, <code>IPQUALITYSCORE_API_KEY</code>) and restart the API.
+                </Alert>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -225,17 +256,29 @@ const ThreatIntel = () => {
                   <Typography variant="subtitle1" gutterBottom>Summary</Typography>
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
-                      <Alert severity="error">Critical: {bulkResults.summary?.high_risk || 0}</Alert>
+                      {/* Labels previously ran one severity hotter than the
+                          buckets they read: high_risk was shown as "Critical". */}
+                      <Alert severity="error">High: {bulkResults.summary?.high_risk || 0}</Alert>
                     </Grid>
                     <Grid item xs={6}>
-                      <Alert severity="warning">High: {bulkResults.summary?.medium_risk || 0}</Alert>
+                      <Alert severity="warning">Medium: {bulkResults.summary?.medium_risk || 0}</Alert>
                     </Grid>
                     <Grid item xs={6}>
-                      <Alert severity="info">Medium: {bulkResults.summary?.low_risk || 0}</Alert>
+                      <Alert severity="info">Low: {bulkResults.summary?.low_risk || 0}</Alert>
                     </Grid>
                     <Grid item xs={6}>
                       <Alert severity="success">Clean: {bulkResults.summary?.clean || 0}</Alert>
                     </Grid>
+                    {bulkResults.summary?.unrecognized > 0 && (
+                      <Grid item xs={12}>
+                        <Alert severity="warning">
+                          {bulkResults.summary.unrecognized} entr
+                          {bulkResults.summary.unrecognized === 1 ? 'y was' : 'ies were'} not a
+                          recognisable IP, domain, or hash and {bulkResults.summary.unrecognized === 1 ? 'was' : 'were'} skipped
+                          {bulkResults.unrecognized?.length > 0 && `: ${bulkResults.unrecognized.join(', ')}`}.
+                        </Alert>
+                      </Grid>
+                    )}
                   </Grid>
 
                   <Divider sx={{ my: 2 }} />

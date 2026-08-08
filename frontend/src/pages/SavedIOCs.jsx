@@ -27,7 +27,7 @@ const SavedIOCs = () => {
   const fetchSavedIOCs = async (targetPage = page) => {
     try {
       setLoading(true);
-      const res = await axios.get('/threat-intel/saved', {
+      const res = await axios.get('/api/threat-intel/saved', {
         params: { page: targetPage, limit: PAGE_SIZE }
       });
       setSavedIOCs(res.data.iocs || []);
@@ -51,7 +51,7 @@ const SavedIOCs = () => {
   const handleAddIOC = async () => {
     const type = newIOC.type || detectIocType(newIOC.value);
     try {
-      await axios.post('/threat-intel/saved', { ...newIOC, type });
+      await axios.post('/api/threat-intel/saved', { ...newIOC, type });
       setAddDialogOpen(false);
       setNewIOC({ value: '', type: '', notes: '' });
       fetchSavedIOCs(1);
@@ -62,7 +62,7 @@ const SavedIOCs = () => {
 
   const handleDeleteIOC = async (iocId) => {
     try {
-      await axios.delete(`/threat-intel/saved/${iocId}`);
+      await axios.delete(`/api/threat-intel/saved/${iocId}`);
       // If this was the last row on the page, step back one page.
       const targetPage = savedIOCs.length === 1 && page > 1 ? page - 1 : page;
       fetchSavedIOCs(targetPage);
@@ -73,11 +73,21 @@ const SavedIOCs = () => {
 
   const handleEnrichIOC = async (ioc) => {
     try {
-      const type = ioc.type;
-      await axios.get(`/threat-intel/enrich/${type}/${encodeURIComponent(ioc.value)}`);
+      setError(null);
+      // The stateless /enrich endpoint returns a verdict but stores nothing,
+      // so this row would go straight back to "Not enriched". This endpoint
+      // persists the result against the saved IOC.
+      const res = await axios.post(`/api/threat-intel/saved/${ioc.id}/enrich`);
+
+      if (res.data?.enriched === false) {
+        // Nothing was recorded because no provider is configured; saying so is
+        // more useful than silently leaving the row unchanged.
+        setError(res.data.reason || 'No verdict was recorded.');
+      }
+
       fetchSavedIOCs();
     } catch (err) {
-      setError('Failed to enrich IOC');
+      setError(err.response?.data?.error || 'Failed to enrich IOC');
     }
   };
 

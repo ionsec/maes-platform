@@ -176,6 +176,6 @@ WHERE is_active = true;
 -- This will be handled in the application layer for now
 
 -- Insert migration record
-INSERT INTO maes.migrations (id, name, applied_at) 
-VALUES (6, '006_add_compliance_assessment.sql', NOW())
-ON CONFLICT (id) DO NOTHING;
+INSERT INTO maes.migrations (filename)
+VALUES ('006_add_compliance_assessment.sql')
+ON CONFLICT (filename) DO NOTHING;
