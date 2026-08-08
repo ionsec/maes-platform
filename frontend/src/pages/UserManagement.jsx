@@ -122,7 +122,7 @@ const UserManagement = () => {
     canCloseIncidents: 'Close Incidents'
   };
 
-  const isSuperAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+  const isSuperAdmin = currentUser?.role === 'super_admin';
   const roles = isSuperAdmin ? ['super_admin', 'admin', 'analyst', 'viewer'] : ['admin', 'analyst', 'viewer'];
 
   useEffect(() => {

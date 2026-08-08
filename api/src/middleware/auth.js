@@ -279,6 +279,23 @@ ROLE_PERMISSIONS.mssp_responder = {
 };
 
 // Authenticate JWT token (with secure service token validation)
+/**
+ * Only `super_admin` crosses organization boundaries.
+ *
+ * The role model (database/migrations/012_simplify_rbac_roles.sql) defines
+ * `super_admin` as "full system access, can manage all organizations" and
+ * `admin` as "organization admin, full access **within their org**". The
+ * checks below previously treated the two as equivalent, which let any
+ * organization admin read and modify any other organization's data by passing
+ * ?organizationId= — a cross-tenant IDOR, and privilege escalation into
+ * system-level operations.
+ *
+ * An `admin` who legitimately works across organizations still can: they fall
+ * through to the maes.user_organizations membership check rather than being
+ * granted everything implicitly.
+ */
+const isSuperAdminRole = (user) => user?.role === 'super_admin';
+
 const authenticateToken = async (req, res, next) => {
   try {
     // Check for service token first (for internal service communication)
@@ -385,10 +402,9 @@ const authenticateToken = async (req, res, next) => {
       const requestedOrgId = req.query.organizationId || req.headers['x-organization-id'];
       
       if (requestedOrgId) {
-        // Super admins and admins can access any organization
-        const isSuperAdmin = user.role === 'admin' || user.role === 'super_admin';
-        
-        if (isSuperAdmin) {
+        // Only super admins may name an arbitrary organization; everyone else
+        // must hold a membership row for it.
+        if (isSuperAdminRole(user)) {
           req.organizationId = requestedOrgId;
           req.isCrossOrganizationAccess = requestedOrgId !== user.organization_id;
         } else {
@@ -499,9 +515,7 @@ const requireSuperAdmin = () => {
       return res.status(401).json({ error: 'Authentication required' });
     }
 
-    const isSuperAdmin = req.user.role === 'admin' || req.user.role === 'super_admin';
-    
-    if (!isSuperAdmin) {
+    if (!isSuperAdminRole(req.user)) {
       logger.warn(`User ${req.user.id} with role ${req.user.role} attempted to access super admin resource`);
       return res.status(403).json({ error: 'Super admin access required' });
     }
@@ -536,6 +550,7 @@ const auditLog = async (userId, organizationId, action, details = {}) => {
 
 module.exports = {
   authenticateToken,
+  isSuperAdminRole,
   authenticateService,
   requirePermission,
   requireRole,
