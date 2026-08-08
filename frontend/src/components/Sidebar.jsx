@@ -10,6 +10,7 @@ import {
   GppMaybe,
   Description,
   VerifiedUser,
+  Public,
   Group,
   Tune,
   ConnectedTv,
@@ -125,6 +126,7 @@ const NAV_GROUPS = [
     label: 'Govern',
     items: [
       { text: 'Compliance', icon: <VerifiedUser />, path: '/compliance', permission: 'canManageCompliance' },
+      { text: 'External Exposure', icon: <Public />, path: '/external-exposure', permission: 'canManageCompliance' },
       { text: 'Users & Access', icon: <Group />, path: '/users', permission: 'canManageUsers' },
       { text: 'SIEM Integration', icon: <ConnectedTv />, path: '/siem', permission: 'canManageIntegrations' },
       { text: 'Settings', icon: <Tune />, path: '/settings', permission: 'canManageSystemSettings' },

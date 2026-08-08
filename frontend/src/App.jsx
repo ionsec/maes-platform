@@ -38,6 +38,7 @@ import SystemLogs from './pages/SystemLogs'
 import UserProfile from './pages/UserProfile'
 import UserManagement from './pages/UserManagement'
 import Compliance from './pages/Compliance'
+import ExternalExposure from './pages/ExternalExposure'
 import Incidents from './pages/Incidents'
 import ThreatIntel from './pages/ThreatIntel'
 import SavedIOCs from './pages/SavedIOCs'
@@ -155,6 +156,7 @@ function App() {
                 <Route path="/profile" element={<UserProfile />} />
                 <Route path="/users" element={<UserManagement />} />
                 <Route path="/compliance" element={<Compliance />} />
+                <Route path="/external-exposure" element={<ExternalExposure />} />
                 <Route path="/incidents" element={<Incidents />} />
                 <Route path="/threat-intel" element={<ThreatIntel />} />
                 <Route path="/saved-iocs" element={<SavedIOCs />} />

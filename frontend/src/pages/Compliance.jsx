@@ -15,6 +15,7 @@ import {
   DialogContent,
   DialogActions,
   FormControl,
+  FormHelperText,
   InputLabel,
   Select,
   MenuItem,
@@ -91,7 +92,7 @@ const Compliance = () => {
     if (selectedOrganizationId) {
       fetchComplianceData();
     }
-  }, [selectedOrganizationId]);
+  }, [selectedOrganizationId, selectedAssessmentType]);
 
   const fetchComplianceData = async () => {
     try {
@@ -100,7 +101,7 @@ const Compliance = () => {
       // Fetch assessments, controls, and credentials status in parallel
       const [assessmentsResponse, controlsResponse, credentialsResponse] = await Promise.all([
         axios.get(`/api/compliance/assessments/${selectedOrganizationId}?limit=10`),
-        axios.get('/api/compliance/controls/cis_v400'),
+        axios.get(`/api/compliance/controls/${selectedAssessmentType}`),
         axios.get(`/api/compliance/organization/${selectedOrganizationId}/credentials-status`)
       ]);
 
@@ -578,11 +579,26 @@ const Compliance = () => {
 
       {/* Available Controls Summary */}
       <Card>
-        <CardHeader title="Available Compliance Controls" />
+        <CardHeader
+          title="Available Compliance Controls"
+          action={
+            <FormControl size="small" sx={{ minWidth: 260 }}>
+              <InputLabel>Control Set</InputLabel>
+              <Select
+                value={selectedAssessmentType}
+                label="Control Set"
+                onChange={(e) => setSelectedAssessmentType(e.target.value)}
+              >
+                <MenuItem value="cis_v400">CIS Microsoft 365 v4.0.0</MenuItem>
+                <MenuItem value="maes_entra_v100">MAES Entra ID Posture v1.0.0</MenuItem>
+              </Select>
+            </FormControl>
+          }
+        />
         <CardContent>
           {Object.keys(controlsBySection).length === 0 ? (
             <Alert severity="warning">
-              No compliance controls loaded. Please check the service configuration.
+              No compliance controls loaded for this control set. Please check the service configuration.
             </Alert>
           ) : (
             <Grid container spacing={2}>
@@ -822,9 +838,17 @@ const StartAssessmentDialog = ({ open, onClose, onSubmit, loading, hasCredential
               onChange={(e) => setFormData({ ...formData, assessmentType: e.target.value })}
             >
               <MenuItem value="cis_v400">CIS Microsoft 365 v4.0.0</MenuItem>
+              <MenuItem value="maes_entra_v100">MAES Entra ID Posture v1.0.0</MenuItem>
               <MenuItem value="cis_v300" disabled>CIS Microsoft 365 v3.0.0</MenuItem>
               <MenuItem value="custom" disabled>Custom Assessment</MenuItem>
             </Select>
+            <FormHelperText>
+              {formData.assessmentType === 'maes_entra_v100'
+                ? 'Identity exposure posture: federation and AD FS surface, legacy authentication, MFA coverage, '
+                  + 'Conditional Access gaps, application identity privilege, and mail authentication. '
+                  + 'Includes a small number of read-only probes against your own federation endpoints and public DNS.'
+                : 'CIS benchmark controls evaluated against your Microsoft 365 tenant configuration.'}
+            </FormHelperText>
           </FormControl>
 
           <TextField

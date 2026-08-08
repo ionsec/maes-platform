@@ -95,7 +95,7 @@ const ComplianceAssessment = sequelize.define('ComplianceAssessment', {
     }
   },
   assessment_type: {
-    type: Sequelize.ENUM('cis_v400', 'cis_v300', 'custom', 'orca_style'),
+    type: Sequelize.ENUM('cis_v400', 'cis_v300', 'custom', 'orca_style', 'maes_entra_v100'),
     defaultValue: 'cis_v400'
   },
   name: {
@@ -210,7 +210,7 @@ const ComplianceControl = sequelize.define('ComplianceControl', {
     primaryKey: true
   },
   assessment_type: {
-    type: Sequelize.ENUM('cis_v400', 'cis_v300', 'custom', 'orca_style'),
+    type: Sequelize.ENUM('cis_v400', 'cis_v300', 'custom', 'orca_style', 'maes_entra_v100'),
     defaultValue: 'cis_v400'
   },
   control_id: {
@@ -366,8 +366,24 @@ const ComplianceSchedule = sequelize.define('ComplianceSchedule', {
     type: Sequelize.TEXT
   },
   assessment_type: {
-    type: Sequelize.ENUM('cis_v400', 'cis_v300', 'custom', 'orca_style'),
+    type: Sequelize.ENUM('cis_v400', 'cis_v300', 'custom', 'orca_style', 'maes_entra_v100'),
     defaultValue: 'cis_v400'
+  },
+  // Compliance assessments and external exposure scans share this table so
+  // they share one schedule lifecycle. The recon columns below are only
+  // populated (and required) when schedule_kind is 'external_exposure'.
+  schedule_kind: {
+    type: Sequelize.STRING,
+    defaultValue: 'compliance'
+  },
+  seed_domain: {
+    type: Sequelize.STRING
+  },
+  recon_profile: {
+    type: Sequelize.ENUM('passive', 'standard', 'aggressive')
+  },
+  last_scan_id: {
+    type: Sequelize.UUID
   },
   frequency: {
     type: Sequelize.ENUM('daily', 'weekly', 'monthly', 'quarterly'),

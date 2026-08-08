@@ -201,7 +201,7 @@ router.post('/assess/:organizationId',
   requireAdminRole(),
   getOrganizationCredentials,
   [
-    body('assessmentType').optional().isIn(['cis_v400', 'cis_v300', 'custom', 'orca_style']),
+    body('assessmentType').optional().isIn(['cis_v400', 'cis_v300', 'custom', 'orca_style', 'maes_entra_v100']),
     body('name').optional().isLength({ min: 1, max: 255 }),
     body('description').optional().isLength({ max: 1000 }),
     body('isBaseline').optional().isBoolean()
@@ -655,7 +655,7 @@ router.post('/schedule/:organizationId',
   [
     body('name').notEmpty().isLength({ min: 1, max: 255 }),
     body('frequency').isIn(['daily', 'weekly', 'monthly', 'quarterly']),
-    body('assessmentType').optional().isIn(['cis_v400', 'cis_v300', 'custom', 'orca_style'])
+    body('assessmentType').optional().isIn(['cis_v400', 'cis_v300', 'custom', 'orca_style', 'maes_entra_v100'])
   ],
   async (req, res) => {
     try {

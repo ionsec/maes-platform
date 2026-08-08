@@ -2,14 +2,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const { ComplianceAssessment, ComplianceResult, ComplianceControl, Organization } = require('../models');
 const { logger } = require('../logger');
-let puppeteer = null;
-
-// Lazy load puppeteer to avoid issues if not installed
-try {
-  puppeteer = require('puppeteer');
-} catch (err) {
-  logger.warn('Puppeteer not available - PDF generation disabled');
-}
+const { renderPdf, isAvailable: pdfAvailable } = require('./pdfRenderer');
 
 class ComplianceReportGenerator {
   constructor() {
@@ -318,7 +311,7 @@ class ComplianceReportGenerator {
    * Generate PDF report using Puppeteer
    */
   async generatePDFReport(data, options = {}) {
-    if (!puppeteer) {
+    if (!pdfAvailable()) {
       // Fallback to HTML if puppeteer not available
       logger.warn('Puppeteer not available, generating HTML instead of PDF');
       const htmlReport = await this.generateHTMLReport(data, options);
@@ -332,54 +325,13 @@ class ComplianceReportGenerator {
     try {
       // First generate HTML content
       const htmlContent = this.buildHTMLReport(data, options);
-      
-      // Launch puppeteer
-      const browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu'
-        ]
+
+      // Rendering is shared with the external exposure reports so both report
+      // families print identically.
+      const pdfBuffer = await renderPdf(htmlContent, {
+        headerText: `Compliance Assessment Report - ${data.assessment.name}`
       });
-      
-      const page = await browser.newPage();
-      
-      // Set content
-      await page.setContent(htmlContent, { 
-        waitUntil: 'networkidle0' 
-      });
-      
-      // Generate PDF
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '20mm',
-          right: '15mm',
-          bottom: '20mm',
-          left: '15mm'
-        },
-        displayHeaderFooter: true,
-        headerTemplate: `
-          <div style="font-size: 10px; text-align: center; width: 100%; margin: 0 20px;">
-            <span>Compliance Assessment Report - ${data.assessment.name}</span>
-          </div>
-        `,
-        footerTemplate: `
-          <div style="font-size: 10px; display: flex; justify-content: space-between; width: 100%; margin: 0 20px;">
-            <span>Generated: ${new Date().toLocaleDateString()}</span>
-            <span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span>
-          </div>
-        `
-      });
-      
-      await browser.close();
-      
+
       // Save PDF file
       const fileName = `compliance_report_${data.assessment.id}_${Date.now()}.pdf`;
       const filePath = path.join(this.outputPath, fileName);
