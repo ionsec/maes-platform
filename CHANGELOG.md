@@ -1,3 +1,36 @@
+## [1.5.0] - 2026-08-08
+
+### Added
+- **MAES Entra ID Posture control set (`maes_entra_v100`)** — 16 authenticated controls covering identity exposure the CIS set does not reach: federation and AD FS surface, ROPC and legacy authentication, MFA registration coverage including phishing-resistant methods for privileged roles, Conditional Access exclusion gaps, service principal privilege and credential hygiene, and mail authentication (SPF/DMARC/DKIM/CAA/MTA-STS). Definitions are seeded as rows in `maes.compliance_controls`; check logic lives in `services/compliance/src/services/checkers/`. The engine now registers 25 automated checkers, up from 9.
+- **External exposure scanning (`external_exposure`)** — an unauthenticated, domain-seeded attack surface assessment across 11 phases in three profiles. `passive` reads public records only; `standard` adds bounded read-only probing of hosts the organization demonstrably owns; `aggressive` adds account-existence testing and third-party SaaS probing.
+  - A scope authorization model (`maes.recon_authorizations`) with per-domain coverage, a profile ceiling, and mandatory expiry. Aggressive scans are refused without one, and owning the domain is never sufficient for that tier.
+  - A complete probe audit trail (`maes.recon_probe_log`) recording every outbound HTTP request and DNS lookup.
+  - Centralised traffic shaping: concurrency cap, per-host rate limiting with jitter, a per-scan probe budget, and an honest User-Agent. Scan phases cannot reach the network except through the shared client, so none of it can be bypassed.
+  - A findings catalog holding severity, impact, remediation, and MITRE ATT&CK mapping in one reviewable place, and tag-matched attack path assembly.
+  - Scan-over-scan drift comparison, matching findings on `(finding_id, target)` and warning when two scans are not like for like.
+  - Reports in HTML, PDF, JSON, and CSV, each carrying a coverage section naming what narrowed the scan.
+  - Scheduling, sharing the compliance schedule lifecycle. Authorization is re-checked at fire time; a schedule whose authorization has lapsed deactivates itself and records why.
+  - Alerts for newly-appeared high and critical exposures and newly-assembled attack paths, deduplicated against the previous scan so standing findings do not re-alert on every run.
+- Per-user alert read state (`maes.alert_reads`), with `PATCH /api/alerts/:id` and `PATCH /api/alerts/mark-all-read`.
+- Real-time `alert.created` websocket event, emitted from all three alert-creation paths.
+- Jest test suite for the compliance service, which previously had none: 216 tests across 16 suites.
+- Documentation: `docs/security/authorized-scanning`, `docs/architecture/external-exposure`, and `docs/api/recon`.
+
+### Fixed
+- **Socket.IO accepted unauthenticated connections and allowed any client to join any organization's room** (pentest C2), exposing another tenant's alerts and job events to anyone who guessed an organization id. Connections now require the same JWT as the REST API, and room membership is decided server-side from the database.
+- **Reflected XSS in `GET /api/auth/callback` leading to account takeover** (pentest C1). The `error` and `error_description` query parameters were interpolated into HTML unescaped, and the API's own CSP allowed inline script. Values are now escaped, the pages redirect with `<meta http-equiv="refresh">` instead of inline script, and `script-src 'unsafe-inline'` has been removed from the API's CSP so nothing reflected there can execute.
+- SIEM export was broken: `siemService.fetchEvents` and two queries in the SIEM routes selected `mitre_techniques` from `maes.alerts`, a column that does not exist there. Every export and both event-listing endpoints failed at runtime.
+- UEBA alerts had never persisted: the insert passed a bare string into the `source` jsonb column, so it always threw, and the exception was swallowed by a catch that logged at warn level.
+- The alert `category` filter was accepted by the route and then silently dropped by the model, so filtering by category returned everything.
+- Alert counts in the header were computed from a single page of results, reporting the page size as the total.
+- The compliance service's Graph client minted a fresh token on every call and had no paging or 429 handling; it now uses the extractor service's `getAllPages` and `Retry-After`-aware retry.
+- PDF rendering left a Chrome process running when a render threw. Rendering is now shared by both report families and always closes the browser.
+- The entire API reference section of the documentation failed to render: `sphinxcontrib-httpdomain` was absent while 13 files used its directives. A clean Sphinx build now reports zero errors.
+- The Technology Stack table in the documentation overview had a cell wider than its column rule and was dropped from the rendered output.
+
+### Security
+- Removed a remote CDN script from the generated compliance HTML report. No interactive component used it, and remote script in a security report is an external dependency worth not having.
+
 ## [1.4.0] - 2026-08-07
 
 ### Added

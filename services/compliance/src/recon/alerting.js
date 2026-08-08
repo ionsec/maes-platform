@@ -1,3 +1,4 @@
+const axios = require('axios');
 const db = require('../services/database');
 const { logger } = require('../logger');
 const { diffFindings, diffAttackPaths } = require('./comparison');
@@ -60,7 +61,9 @@ async function raiseAlertsForScan(scan, findings = [], attackPaths = []) {
 
   if (!previous) {
     const alert = await raiseBaselineAlert(scan, exposures, attackPaths);
-    return { alerts: alert ? [alert] : [], reason: 'baseline' };
+    const alerts = alert ? [alert] : [];
+    await notifyAlertsCreated(scan.organization_id, alerts);
+    return { alerts, reason: 'baseline' };
   }
 
   const [previousFindings, previousPaths] = await Promise.all([
@@ -146,6 +149,8 @@ async function raiseAlertsForScan(scan, findings = [], attackPaths = []) {
   } else {
     logger.debug(`Scan ${scan.id}: no newly-appeared high or critical exposures; no alerts raised`);
   }
+
+  await notifyAlertsCreated(scan.organization_id, alerts);
 
   return { alerts, reason: 'drift' };
 }
@@ -276,8 +281,45 @@ function truncate(text, max) {
   return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
 }
 
+/**
+ * Ask the API to push these alerts to connected clients.
+ *
+ * This service writes alerts straight to the database from its own container
+ * and so cannot reach the socket server. Without this hand-off the UI would
+ * only learn about a new critical exposure on its next poll.
+ *
+ * Best effort by design: the alerts are already stored, and a scan must not
+ * fail because a notification did not land.
+ */
+async function notifyAlertsCreated(organizationId, alerts) {
+  if (!alerts || alerts.length === 0) return false;
+
+  const apiUrl = process.env.API_SERVICE_URL || 'http://api:3000';
+  const token = process.env.SERVICE_AUTH_TOKEN;
+
+  if (!token) {
+    logger.debug('No SERVICE_AUTH_TOKEN configured; skipping alert notification');
+    return false;
+  }
+
+  try {
+    await axios.post(`${apiUrl}/api/internal/notify/alerts-created`, {
+      organizationId,
+      alerts
+    }, {
+      headers: { 'x-service-token': token, 'Content-Type': 'application/json' },
+      timeout: 5000
+    });
+    return true;
+  } catch (error) {
+    logger.warn(`Could not notify API of ${alerts.length} new alert(s): ${error.message}`);
+    return false;
+  }
+}
+
 module.exports = {
   raiseAlertsForScan,
+  notifyAlertsCreated,
   findPreviousScan,
   createAlert,
   truncate,

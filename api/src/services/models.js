@@ -551,34 +551,68 @@ const AlertModel = {
     return await getRow(query, [id, organizationId]);
   },
 
-  findAll: async (organizationId, filters = {}, page = 1, limit = 20) => {
-    let whereClause = 'WHERE organization_id = $1';
+  /**
+   * @param {string} organizationId
+   * @param {Object} [filters] - status, severity, category, unread
+   * @param {number} [page]
+   * @param {number} [limit]
+   * @param {string} [userId] - resolves per-user read state; omit and every
+   *   alert comes back with read = false
+   */
+  findAll: async (organizationId, filters = {}, page = 1, limit = 20, userId = null) => {
+    let whereClause = 'WHERE a.organization_id = $1';
     const values = [organizationId];
     let paramCount = 2;
 
     if (filters.status) {
-      whereClause += ` AND status = $${paramCount}`;
+      whereClause += ` AND a.status = $${paramCount}`;
       values.push(filters.status);
       paramCount++;
     }
 
     if (filters.severity) {
-      whereClause += ` AND severity = $${paramCount}`;
+      whereClause += ` AND a.severity = $${paramCount}`;
       values.push(filters.severity);
       paramCount++;
     }
 
+    // Previously accepted by the route and then silently ignored here, so
+    // filtering by category appeared to work but returned everything.
+    if (filters.category) {
+      whereClause += ` AND a.category = $${paramCount}`;
+      values.push(filters.category);
+      paramCount++;
+    }
+
+    // Read state is per user. Without one, nothing is marked read.
+    const readJoin = userId
+      ? `LEFT JOIN maes.alert_reads r ON r.alert_id = a.id AND r.user_id = $${paramCount}`
+      : '';
+    const readSelect = userId ? '(r.alert_id IS NOT NULL)' : 'false';
+    if (userId) {
+      values.push(userId);
+      paramCount++;
+    }
+
+    if (filters.unread === true && userId) {
+      whereClause += ' AND r.alert_id IS NULL';
+    }
+
     const offset = (page - 1) * limit;
     const query = `
-      SELECT * FROM maes.alerts 
+      SELECT a.*, ${readSelect} AS read
+      FROM maes.alerts a
+      ${readJoin}
       ${whereClause}
-      ORDER BY created_at DESC
+      ORDER BY a.created_at DESC
       LIMIT $${paramCount} OFFSET $${paramCount + 1}
     `;
     values.push(limit, offset);
 
     const countQuery = `
-      SELECT COUNT(*) as count FROM maes.alerts 
+      SELECT COUNT(*) as count
+      FROM maes.alerts a
+      ${readJoin}
       ${whereClause}
     `;
 
@@ -623,6 +657,62 @@ const AlertModel = {
       alertData.tags || [],
       JSON.stringify(alertData.metadata || {})
     ]);
+  },
+
+  /**
+   * Mark one alert read for one user. Idempotent, and scoped to the
+   * organization so a user cannot mark an alert they cannot see.
+   * @returns {boolean} whether the alert exists in that organization
+   */
+  markRead: async (alertId, userId, organizationId) => {
+    const result = await query(
+      `INSERT INTO maes.alert_reads (alert_id, user_id)
+       SELECT a.id, $2 FROM maes.alerts a
+        WHERE a.id = $1 AND a.organization_id = $3
+       ON CONFLICT (alert_id, user_id) DO NOTHING`,
+      [alertId, userId, organizationId]
+    );
+
+    // ON CONFLICT DO NOTHING reports zero rows for an alert that was already
+    // read, so confirm existence separately rather than returning a false 404.
+    if (result.rowCount > 0) return true;
+    const existing = await getRow(
+      'SELECT 1 FROM maes.alerts WHERE id = $1 AND organization_id = $2',
+      [alertId, organizationId]
+    );
+    return Boolean(existing);
+  },
+
+  /** Un-mark an alert, so a user can put something back in their queue. */
+  markUnread: async (alertId, userId) => {
+    await query(
+      'DELETE FROM maes.alert_reads WHERE alert_id = $1 AND user_id = $2',
+      [alertId, userId]
+    );
+    return true;
+  },
+
+  /** Mark every alert in the organization read for this user. */
+  markAllRead: async (userId, organizationId) => {
+    const result = await query(
+      `INSERT INTO maes.alert_reads (alert_id, user_id)
+       SELECT a.id, $1 FROM maes.alerts a
+        WHERE a.organization_id = $2
+       ON CONFLICT (alert_id, user_id) DO NOTHING`,
+      [userId, organizationId]
+    );
+    return result.rowCount;
+  },
+
+  /** Alerts in the organization this user has not read. */
+  unreadCount: async (userId, organizationId) => {
+    return count(
+      `SELECT COUNT(*) as count
+         FROM maes.alerts a
+         LEFT JOIN maes.alert_reads r ON r.alert_id = a.id AND r.user_id = $1
+        WHERE a.organization_id = $2 AND r.alert_id IS NULL`,
+      [userId, organizationId]
+    );
   },
 
   update: async (id, updates) => {
