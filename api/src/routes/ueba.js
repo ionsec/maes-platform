@@ -166,8 +166,10 @@ router.post('/process-activity',
         try {
           const { v4: alertUuid } = require('uuid');
           await pool.query(
+            // source is a jsonb column: a bare string is not valid JSON and the
+            // insert throws, so this has to be a JSON object.
             `INSERT INTO maes.alerts (id, organization_id, severity, type, category, title, description, status, source, metadata, created_at, updated_at)
-             VALUES ($1, $2, 'high', 'ueba_anomaly', 'behavioral', $3, $4, 'new', 'ueba', $5, NOW(), NOW())`,
+             VALUES ($1, $2, 'high', 'ueba_anomaly', 'behavioral', $3, $4, 'new', '{"service":"ueba"}'::jsonb, $5, NOW(), NOW())`,
             [
               alertUuid(),
               req.organizationId,
@@ -177,7 +179,9 @@ router.post('/process-activity',
             ]
           );
         } catch (alertError) {
-          logger.warn('Failed to create UEBA alert:', alertError.message);
+          // Swallowing this hid a persistent failure for a long time; log it at
+          // error level so a broken alerting path is visible.
+          logger.error('Failed to create UEBA alert:', alertError);
         }
       }
 

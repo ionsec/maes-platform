@@ -5,6 +5,7 @@ const { ReconResolver } = require('./resolver');
 const { phasesForProfile } = require('./phases');
 const { buildAttackPaths } = require('./attackPaths');
 const { authorizeScan, AuthorizationError } = require('./authorization');
+const { raiseAlertsForScan } = require('./alerting');
 const { SEVERITY_ORDER } = require('./findings/catalog');
 
 /**
@@ -132,7 +133,7 @@ class ReconEngine {
 
       const storedFindings = await this._storeFindings(scan.id, allFindings);
       const attackPaths = buildAttackPaths(storedFindings);
-      await this._storeAttackPaths(scan.id, attackPaths);
+      const storedPaths = await this._storeAttackPaths(scan.id, attackPaths);
 
       const counts = countBySeverity(storedFindings);
       const startedAt = new Date(scan.created_at).getTime();
@@ -184,13 +185,30 @@ class ReconEngine {
         + `${attackPaths.length} attack path(s), ${probeClient.count} probe(s)`
       );
 
+      // Alerting compares against the previous scan of this domain, so it runs
+      // after the results are committed. A failure here must not fail a scan
+      // whose findings are already safely stored.
+      let alerting = { alerts: [], reason: 'skipped' };
+      try {
+        const scanRow = await db.getRow(`SELECT * FROM maes.recon_scans WHERE id = $1`, [scan.id]);
+        const findingRows = await db.getRows(
+          `SELECT * FROM maes.recon_findings WHERE scan_id = $1`, [scan.id]
+        );
+        alerting = await raiseAlertsForScan(scanRow, findingRows, storedPaths);
+      } catch (error) {
+        logger.error(`Recon scan ${scan.id}: failed to raise alerts: ${error.message}`);
+        alerting = { alerts: [], reason: 'failed', error: error.message };
+      }
+
       return {
         success: true,
         scanId: scan.id,
         findings: storedFindings,
         attackPaths,
         counts,
-        probeCount: probeClient.count
+        probeCount: probeClient.count,
+        alerts: alerting.alerts,
+        alertingReason: alerting.reason
       };
 
     } catch (error) {
@@ -247,12 +265,15 @@ class ReconEngine {
   }
 
   async _storeAttackPaths(scanId, paths) {
+    const stored = [];
+
     for (const path of paths) {
-      await db.query(
+      const row = await db.insert(
         `INSERT INTO maes.recon_attack_paths
            (scan_id, path_id, name, effort, blast_radius, severity,
             trigger_tags, matched_findings, narrative, mitre_techniques)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
         [
           scanId,
           path.pathId,
@@ -266,7 +287,11 @@ class ReconEngine {
           path.mitreTechniques
         ]
       );
+
+      stored.push(row);
     }
+
+    return stored;
   }
 }
 

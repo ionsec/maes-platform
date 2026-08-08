@@ -94,7 +94,9 @@ async function testConnection(config) {
  */
 async function fetchEvents(organizationId, limit = 1000) {
   const result = await pool.query(
-    `SELECT id, title, description, severity, category, mitre_techniques,
+    `SELECT id, title, description, severity, category,
+            -- Stored as a JSONB object; consumers expect a flat array of ids.
+            COALESCE(mitre_attack->'techniques', '[]'::jsonb) AS mitre_techniques,
             affected_entities, created_at
      FROM maes.alerts
      WHERE organization_id = $1
