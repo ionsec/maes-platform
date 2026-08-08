@@ -165,11 +165,12 @@ router.post('/process-activity',
       if (result.total_risk_score >= 70) {
         try {
           const { v4: alertUuid } = require('uuid');
-          await pool.query(
+          const created = await pool.query(
             // source is a jsonb column: a bare string is not valid JSON and the
             // insert throws, so this has to be a JSON object.
             `INSERT INTO maes.alerts (id, organization_id, severity, type, category, title, description, status, source, metadata, created_at, updated_at)
-             VALUES ($1, $2, 'high', 'ueba_anomaly', 'behavioral', $3, $4, 'new', '{"service":"ueba"}'::jsonb, $5, NOW(), NOW())`,
+             VALUES ($1, $2, 'high', 'ueba_anomaly', 'behavioral', $3, $4, 'new', '{"service":"ueba"}'::jsonb, $5, NOW(), NOW())
+             RETURNING *`,
             [
               alertUuid(),
               req.organizationId,
@@ -178,6 +179,10 @@ router.post('/process-activity',
               JSON.stringify({ userId, anomalies: result.anomalies, recommendation: result.recommendation })
             ]
           );
+
+          // This path bypasses POST /api/alerts, so it has to emit for itself.
+          const { emitAlertCreated } = require('../services/alertEvents');
+          emitAlertCreated(req.app.get('io'), req.organizationId, created.rows[0]);
         } catch (alertError) {
           // Swallowing this hid a persistent failure for a long time; log it at
           // error level so a broken alerting path is visible.

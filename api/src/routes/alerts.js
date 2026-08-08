@@ -5,6 +5,8 @@ const { authenticateToken, requirePermission } = require('../middleware/auth');
 const { apiRateLimiter } = require('../middleware/rateLimiter');
 const { logger } = require('../utils/logger');
 
+const { emitAlertCreated } = require('../services/alertEvents');
+
 const router = express.Router();
 
 // Apply authentication and rate limiting
@@ -18,7 +20,8 @@ router.get('/',
     query('limit').optional().isInt({ min: 1, max: 1000 }).withMessage('Limit must be between 1 and 1000'),
     query('status').optional().isIn(['new', 'acknowledged', 'investigating', 'resolved', 'false_positive']).withMessage('Invalid status'),
     query('severity').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid severity'),
-    query('category').optional().isString().withMessage('Category must be a string')
+    query('category').optional().isString().withMessage('Category must be a string'),
+    query('unread').optional().isIn(['true', 'false']).withMessage('unread must be true or false')
   ],
   async (req, res) => {
     try {
@@ -42,8 +45,10 @@ router.get('/',
       if (req.query.status) where.status = req.query.status;
       if (req.query.severity) where.severity = req.query.severity;
       if (req.query.category) where.category = req.query.category;
+      if (req.query.unread === 'true') where.unread = true;
 
-      const result = await Alert.findAll(req.organizationId, where, page, limit);
+      // Read state is per user, so the caller's id resolves the `read` flag.
+      const result = await Alert.findAll(req.organizationId, where, page, limit, req.user.id);
 
       res.json({
         success: true,
@@ -56,6 +61,56 @@ router.get('/',
       res.status(500).json({
         error: 'Internal server error'
       });
+    }
+  }
+);
+
+// Mark every alert in the organization read for the calling user.
+//
+// Declared before the parameterised routes below: Express matches in
+// declaration order, so '/:id' would otherwise swallow 'mark-all-read'.
+router.patch('/mark-all-read', async (req, res) => {
+  try {
+    const marked = await Alert.markAllRead(req.user.id, req.organizationId);
+    const unread = await Alert.unreadCount(req.user.id, req.organizationId);
+
+    res.json({ success: true, marked, unread });
+
+  } catch (error) {
+    logger.error('Mark all alerts read error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Set the calling user's read state for a single alert.
+//
+// Read state is intentionally distinct from `status`: having read a
+// notification is not the same as having acknowledged an alert, and the
+// acknowledge endpoint remains the only way to record triage.
+router.patch('/:id',
+  [body('read').isBoolean().withMessage('read must be a boolean')],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Validation failed', details: errors.array() });
+      }
+
+      if (req.body.read) {
+        const exists = await Alert.markRead(req.params.id, req.user.id, req.organizationId);
+        if (!exists) {
+          return res.status(404).json({ error: 'Alert not found' });
+        }
+      } else {
+        await Alert.markUnread(req.params.id, req.user.id);
+      }
+
+      const unread = await Alert.unreadCount(req.user.id, req.organizationId);
+      res.json({ success: true, id: req.params.id, read: Boolean(req.body.read), unread });
+
+    } catch (error) {
+      logger.error('Update alert read state error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 );
@@ -343,6 +398,7 @@ router.post('/',
       });
 
       logger.info(`Alert created: ${title} (${severity})`);
+      emitAlertCreated(req.app.get('io'), organizationId, alert);
 
       res.status(201).json({
         success: true,
@@ -382,6 +438,9 @@ router.get('/stats/summary', async (req, res) => {
       summary.byStatus[stat.status] = (summary.byStatus[stat.status] || 0) + parseInt(stat.count);
       summary.total += parseInt(stat.count);
     });
+
+    // Per-user, so it belongs outside the grouped aggregate above.
+    summary.unread = await Alert.unreadCount(req.user.id, req.organizationId);
 
     res.json({
       success: true,

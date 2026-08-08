@@ -4,9 +4,31 @@ MAES is a Microsoft 365 extraction, analysis, reporting, and compliance platform
 
 ## Version
 
-- Current release: **v1.4.0**
+- Current release: **v1.5.0**
 - Upstream extractor reference: [`invictus-ir/Microsoft-Extractor-Suite`](https://github.com/invictus-ir/Microsoft-Extractor-Suite) (Tier 3 Exchange-only sidecar)
 - Upstream analyzer reference: [`LETHAL-FORENSICS/Microsoft-Analyzer-Suite`](https://github.com/LETHAL-FORENSICS/Microsoft-Analyzer-Suite)
+
+## What's New in v1.5.0
+
+Assessment release. MAES can now see a tenant from the outside as well as the inside.
+
+### External Exposure Scanning
+
+A domain-seeded attack surface assessment that runs without credentials — the view an attacker has before they have anything. Eleven phases across three profiles: tenant fingerprinting, DNS and mail authentication, certificate transparency, dangling-DNS detection, AD FS endpoint exposure, anonymous Azure and Microsoft 365 access, and, at the aggressive tier, account-existence and third-party SaaS checks. Findings are chained into attack paths, compared scan over scan, and reported in HTML, PDF, JSON, or CSV.
+
+Because scans send real traffic to systems outside MAES, they are governed rather than merely offered: a recorded scope authorization with a profile ceiling and mandatory expiry, re-checked every time a scan runs; a complete audit trail of every probe; and centralised rate limiting that scan phases cannot bypass. Read [Authorized Scanning](docs/security/authorized-scanning.rst) before running one.
+
+### MAES Entra ID Posture Controls
+
+Sixteen new authenticated controls covering identity exposure the CIS benchmark does not reach — federation and AD FS surface, legacy authentication and ROPC, MFA coverage including phishing-resistant methods for privileged roles, Conditional Access gaps, service principal privilege, and mail authentication. The compliance engine now runs 25 automated checks, up from 9.
+
+### Alerting
+
+New high and critical exposures raise alerts, deduplicated against the previous scan so that standing findings do not re-alert every run. Alerts now also push over websockets rather than waiting for a poll, and per-user read state finally exists.
+
+### Security Fixes
+
+Two confirmed critical vulnerabilities were fixed: unauthenticated cross-tenant access through Socket.IO, and a reflected XSS in the admin-consent callback that could be escalated to account takeover. See the [changelog](CHANGELOG.md) for the full list, which also covers a broken SIEM export and a UEBA alerting path that had never once persisted an alert.
 
 ## What's New in v1.4.0
 
@@ -90,7 +112,7 @@ See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v1.2.0.md](docs/releases/v1.
 - `services/extractor/`: Microsoft 365 extraction worker (native Graph API + PowerShell sidecar dispatcher)
 - `services/extractor-sidecar/`: PowerShell sidecar for Exchange-only extractions (unified audit log, admin audit, mailbox audit, transport rules, message trace)
 - `services/analyzer/`: analysis worker
-- `services/compliance/`: compliance assessment worker and report service
+- `services/compliance/`: compliance assessment worker, external exposure scanner (`src/recon/`), and report service
 - `database/`: bootstrap schema and migrations
 - `shared/`: capability metadata used across services
 
@@ -185,6 +207,19 @@ docker compose exec -T postgres psql -U maes_user -d maes_db \
 | `GET` | `/api/alerts` | List security alerts |
 | `GET` | `/api/reports` | List reports |
 
+### External Exposure
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/recon/scan/:organizationId` | Start a scan (`passive`, `standard`, `aggressive`) |
+| `GET` | `/api/recon/scans/:organizationId` | List scans |
+| `GET` | `/api/recon/scan/:scanId` | Scan detail with findings and attack paths |
+| `GET` | `/api/recon/scan/:scanId/probe-log` | Every probe the scan issued |
+| `GET` | `/api/recon/compare/:baselineId/:currentId` | Drift between two scans |
+| `POST` | `/api/recon/scan/:scanId/report` | Generate a report |
+| `POST` | `/api/recon/authorizations/:organizationId` | Record a scope authorization |
+| `POST` | `/api/recon/schedules/:organizationId` | Schedule a recurring scan |
+
 ### UEBA
 
 | Method | Endpoint | Description |
@@ -232,6 +267,8 @@ docker compose exec -T postgres psql -U maes_user -d maes_db \
 - Container image references are pinned.
 - All SQL queries use parameterized inputs.
 - All new API endpoints enforce RBAC permissions and rate limiting.
+- Websocket connections are authenticated and organization room membership is decided server-side.
+- External exposure scans require a recorded scope authorization, identify themselves honestly, are rate limited, and log every probe they issue.
 
 ## Optional Docker Log Access
 
@@ -258,6 +295,8 @@ For local development, you may set development-only origins with `CORS_ORIGIN` o
 - [Monitoring](docs/MONITORING.md)
 - [Monitoring Quick Reference](docs/MONITORING_QUICK_REFERENCE.md)
 - [API Documentation](docs/API_DOCUMENTATION.md)
+- [Authorized Scanning](docs/security/authorized-scanning.rst)
+- [External Exposure Architecture](docs/architecture/external-exposure.rst)
 - [Release Notes: v1.1.0](docs/releases/v1.1.0.md)
 - [Release Notes: v1.2.0](docs/releases/v1.2.0.md)
 

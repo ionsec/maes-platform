@@ -52,7 +52,13 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      // No inline script. This header covers API responses, which are JSON
+      // plus the admin-consent HTML pages in routes/auth.js; those now redirect
+      // with <meta http-equiv="refresh"> instead of an inline script. Without
+      // 'unsafe-inline', a reflected value cannot execute here even if an
+      // escape is missed. The React app is served by nginx and carries its own
+      // policy, so this does not affect it.
+      scriptSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
       fontSrc: ["'self'", "data:"],
       connectSrc: ["'self'"],
@@ -305,26 +311,14 @@ const io = new Server(httpServer, {
   }
 });
 
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-  logger.info(`Client connected: ${socket.id}`);
-  
-  socket.on('disconnect', () => {
-    logger.info(`Client disconnected: ${socket.id}`);
-  });
-  
-  // Join organization room
-  socket.on('join-organization', (organizationId) => {
-    socket.join(`org-${organizationId}`);
-    logger.info(`Client ${socket.id} joined organization ${organizationId}`);
-  });
-  
-  // Leave organization room
-  socket.on('leave-organization', (organizationId) => {
-    socket.leave(`org-${organizationId}`);
-    logger.info(`Client ${socket.id} left organization ${organizationId}`);
-  });
-});
+// Socket.IO connection handling.
+//
+// Connections are authenticated with the same JWT the REST API requires, and
+// room membership is decided server-side. Previously any client could connect
+// unauthenticated and join any organization's room, receiving that tenant's
+// alerts and job events.
+const { registerSocketHandlers } = require('./services/socketAuth');
+registerSocketHandlers(io);
 
 // Make io available to routes
 app.set('io', io);

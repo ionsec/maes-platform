@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import axios from 'axios'
 import { getApiUrl } from '../config/api'
+import { disconnectSocket } from '../utils/socket'
 
 // Use the same-origin API base as the rest of the app (proxied by nginx via
 // /api/*). A hardcoded absolute fallback like http://localhost:3000 violates
@@ -73,6 +74,10 @@ export const useAuthStore = create(
             console.log('Logout error (ignored):', error.response?.status)
           }
         }
+        // Drop the websocket too: it authenticated with the old token and
+        // would otherwise keep receiving this organization's events.
+        disconnectSocket()
+
         set({
           user: null,
           token: null,

@@ -10,6 +10,13 @@ export default defineConfig({
       '/api': {
         target: 'http://maes-api:3000',
         changeOrigin: true
+      },
+      // Socket.IO needs an upgrade-aware proxy; nginx already does this in
+      // production (frontend/nginx.conf), so the dev server must match.
+      '/socket.io': {
+        target: 'http://maes-api:3000',
+        changeOrigin: true,
+        ws: true
       }
     }
   },

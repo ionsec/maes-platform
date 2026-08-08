@@ -1200,7 +1200,10 @@ function generateHTMLReport({ assessment, results, resultsBySection, resultsBySt
             </div>
         </div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- The Bootstrap JS bundle was loaded here but no interactive component
+         (dropdown, modal, collapse) is used in this report, so it was dead
+         weight — and remote script in a security report is an external
+         dependency worth not having. -->
 </body>
 </html>
   `;

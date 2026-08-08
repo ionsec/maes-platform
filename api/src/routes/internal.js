@@ -252,4 +252,31 @@ function parseLogLine(rawLine, containerName) {
   };
 }
 
+/**
+ * Notify connected clients that a backing service created alerts directly.
+ *
+ * The compliance service writes external exposure alerts straight to the
+ * database from its own container, so it cannot reach the socket server. This
+ * lets it hand off the notification without routing the whole alert through
+ * the public create endpoint, which would re-write rows that already exist.
+ */
+router.post('/notify/alerts-created', async (req, res) => {
+  try {
+    const { organizationId, alerts } = req.body;
+
+    if (!organizationId || !Array.isArray(alerts)) {
+      return res.status(400).json({ error: 'organizationId and an alerts array are required' });
+    }
+
+    const { emitAlertsCreated } = require('../services/alertEvents');
+    const delivered = emitAlertsCreated(req.app.get('io'), organizationId, alerts);
+
+    res.json({ success: true, delivered });
+
+  } catch (error) {
+    logger.error('Failed to notify alert creation:', error);
+    res.status(500).json({ error: 'Failed to notify' });
+  }
+});
+
 module.exports = router;
