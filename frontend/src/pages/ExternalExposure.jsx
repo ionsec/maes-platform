@@ -48,6 +48,8 @@ import {
   Route as RouteIcon,
   Description as DescriptionIcon,
   Download as DownloadIcon,
+  Schedule as ScheduleIcon,
+  CompareArrows as CompareArrowsIcon,
 } from '@mui/icons-material'
 import axios from 'axios'
 import { useSnackbar } from 'notistack'
@@ -104,6 +106,9 @@ const ExternalExposure = () => {
   const [detailOpen, setDetailOpen] = useState(false)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const [reportScan, setReportScan] = useState(null)
+  const [schedules, setSchedules] = useState([])
+  const [scheduleDialog, setScheduleDialog] = useState(false)
+  const [compareDialog, setCompareDialog] = useState(false)
 
   useEffect(() => {
     if (selectedOrganizationId) fetchData()
@@ -112,12 +117,14 @@ const ExternalExposure = () => {
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [scansResponse, authResponse] = await Promise.all([
+      const [scansResponse, authResponse, scheduleResponse] = await Promise.all([
         axios.get(`/api/recon/scans/${selectedOrganizationId}?limit=25`),
         axios.get(`/api/recon/authorizations/${selectedOrganizationId}`),
+        axios.get(`/api/recon/schedules/${selectedOrganizationId}`),
       ])
       if (scansResponse.data.success) setScans(scansResponse.data.scans || [])
       if (authResponse.data.success) setAuthorizations(authResponse.data.authorizations || [])
+      if (scheduleResponse.data.success) setSchedules(scheduleResponse.data.schedules || [])
     } catch (error) {
       console.error('Error fetching external exposure data:', error)
       enqueueSnackbar('Failed to load external exposure data', { variant: 'error' })
@@ -164,6 +171,30 @@ const ExternalExposure = () => {
       fetchData()
     } catch (error) {
       enqueueSnackbar('Failed to revoke authorization', { variant: 'error' })
+    }
+  }
+
+  const handleCreateSchedule = async (formData) => {
+    try {
+      await axios.post(`/api/recon/schedules/${selectedOrganizationId}`, formData)
+      enqueueSnackbar('Schedule created', { variant: 'success' })
+      setScheduleDialog(false)
+      fetchData()
+    } catch (error) {
+      // The service validates the schedule against the authorization gate at
+      // creation time; surface that reason rather than a generic failure.
+      const message = error.response?.data?.message || 'Failed to create schedule'
+      enqueueSnackbar(message, { variant: 'error', autoHideDuration: 12000 })
+    }
+  }
+
+  const handleDeleteSchedule = async (scheduleId) => {
+    try {
+      await axios.delete(`/api/recon/schedules/${selectedOrganizationId}/${scheduleId}`)
+      enqueueSnackbar('Schedule deleted', { variant: 'success' })
+      fetchData()
+    } catch (error) {
+      enqueueSnackbar('Failed to delete schedule', { variant: 'error' })
     }
   }
 
@@ -283,8 +314,89 @@ const ExternalExposure = () => {
         </CardContent>
       </Card>
 
+      <Card sx={{ mb: 3 }}>
+        <CardHeader
+          title="Schedules"
+          subheader={`${schedules.filter(s => s.is_active).length} active`}
+          action={
+            <Button size="small" startIcon={<ScheduleIcon />} onClick={() => setScheduleDialog(true)}>
+              New schedule
+            </Button>
+          }
+        />
+        <CardContent>
+          {schedules.length === 0 ? (
+            <Typography variant="body2" color="textSecondary">
+              No scheduled scans. A schedule is checked against the authorization gate every time it fires,
+              and deactivates itself if the authorization has lapsed.
+            </Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Domain</TableCell>
+                    <TableCell>Profile</TableCell>
+                    <TableCell>Frequency</TableCell>
+                    <TableCell>Next run</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {schedules.map((schedule) => (
+                    <TableRow key={schedule.id}>
+                      <TableCell>{schedule.name}</TableCell>
+                      <TableCell>{schedule.seed_domain}</TableCell>
+                      <TableCell><Chip size="small" label={schedule.recon_profile} /></TableCell>
+                      <TableCell>{schedule.frequency}</TableCell>
+                      <TableCell>
+                        {schedule.next_run_at ? new Date(schedule.next_run_at).toLocaleString() : '—'}
+                      </TableCell>
+                      <TableCell>
+                        {schedule.is_active ? (
+                          <Chip size="small" label="Active" color="success" />
+                        ) : (
+                          <Tooltip title={schedule.parameters?.deactivatedReason || 'Inactive'}>
+                            <Chip size="small" label="Deactivated" color="warning" />
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button size="small" color="error" onClick={() => handleDeleteSchedule(schedule.id)}>
+                          Delete
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+          {schedules.some(s => !s.is_active && s.parameters?.deactivatedReason) && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              One or more schedules stopped because their scope authorization lapsed. Record a current
+              authorization and recreate the schedule to resume.
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
       <Card>
-        <CardHeader title="Scans" />
+        <CardHeader
+          title="Scans"
+          action={
+            <Button
+              size="small"
+              startIcon={<CompareArrowsIcon />}
+              onClick={() => setCompareDialog(true)}
+              disabled={scans.filter(s => s.status === 'completed').length < 2}
+            >
+              Compare scans
+            </Button>
+          }
+        />
         <CardContent>
           {scans.length === 0 ? (
             <Alert severity="info">No scans yet. Start one to see this organization's external surface.</Alert>
@@ -391,6 +503,20 @@ const ExternalExposure = () => {
       <ReportDialog
         scan={reportScan}
         onClose={() => setReportScan(null)}
+        enqueueSnackbar={enqueueSnackbar}
+      />
+
+      <CreateScheduleDialog
+        open={scheduleDialog}
+        onClose={() => setScheduleDialog(false)}
+        onSubmit={handleCreateSchedule}
+        hasAggressiveAuthorization={activeAuthorizations.some(a => a.profile_ceiling === 'aggressive')}
+      />
+
+      <CompareScansDialog
+        open={compareDialog}
+        onClose={() => setCompareDialog(false)}
+        scans={scans.filter(s => s.status === 'completed')}
         enqueueSnackbar={enqueueSnackbar}
       />
     </Box>
@@ -783,6 +909,234 @@ const ScanDetailDialog = ({ open, onClose, detail, loading }) => {
     </Dialog>
   )
 }
+
+const CreateScheduleDialog = ({ open, onClose, onSubmit, hasAggressiveAuthorization }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    seedDomain: '',
+    profile: 'passive',
+    frequency: 'weekly',
+    seedUser: '',
+  })
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    const payload = { ...formData }
+    if (!payload.seedUser) delete payload.seedUser
+    if (!payload.description) delete payload.description
+    onSubmit(payload)
+  }
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <form onSubmit={handleSubmit}>
+        <DialogTitle>Schedule recurring scan</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth required label="Schedule name" sx={{ mt: 1, mb: 3 }}
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+          />
+          <TextField
+            fullWidth required label="Seed domain" placeholder="contoso.com" sx={{ mb: 3 }}
+            value={formData.seedDomain}
+            onChange={(e) => setFormData({ ...formData, seedDomain: e.target.value })}
+          />
+
+          <FormControl fullWidth sx={{ mb: 3 }}>
+            <InputLabel>Profile</InputLabel>
+            <Select
+              value={formData.profile}
+              label="Profile"
+              onChange={(e) => setFormData({ ...formData, profile: e.target.value })}
+            >
+              {PROFILES.map(p => (
+                <MenuItem key={p.value} value={p.value}>{p.label} — {p.summary}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth sx={{ mb: 3 }}>
+            <InputLabel>Frequency</InputLabel>
+            <Select
+              value={formData.frequency}
+              label="Frequency"
+              onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
+            >
+              <MenuItem value="daily">Daily</MenuItem>
+              <MenuItem value="weekly">Weekly</MenuItem>
+              <MenuItem value="monthly">Monthly</MenuItem>
+              <MenuItem value="quarterly">Quarterly</MenuItem>
+            </Select>
+          </FormControl>
+
+          {formData.profile === 'aggressive' && (
+            <Alert severity={hasAggressiveAuthorization ? 'info' : 'warning'} sx={{ mb: 2 }}>
+              {hasAggressiveAuthorization
+                ? 'Authorization is re-checked every time this schedule fires. When it expires, the schedule '
+                  + 'deactivates itself rather than continuing to scan.'
+                : 'No active authorization permits the aggressive profile, so this schedule will be rejected. '
+                  + 'Record one covering this domain first.'}
+            </Alert>
+          )}
+
+          <TextField
+            fullWidth multiline rows={2} label="Description (optional)"
+            value={formData.description}
+            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="contained" disabled={!formData.name || !formData.seedDomain}>
+            Create schedule
+          </Button>
+        </DialogActions>
+      </form>
+    </Dialog>
+  )
+}
+
+const CompareScansDialog = ({ open, onClose, scans, enqueueSnackbar }) => {
+  const [baselineId, setBaselineId] = useState('')
+  const [currentId, setCurrentId] = useState('')
+  const [comparison, setComparison] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  // Default to the two most recent scans, which is almost always what's wanted.
+  useEffect(() => {
+    if (open && scans.length >= 2) {
+      setCurrentId(scans[0].id)
+      setBaselineId(scans[1].id)
+      setComparison(null)
+    }
+  }, [open, scans])
+
+  const handleCompare = async () => {
+    try {
+      setLoading(true)
+      const response = await axios.get(`/api/recon/compare/${baselineId}/${currentId}`)
+      setComparison(response.data.comparison)
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Failed to compare scans', { variant: 'error' })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const label = (scan) =>
+    `${scan.seed_domain} · ${scan.profile} · ${new Date(scan.created_at).toLocaleString()}`
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Compare scans</DialogTitle>
+      <DialogContent dividers>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Baseline (earlier)</InputLabel>
+              <Select value={baselineId} label="Baseline (earlier)" onChange={(e) => setBaselineId(e.target.value)}>
+                {scans.map(s => <MenuItem key={s.id} value={s.id}>{label(s)}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Current (later)</InputLabel>
+              <Select value={currentId} label="Current (later)" onChange={(e) => setCurrentId(e.target.value)}>
+                {scans.map(s => <MenuItem key={s.id} value={s.id}>{label(s)}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+
+        <Button
+          variant="contained"
+          onClick={handleCompare}
+          disabled={loading || !baselineId || !currentId || baselineId === currentId}
+        >
+          {loading ? 'Comparing…' : 'Compare'}
+        </Button>
+
+        {comparison && (
+          <Box sx={{ mt: 3 }}>
+            {comparison.comparability.length > 0 && comparison.comparability.map((warning, i) => (
+              <Alert key={i} severity="warning" sx={{ mb: 1 }}>{warning}</Alert>
+            ))}
+
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              {[
+                { label: 'New', value: comparison.summary.added, color: 'error.main' },
+                { label: 'Resolved', value: comparison.summary.resolved, color: 'success.main' },
+                { label: 'Persisting', value: comparison.summary.persisting, color: 'text.secondary' },
+                { label: 'Worsened', value: comparison.summary.worsened, color: 'warning.main' },
+              ].map(stat => (
+                <Grid item xs={6} md={3} key={stat.label}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h4" sx={{ color: stat.color }}>{stat.value}</Typography>
+                    <Typography variant="caption" color="textSecondary">{stat.label}</Typography>
+                  </Paper>
+                </Grid>
+              ))}
+            </Grid>
+
+            <DriftSection
+              title="New findings"
+              findings={comparison.findings.added}
+              emptyText="Nothing new appeared between these scans."
+            />
+            <DriftSection
+              title="Severity changed"
+              findings={comparison.findings.severityChanged}
+              emptyText="No finding changed severity."
+              renderExtra={(f) => `${f.previousSeverity} → ${f.severity} (${f.direction})`}
+            />
+            <DriftSection
+              title="Resolved"
+              findings={comparison.findings.resolved}
+              emptyText="Nothing was resolved between these scans."
+            />
+
+            <Typography variant="subtitle2" sx={{ mt: 2 }}>Attack paths</Typography>
+            <Typography variant="body2" color="textSecondary">
+              {comparison.attackPaths.added.length} new ·{' '}
+              {comparison.attackPaths.resolved.length} resolved ·{' '}
+              {comparison.attackPaths.persisting.length} persisting
+            </Typography>
+            {comparison.attackPaths.added.map(p => (
+              <Alert key={p.id} severity="error" sx={{ mt: 1 }}>New chain: {p.name}</Alert>
+            ))}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
+const DriftSection = ({ title, findings, emptyText, renderExtra }) => (
+  <Box sx={{ mb: 2 }}>
+    <Typography variant="subtitle2" gutterBottom>{title} ({findings.length})</Typography>
+    {findings.length === 0 ? (
+      <Typography variant="body2" color="textSecondary">{emptyText}</Typography>
+    ) : (
+      <List dense>
+        {findings.map(f => (
+          <ListItem key={f.id} disableGutters>
+            <Chip size="small" color={SEVERITY_COLORS[f.severity]} label={f.severity} sx={{ mr: 1 }} />
+            <ListItemText
+              primary={f.title}
+              secondary={renderExtra ? renderExtra(f) : f.target}
+            />
+          </ListItem>
+        ))}
+      </List>
+    )}
+  </Box>
+)
 
 const ReportDialog = ({ scan, onClose, enqueueSnackbar }) => {
   const [format, setFormat] = useState('html')

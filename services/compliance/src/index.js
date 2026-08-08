@@ -9,6 +9,7 @@ const scheduler = require('./services/scheduler');
 const reportGenerator = require('./services/reportGenerator');
 const { reconEngine } = require('./recon/reconEngine');
 const { reconReportGenerator } = require('./recon/reconReportGenerator');
+const { compareScans } = require('./recon/comparison');
 const { AuthorizationError } = require('./recon/authorization');
 const db = require('./services/database');
 const requiredEnvVars =['DATABASE_URL', 'REDIS_PASSWORD', 'SERVICE_AUTH_TOKEN'];
@@ -599,6 +600,20 @@ app.delete('/api/recon/authorizations/:authorizationId', validateServiceToken, a
   } catch (error) {
     logger.error('Failed to revoke recon authorization:', error);
     res.status(500).json({ error: 'Failed to revoke authorization', message: error.message });
+  }
+});
+
+// Drift between two completed scans.
+app.get('/api/recon/compare/:baselineId/:currentId', validateServiceToken, async (req, res) => {
+  try {
+    const comparison = await compareScans(req.params.baselineId, req.params.currentId);
+    res.json({ success: true, comparison });
+  } catch (error) {
+    logger.error('Failed to compare recon scans:', error);
+    res.status(error.statusCode || 500).json({
+      error: 'Failed to compare scans',
+      message: error.message
+    });
   }
 });
 
