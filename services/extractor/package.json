@@ -10,7 +10,7 @@
   "dependencies": {
     "@azure/msal-node": "^2.13.1",
     "@microsoft/microsoft-graph-client": "^3.0.7",
-    "axios": "^1.15.0",
+    "axios": "^1.20.0",
     "bullmq": "^5.0.0",
     "dotenv": "^17.2.0",
     "express": "^5.2.1",
